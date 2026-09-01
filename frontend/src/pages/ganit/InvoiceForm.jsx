@@ -16,6 +16,13 @@ import DateInput from '../../components/ui/DateInput';
 // Vikray's order form needed the same control. One copy, two callers.
 import ServerPicker from '../../components/ui/ServerPicker';
 import { Picker } from '../../components/ui/Picker';
+// The org's OWN fields, defined on Graha's Custom Fields tab and rendered by
+// the one component that knows what a `select`, a `date` and a `phone` field
+// look like. Imported from `pages/graha` rather than copied because a second
+// copy is a second answer to "what does field_type 'phone' render as" — and
+// that question already had a wrong answer once (`<input type="phone">`,
+// which is not an HTML input type and silently cost the numeric keypad).
+import CustomFieldInputs from '../graha/CustomFieldInputs';
 
 // `product_id` carries NO visible field and never will: it is here so the
 // SERVER can look up what the line cost us and stamp `cost_price` onto it at
@@ -53,6 +60,11 @@ const BLANK = {
   // The reference the CUSTOMER gave us. Blank is normal — most give none
   // — and the API turns a blank into NULL, because the column refuses ''.
   customer_ref: '',
+  // The org's own extra fields, `{field_id: value}`. Keyed by the definition's
+  // id and never by its name, so renaming a field on the Custom Fields tab
+  // does not orphan every value already saved under the old one. `{}` is the
+  // empty answer — the column is NOT NULL and stores `{}`, not NULL.
+  custom_data: {},
   line_items: [{ ...EMPTY_LINE }],
 };
 
@@ -88,6 +100,17 @@ function fromInvoice(inv) {
     try { items = JSON.parse(items); } catch { items = []; }
   }
   if (!Array.isArray(items)) items = [];
+  // The org's own fields, same defence and for the same reason. Parsed rather
+  // than discarded on a string: dropping to `{}` would open the editor with
+  // every custom value blank, and SAVING would then write those blanks back —
+  // an unrepaired row would silently lose its data by being looked at. An
+  // array is not a value map either (`typeof [] === 'object'`), so the shape
+  // is checked, not just the type.
+  let cd = inv.custom_data;
+  if (typeof cd === 'string') {
+    try { cd = JSON.parse(cd); } catch { cd = {}; }
+  }
+  if (!cd || typeof cd !== 'object' || Array.isArray(cd)) cd = {};
   return {
     ...BLANK,
     client_id: inv.client_id || '',
@@ -102,6 +125,7 @@ function fromInvoice(inv) {
     currency: inv.currency || 'INR',
     discount: Number(inv.discount) || 0,
     customer_ref: inv.customer_ref || '',
+    custom_data: cd,
     notes: inv.notes || '',
     terms: inv.terms || '',
     line_items: items.length ? items.map(li => ({
@@ -226,6 +250,30 @@ export default function InvoiceForm({
     for (const r of next) seen.set(String(r.id), { ...seen.get(String(r.id)), ...r });
     return [...seen.values()];
   }, []);
+
+  /**
+   * The wrapper `CustomFieldInputs` draws each of the org's own fields in.
+   *
+   * The component's default wrapper is Graha's `.gr__f` / `.gr__fl`, which is
+   * that module's field vocabulary and not this one's — dropped into this grid
+   * unchanged, the org's fields would carry a different label size, weight and
+   * case from every field beside them. Passing the wrapper is the seam the
+   * component exposes for exactly this, so one component still owns what a
+   * `select` or a `date` field IS while each host owns how it is dressed.
+   *
+   * The control itself keeps `k-input`, which the component hard-codes and a
+   * host cannot override. `.k-input` (brand.css:101) and `.inp`
+   * (components.css:117) are each their vocabulary's text-input primitive and
+   * differ only in the focus ring and border token — a seam worth accepting,
+   * because the alternative is a third class here and `check-classes.mjs`
+   * fails the build on a className with no rule behind it.
+   */
+  const customField = useCallback((label, node) => (
+    <label className="fld">
+      <span className="fld__l">{label}</span>
+      {node}
+    </label>
+  ), []);
 
   const searchClients = useCallback(async (q) => {
     try {
@@ -453,7 +501,14 @@ export default function InvoiceForm({
         // person you have just raised an invoice against is not a lead: filed
         // as one they pollute every lead list and feed lead scoring with
         // somebody who has already bought.
-        contact_type: 'customer',
+        //
+        // `'contact'` and no longer `'customer'` (migration 254). The company
+        // on this form is the customer — it is `form.client_id` one line above,
+        // and `graha_clients.is_sales_customer` is where that fact lives. This
+        // line used to write the relationship a SECOND time, onto the person,
+        // with nothing keeping the two equal: 7 clients ended up holding a
+        // 'customer' contact and a 'vendor' contact at once.
+        contact_type: 'contact',
       });
       const made = {
         id: String(r.data?.id), name: r.data?.name || name,
@@ -732,6 +787,25 @@ export default function InvoiceForm({
             Their PO, contract or work-order number, if they gave one.
           </span>
         </label>
+        {/* The org's OWN fields, from Graha → Custom Fields (entity: Invoice).
+            They sit in this grid rather than behind the "Optional" fold for the
+            reason the fold's own label gives — it says "notes, terms, flat
+            discount", and a field a firm went to the settings screen to create
+            is not an afterthought. A firm that tracks "Site" or "Delivery note"
+            on every invoice would have to open a disclosure to reach it on
+            every invoice.
+
+            Renders NOTHING when the org has defined none, which is every org
+            today: `CustomFieldInputs` returns null on an empty definition list,
+            so no heading, no gap and no extra request beyond the one it makes
+            itself. `field` is passed so they wear this form's label vocabulary
+            (`.fld` / `.fld__l`) instead of Graha's `.gr__f`. */}
+        <CustomFieldInputs
+          entity="invoice"
+          value={form.custom_data}
+          onChange={cd => setForm(f => ({ ...f, custom_data: cd }))}
+          field={customField}
+        />
       </div>
 
       {/* The two quick-create panels. Name is the only thing either asks for.

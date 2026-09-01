@@ -273,10 +273,26 @@ async def overview(
     crm = None
     if "graha" in allowed:
         crm = await pool.fetchrow(
-        "SELECT COUNT(*) AS total_contacts, "
-        "COUNT(*) FILTER (WHERE contact_type='lead') AS leads, "
-        "COUNT(*) FILTER (WHERE contact_type='customer') AS customers "
-        "FROM public.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE",
+        # ⚠ `customers` COUNTS COMPANIES, NOT PEOPLE.
+        #
+        # This read `COUNT(*) FILTER (WHERE contact_type='customer')` over
+        # `graha_contacts` — so the firm's headline customer count was the size
+        # of its address book. Measured 2026-09-01, before migration 254: 28
+        # contacts typed 'customer' spread over just 14 companies, against 26
+        # clients actually flagged `is_sales_customer`. Three different numbers
+        # for one question, and the dashboard showed the one that meant least.
+        #
+        # A customer is a COMPANY (CLAUDE.md: "A CRM client is the company (the
+        # customer)"), so the count comes from `graha_clients` now. The contact
+        # figures stay on the contacts table, because a lead IS a person.
+        "SELECT (SELECT COUNT(*) FROM public.graha_contacts "
+        "          WHERE org_id=$1::uuid AND is_active=TRUE) AS total_contacts, "
+        "       (SELECT COUNT(*) FROM public.graha_contacts "
+        "          WHERE org_id=$1::uuid AND is_active=TRUE "
+        "            AND contact_type='lead') AS leads, "
+        "       (SELECT COUNT(*) FROM public.graha_clients "
+        "          WHERE org_id=$1::uuid AND is_active=TRUE "
+        "            AND is_sales_customer) AS customers",
         org_id,
     )
 

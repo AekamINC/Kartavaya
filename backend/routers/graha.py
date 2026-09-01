@@ -2832,9 +2832,21 @@ async def remove_contact_label(
 
 # ── Lead Conversion ─────────────────────────────────────────
 
+class ConvertLead(BaseModel):
+    """Which company this lead turns out to belong to.
+
+    Optional because a lead that ALREADY has a client needs nothing typed — the
+    common case is somebody who arrived through a web form already attached to
+    a company. Required in effect when they have none, and the refusal below
+    says so by name.
+    """
+    client_id: str = ""
+
+
 @router.post("/contacts/{contact_id}/convert")
 async def convert_lead(
     contact_id: UUID,
+    body: ConvertLead = ConvertLead(),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -2849,14 +2861,49 @@ async def convert_lead(
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             row = await _conn.fetchrow(
-                "SELECT id, contact_type FROM public.graha_contacts "
+                "SELECT id, contact_type, client_id FROM public.graha_contacts "
                 "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE FOR UPDATE",
                 str(contact_id), org_id,
             )
             if not row:
                 raise HTTPException(404, "Contact not found")
-            if row["contact_type"] == "customer":
-                raise HTTPException(400, "Contact is already a customer")
+            if row["contact_type"] == "contact":
+                raise HTTPException(400, "This lead has already been converted")
+
+            # ── A CONVERSION WITHOUT A COMPANY IS THE DEFECT THIS FIXES ─────
+            #
+            # This endpoint used to do exactly one thing: set
+            # `contact_type='customer'`. It never created a `graha_clients` row
+            # and never required one — while the comment below it claimed
+            # "`client_id` is the company it now belongs to", describing a field
+            # it did not populate.
+            #
+            # The owner named it: "so only customer doesnt have client it got
+            # converted to customer and sales order got generated without an
+            # customer or client how invoice can be assign correctly. thats big
+            # flaw." A document belonging to no company appears on no ledger and
+            # no statement, and `GET /vikray/customers` filters it off the
+            # customers list entirely.
+            #
+            # So a conversion now ends with the person attached to a company.
+            # `client_id` from the body is USER INPUT and is checked against
+            # this org before it is written — a uuid in a payload is a
+            # parameter, not a secret.
+            client_id = (body.client_id or "").strip() or (
+                str(row["client_id"]) if row["client_id"] else "")
+            if not client_id:
+                raise HTTPException(
+                    400,
+                    "Choose the company this lead belongs to. A customer is a "
+                    "company, so an invoice raised later has somewhere to "
+                    "attach — pick an existing client or create one.",
+                )
+            owned = await _conn.fetchval(
+                "SELECT 1 FROM public.graha_clients "
+                " WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+                client_id, org_id)
+            if not owned:
+                raise HTTPException(400, "That company is not in this organisation")
 
             updated = await _conn.fetchrow(
                 # `updated_by` rides in the same statement as the conversion,
@@ -2867,11 +2914,21 @@ async def convert_lead(
                 # phone number was the last person to touch it, which is false
                 # from the moment the conversion commits.
                 "UPDATE public.graha_contacts "
-                "SET contact_type='customer', converted_at=NOW(), "
+                "SET contact_type='contact', converted_at=NOW(), "
+                "    client_id=$4::uuid, "
                 "updated_at=NOW(), updated_by=$3 "
                 "WHERE id=$1::uuid AND org_id=$2::uuid "
                 "RETURNING *",
-                str(contact_id), org_id, user["user_id"],
+                str(contact_id), org_id, user["user_id"], client_id,
+            )
+            # The company is what was won. `is_sales_customer` is where "this
+            # is a customer" lives — migration 254 moved it off the person, and
+            # this is the write that keeps it true going forward.
+            await _conn.execute(
+                "UPDATE public.graha_clients SET is_sales_customer=TRUE, "
+                "       updated_at=NOW() "
+                " WHERE id=$1::uuid AND org_id=$2::uuid AND NOT is_sales_customer",
+                client_id, org_id,
             )
             # The row AS CONVERTED — read back from the UPDATE, not the row we
             # checked — so `contact_type` is what the contact became and
@@ -4284,12 +4341,24 @@ async def create_custom_field(
     if not await is_org_admin(user["user_id"], org_id):
         raise HTTPException(403, "This action requires an org owner or org admin")
     # Kept in step with the CHECK in
-    # migration 131 and with CUSTOM_FIELD_ENTITIES
-    # in CustomFieldInputs.jsx. Deliberately the same five names in all three:
-    # until that migration is applied the database refuses the last three, and
-    # matching lists mean the refusal is a clear 400 here rather than an
+    # migrations 131 and 257, and with CUSTOM_FIELD_ENTITIES
+    # in CustomFieldInputs.jsx. Deliberately the same six names in all three:
+    # until each migration is applied the database refuses the names it added,
+    # and matching lists mean the refusal is a clear 400 here rather than an
     # asyncpg CheckViolation surfacing as a 500.
-    valid_entities = ("contact", "deal", "client", "activity", "follow_up")
+    #
+    # `invoice` is `ganit_invoices`, not a CRM record, and it is here rather
+    # than in a table of its own for the reason migration 131 gives: the
+    # DEFINITIONS live in one place for every entity, and only the VALUES live
+    # on the record (`ganit_invoices.custom_data`, migration 257). A second
+    # definitions table for Ganit would be a second create screen, a second
+    # rename rule and a second thing to keep identical forever.
+    #
+    # ⚠ ORDER THIS LIST AFTER MIGRATION 257, NOT BEFORE. Accepting `invoice`
+    # here while the CHECK still refuses it turns a clean 400 into a 500 — the
+    # exact failure the note above exists to prevent — so this line and that
+    # migration ship together.
+    valid_entities = ("contact", "deal", "client", "activity", "follow_up", "invoice")
     valid_types = ("text", "number", "date", "select", "checkbox", "url", "email", "phone")
     if body.entity_type not in valid_entities:
         raise HTTPException(400, f"entity_type must be one of: {', '.join(valid_entities)}")

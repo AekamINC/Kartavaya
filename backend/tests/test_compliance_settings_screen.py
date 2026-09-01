@@ -70,6 +70,11 @@ from services import compliance_settings as svc
 ORG = "11111111-1111-1111-1111-111111111111"
 SETTER = "user_admin001"
 SET_AT = datetime(2026, 8, 26, 9, 30, tzinfo=timezone.utc)
+#: The subject of an override. A uuid in a payload is a PARAMETER, not a
+#: secret — the org-ownership check on these lives in
+#: `tests/test_compliance_scope_routes.py`; here they only shape statements.
+SCOPE_CLIENT = "aaaaaaa1-1111-4111-8111-aaaaaaaaaaa1"
+SCOPE_EMPLOYEE = "eeeeeee5-5555-4555-8555-eeeeeeeeeee5"
 
 BACKEND = pathlib.Path(router_mod.__file__).resolve().parent.parent
 
@@ -235,17 +240,30 @@ async def test_resolve_all_returns_every_module_in_display_order():
 # ══════════════════════════════════════════════════════════════════════════
 
 def _driven():
-    """(handler, sql, args) for every statement the three handlers issue.
+    """(handler, sql, args) for every statement the SEVEN handlers issue.
 
     Driven directly rather than through the HTTP stack: `require_org_role`,
     `get_org_id` and the organisation-exists check are three pre-existing
     gates with their own tests, and re-deriving them query by query here
     would only move the capture further from the statements under test.
     Calling the handler supplies `user`/`org_id` the way `Depends` would.
+
+    ⚠ EVERY HANDLER, AND BOTH SCOPES OF EACH. Migration 253 added four
+    statements that exist twice — once over `graha_clients`, once over
+    `manav_employees` — plus a second upsert spelling and a DELETE. A capture
+    that drove only the client half would leave the employee statements
+    undescribed, which is precisely the state `routers/client_billing.py` was
+    in when both of its INSERTs named a column that had never existed.
     """
     stored_row = {
         "module": "ganit", "rule_key": "hsn_required", "state": "enforced",
         "set_by": SETTER, "set_at": SET_AT, "reason": "we always need HSN",
+    }
+    named = [{"user_id": SETTER, "setter_name": "Keval Shah"}]
+    written_override = {
+        "rule_key": "hsn_required", "state": "not_applicable",
+        "set_by": SETTER, "set_at": SET_AT, "reason": "composition dealer",
+        "scope_type": "client", "scope_id": SCOPE_CLIENT,
     }
 
     async def run():
@@ -276,6 +294,68 @@ def _driven():
                  "ganit",
                  router_mod.RulePatch(rule_key="hsn_required", state="enforced", reason="strict shop"),
                  _FakeRequest(), user={"user_id": SETTER}, org_id=ORG)),
+            # ── the override surface (migration 253) ──────────────────────
+            # `q` is bound on one and left NULL on the other: the ILIKE
+            # expression is exactly the untyped-parameter shape PgBouncer
+            # turns into an instant 500, so both arg shapes are described.
+            ("targets_client", {
+                "FROM public.graha_clients": [{"id": SCOPE_CLIENT, "name": "Acme Traders"}],
+             },
+             lambda: router_mod.list_scope_targets(
+                 "client", q="acme", user={"user_id": SETTER}, org_id=ORG)),
+            ("targets_employee", {
+                "FROM public.manav_employees": [{"id": SCOPE_EMPLOYEE, "name": "Priya Nair"}],
+             },
+             lambda: router_mod.list_scope_targets(
+                 "employee", q=None, user={"user_id": SETTER}, org_id=ORG)),
+            ("scope_client", {
+                "SELECT name FROM public.graha_clients": {"name": "Acme Traders"},
+                "FROM public.module_compliance_settings": [stored_row],
+                "FROM public.users": named,
+                "FROM public.module_subscriptions": [{"module_code": "ganit"}],
+             },
+             lambda: router_mod.get_scoped_settings(
+                 "client", SCOPE_CLIENT, user={"user_id": SETTER}, org_id=ORG)),
+            ("scope_employee", {
+                "SELECT name FROM public.manav_employees": {"name": "Priya Nair"},
+                "FROM public.module_compliance_settings": [stored_row],
+                "FROM public.users": named,
+                "FROM public.module_subscriptions": [{"module_code": "ganit"}],
+             },
+             lambda: router_mod.get_scoped_settings(
+                 "employee", SCOPE_EMPLOYEE, user={"user_id": SETTER}, org_id=ORG)),
+            ("patch_override", {
+                "SELECT name FROM public.graha_clients": {"name": "Acme Traders"},
+                # The OTHER upsert. Migration 253 replaced one unique index
+                # with two partial ones, and an ON CONFLICT inference clause
+                # has to match a partial index INCLUDING its predicate — so
+                # this spelling is a different statement from `patch`'s and
+                # has to be planned on its own.
+                "INSERT INTO public.module_compliance_settings": dict(written_override),
+                "FROM public.module_compliance_settings": [stored_row],
+                "FROM public.users": named,
+             },
+             lambda: router_mod.patch_scoped_setting(
+                 "ganit",
+                 router_mod.OverridePatch(
+                     rule_key="hsn_required", state="not_applicable",
+                     scope_type="client", scope_id=SCOPE_CLIENT,
+                     reason="composition dealer"),
+                 _FakeRequest(), user={"user_id": SETTER}, org_id=ORG)),
+            ("clear_override", {
+                # BEFORE the SELECT needle: "FROM public.module_compliance_
+                # settings" is a substring of the DELETE, and `_ScriptPool`
+                # answers with the first needle that matches.
+                "DELETE FROM public.module_compliance_settings": "DELETE 1",
+                "SELECT name FROM public.manav_employees": {"name": "Priya Nair"},
+                "FROM public.module_compliance_settings": [stored_row],
+                "FROM public.users": named,
+             },
+             lambda: router_mod.clear_scoped_setting(
+                 "ganit", _FakeRequest(), rule_key="hsn_required",
+                 scope_type="employee", scope_id=SCOPE_EMPLOYEE,
+                 reason="back to the firm default",
+                 user={"user_id": SETTER}, org_id=ORG)),
         ):
             pool = _ScriptPool(script)
             original, db._pool = db._pool, pool
@@ -290,6 +370,40 @@ def _driven():
         return out
 
     return asyncio.run(run())
+
+
+def test_the_capture_drives_every_handler_and_both_scopes():
+    """`_driven()` runs ONLY inside the `live` fixture, which SKIPS with no
+    database — so without this the capture is dead code on every developer
+    machine and in CI, and a handler dropped from it would leave the live half
+    quietly describing fewer statements while staying green. An empty or
+    shrunken capture is the one failure mode every live test above shares.
+    """
+    calls = _driven()
+    by_handler: dict[str, list[str]] = {}
+    for name, sql, _ in calls:
+        by_handler.setdefault(name, []).append(sql)
+    assert set(by_handler) == {
+        "get_all", "get_module", "patch",
+        "targets_client", "targets_employee", "scope_client", "scope_employee",
+        "patch_override", "clear_override",
+    }, sorted(by_handler)
+
+    seen = {name: " ".join(sqls) for name, sqls in by_handler.items()}
+    assert "FROM public.graha_clients" in seen["targets_client"]
+    assert "FROM public.manav_employees" in seen["targets_employee"]
+    assert "SELECT name FROM public.graha_clients" in seen["scope_client"]
+    assert "SELECT name FROM public.manav_employees" in seen["scope_employee"]
+    # Both upsert spellings, which are two different statements against two
+    # different partial indexes (migration 253).
+    assert "WHERE scope_type='org'" in seen["patch"]
+    assert "WHERE scope_type <> 'org'" in seen["patch_override"]
+    assert "DELETE FROM public.module_compliance_settings" in seen["clear_override"]
+    # `audit.emit` is fire-and-forget; the drain in `_driven` is what puts its
+    # INSERT on the capture, and a drain that stopped working would take the
+    # audit statement out of the live description with it.
+    for name in ("patch", "patch_override", "clear_override"):
+        assert "INSERT INTO public.audit_log" in seen[name], name
 
 
 async def _payload(handler, script):
@@ -510,11 +624,11 @@ def test_the_upsert_names_real_columns_and_omits_no_required_one(live):
         "the premise changed: org_id/module/rule_key are no longer NOT NULL "
         f"without a default on public.{TABLE}")
 
-    seen = 0
+    seen = []
     for path, sql, _, _ in params:
         if f"INSERT INTO public.{TABLE}" not in sql:
             continue
-        seen += 1
+        seen.append(sql)
         cols = set(_column_list(sql))
         assert not (cols - known), (
             f"[{path}] names columns public.{TABLE} does not have: "
@@ -522,22 +636,48 @@ def test_the_upsert_names_real_columns_and_omits_no_required_one(live):
         assert not (required - cols), (
             f"[{path}] omits NOT NULL columns with no default: "
             f"{sorted(required - cols)}")
-    assert seen == 1, f"expected the upsert, described {seen}"
+
+    # TWO upserts, because migration 253 replaced the single unique index with
+    # a PAIR of partial ones and an ON CONFLICT inference clause has to match a
+    # partial index including its predicate. The org spelling left alone after
+    # 253 matches no constraint at all and every save 500s with "there is no
+    # unique or exclusion constraint matching the ON CONFLICT specification" —
+    # so both have to be planned, and asserting a count of one would let the
+    # override spelling go undescribed.
+    assert len(seen) == 2, f"expected both upserts, described {len(seen)}"
+    predicates = sorted(
+        re.search(r"ON CONFLICT.*?WHERE\s+(scope_type\s*(?:=|<>)\s*'org')",
+                  sql, re.S).group(1).replace(" ", "")
+        for sql in seen)
+    assert predicates == ["scope_type<>'org'", "scope_type='org'"], predicates
 
 
-def test_the_three_statements_the_screen_depends_on_were_all_described(live):
+def test_every_statement_the_screen_depends_on_was_described(live):
     """A guard on the guard. Each of these is a query a green offline suite
     cannot vouch for, and an empty capture would make every test above pass
     by describing nothing."""
     _, params, _ = live
     described = " ".join(sql for _, sql, _, _ in params)
     for needle in (
-        f"FROM public.{TABLE}",          # resolve / resolve_all
+        f"FROM public.{TABLE}",              # resolve / resolve_all
         "FROM public.module_subscriptions",  # which modules are on
-        "FROM public.users",              # names, not ids
-        f"INSERT INTO public.{TABLE}",   # the upsert
+        "FROM public.users",                 # names, not ids
+        f"INSERT INTO public.{TABLE}",       # the upsert
+        f"DELETE FROM public.{TABLE}",       # clearing an override
+        # The override subjects. Both tables, and both statements over each:
+        # the picker's list and the org-ownership row lookup are different
+        # SQL and each can be wrong on its own.
+        "SELECT name FROM public.graha_clients",
+        "SELECT name FROM public.manav_employees",
+        # The picker's search predicate — the untyped-parameter expression
+        # PgBouncer turns into an instant 500 if the casts are ever dropped.
+        "ILIKE",
     ):
         assert needle in described, f"never captured a statement with {needle!r}"
+    for table in ("public.graha_clients", "public.manav_employees"):
+        assert sum(table in sql for _, sql, _, _ in params) >= 2, (
+            f"only one statement over {table} was described — the picker list "
+            f"and the org-ownership lookup are two different statements")
     assert pathlib.Path(router_mod.__file__).name == "compliance_settings.py"
 
 
@@ -576,8 +716,16 @@ def test_the_state_check_constraint_still_matches_the_python_vocabulary(live):
 def test_the_handlers_under_test_are_the_ones_the_app_mounts():
     """The capture drives functions by name; a rename would leave this file
     describing statements nothing serves."""
-    for fn in ("get_all_settings", "get_module_settings", "patch_module_setting"):
+    for fn in (
+        "get_all_settings", "get_module_settings", "patch_module_setting",
+        # Migration 253's override surface.
+        "list_scope_targets", "get_scoped_settings",
+        "patch_scoped_setting", "clear_scoped_setting",
+    ):
         assert inspect.iscoroutinefunction(getattr(router_mod, fn))
+    for helper in ("_scope_uuid", "_override_scope", "_scope_name",
+                   "_setter_maps", "_named_effective"):
+        assert callable(getattr(router_mod, helper))
 
     # Identity, not `app.routes`. This FastAPI version keeps an included
     # router as an opaque `_IncludedRouter` with no `path` until it is
@@ -592,4 +740,49 @@ def test_the_handlers_under_test_are_the_ones_the_app_mounts():
     assert paths == {
         "/api/v1/org/compliance",
         "/api/v1/org/compliance/{module}",
+        "/api/v1/org/compliance/targets/{scope_type}",
+        "/api/v1/org/compliance/scope/{scope_type}/{scope_id}",
+        "/api/v1/org/compliance/{module}/override",
     }, paths
+
+
+def test_each_override_url_resolves_to_the_handler_that_owns_it():
+    """The pin above says the paths are declared. This says they are REACHED.
+
+    `/{module}` is declared before `/targets/{scope_type}` and FastAPI matches
+    in declaration order, so the question is real: if the override paths were
+    one segment shorter — `/targets` rather than `/targets/{scope_type}` — the
+    greedy parameter would swallow them and every call would 404 with
+    "'targets' has no compliance settings", which reads like a registry
+    problem rather than a routing one. Measured here rather than reasoned
+    about, because reasoning about it got the answer wrong once.
+    """
+    from starlette.routing import Match
+
+    def resolves(method, path):
+        for route in router_mod.router.routes:
+            match, child = route.matches({
+                "type": "http", "method": method, "path": path,
+                "path_params": {}, "root_path": "", "headers": [],
+            })
+            if match is Match.FULL:
+                return route.endpoint.__name__, child.get("path_params")
+        return None, None
+
+    base = "/api/v1/org/compliance"
+    for method, path, expected, params in (
+        ("GET", base, "get_all_settings", {}),
+        ("GET", f"{base}/ganit", "get_module_settings", {"module": "ganit"}),
+        ("PATCH", f"{base}/ganit", "patch_module_setting", {"module": "ganit"}),
+        ("GET", f"{base}/targets/client", "list_scope_targets",
+         {"scope_type": "client"}),
+        ("GET", f"{base}/scope/employee/{SCOPE_EMPLOYEE}", "get_scoped_settings",
+         {"scope_type": "employee", "scope_id": SCOPE_EMPLOYEE}),
+        ("PATCH", f"{base}/ganit/override", "patch_scoped_setting",
+         {"module": "ganit"}),
+        ("DELETE", f"{base}/ganit/override", "clear_scoped_setting",
+         {"module": "ganit"}),
+    ):
+        assert resolves(method, path) == (expected, params), (
+            f"{method} {path} resolves to {resolves(method, path)[0]}, "
+            f"not {expected}")

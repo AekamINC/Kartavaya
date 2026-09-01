@@ -239,7 +239,7 @@ describe('Ganit · creating the customer from the invoice', () => {
     expect(byLabel('Company').textContent).toContain('Zenith Labs');
   });
 
-  it('files a person created here as a CUSTOMER, not the endpoint default lead', async () => {
+  it('files a person created here as a CONTACT at the company, never a lead', async () => {
     api.post.mockImplementation((url) => {
       if (url === '/v1/graha/contacts') {
         return Promise.resolve({ data: { status: 'created', id: 'ct-new', name: 'Neha Rao' } });
@@ -260,8 +260,17 @@ describe('Ganit · creating the customer from the invoice', () => {
       .find(b => b.textContent.includes('Add contact')));
 
     const [, body] = postsTo('/v1/graha/contacts')[0];
-    expect(body.contact_type).toBe('customer');
+    // ⚠ `'contact'`, not `'customer'` — migration 254 removed `customer` as a
+    // kind of person. The test's POINT is unchanged and still worth holding:
+    // somebody you have just billed must not be filed as a LEAD, because that
+    // pollutes every lead list and feeds lead scoring with a person who has
+    // already bought. What changed is where "this is a customer" lives — on the
+    // COMPANY (`graha_clients.is_sales_customer`), which this form already
+    // names one line above. Before the change, 7 clients held a 'customer'
+    // contact and a 'vendor' contact at the same time.
+    expect(body.contact_type).toBe('contact');
     expect(body.contact_type).not.toBe('lead');
+    expect(body.contact_type).not.toBe('customer');
     // Attached to the company already on the form, so the CRM does not gain
     // another orphan contact.
     expect(body.client_id).toBe('cl-1');

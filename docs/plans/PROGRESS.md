@@ -8614,3 +8614,67 @@ onto every order-raised invoice, so it would not just misdraw a screen.
 writer and the clear path are built and tested against the live schema; the UI
 that switches between firm / client / employee, and custom fields beyond
 `graha_custom_fields`' contacts, are not built.
+
+
+## 2026-09-01 (late) — customer becomes client, and three builds hardened
+
+**THE OWNER'S CALL:** *"customer and clients are same why you are separating? ...
+Customer should get bye bye and client only remains."* CLAUDE.md already said it
+— the product had drifted from its own written rule.
+
+**The number that settled it:** 35 clients, 26 already flagged
+`is_sales_customer`; 28 contacts typed `customer` over only 14 companies; **26 of
+35 clients had MIXED contact types**, and 7 were simultaneously 'customer' and
+'vendor'. The per-person type disagreed with the company relationship more often
+than it agreed.
+
+**Migrations 254 + 255.** 254 creates a company for the 4 orphans, links them,
+moves `is_sales_customer` onto the client, retypes 28 contacts to `'contact'`,
+and widens the CHECK to accept BOTH values. 255 removes `'customer'` once the
+deploy lands. ⚠ Two migrations because either order alone has a window where a
+real button 500s. **254 aborted on its first run** — the retype hit the old CHECK
+because I widened it at the END. The transaction rolled back and nothing needed
+repair; the constraint now widens first.
+
+**Also fixed:** `dristi.py:278` reported the firm's "customers" KPI as
+`COUNT(*) FILTER (WHERE contact_type='customer')` over CONTACTS — the headline
+customer count was the size of the address book. It counts companies now.
+
+**Migrations 256 + 257** — `doc_status` on `subscription_invoices`, and
+`custom_data` on `ganit_invoices` plus `'invoice'` in the custom-fields
+allowlist. **45 of 97 live invoices already carried a `customer_ref`** — the
+customer's own PO number — and `invoice_pdf.py` mentioned it zero times. It is
+printed now, on invoices and quotations.
+
+⚠ **I RAISED A FALSE SECURITY ALARM AND ITS OWN GUARD CAUGHT IT.** My audit said
+four views in `public` lacked `security_invoker`, owned by a BYPASSRLS role and
+granted to `anon` — the exact 2026-08-29 hole. I wrote migration 258 to close it.
+The migration's verify block refused to commit. The reason: `SET (security_invoker
+= on)` stores the string **`on`**, and my predicate matched only **`true`**. All
+four were already correct. 258 was deleted; `tests/test_public_views_obey_rls.py`
+replaces it and accepts every truthy spelling — because the database holds both.
+
+**THREE BUILDS SHIPPED, THEN HARDENED.** Adversarial review found the same fault
+in all three: tests satisfied by their own shape.
+
+- invoice-refs: two `inspect.getsource` substring tests. `customer_ref` →
+  `customer_refX` kept them GREEN while the bug returned. Replaced with tests
+  that drive the real download routes; **11 mutations, all caught**.
+- settings scope UI: **zero** tests touched the four new handlers — including the
+  org-ownership check and the `scope_id` strip, the two security properties.
+  Now 59 new tests, **21 mutations, 21 caught**, with a fake pool that EVALUATES
+  the WHERE clause the router wrote (a scripted mock is green over a router with
+  `org_id` deleted; this one is not).
+- platform sweep: the entire money-writing path was untested. **GST → 0 survived
+  all 32 tests.** Now driven end to end; all 7 named mutants plus 7 more caught.
+
+Also corrected three comments that stated FALSE reasons (a "Seg no-ops" claim
+that `Seg.jsx:56` disproves, and a `_setter_maps` rationale that had the bug
+backwards). A comment that lies is worse than no comment.
+
+**Totals:** 3,400 frontend tests, 1,295 backend, 152 live-schema tests with no
+skips, 20 gates, build clean.
+
+**Not done:** `auto_invoice` is TRUE on zero rows, so the sweep raises nothing
+until armed. The halted-org bucket is reported as `skipped` and should be
+distinguishable — two tests pin that and say so.

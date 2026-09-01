@@ -127,6 +127,22 @@ class InvoiceCreate(BaseModel):
     #:
     #: NOT a link to a purchase-order record. It is a string they supplied.
     customer_ref: str = ""
+    #: The org's OWN extra fields on this document — `{field_id: value}`, the
+    #: same shape `graha_contacts.custom_data` and the other four entities of
+    #: migration 131 carry, stored in `ganit_invoices.custom_data` (257).
+    #:
+    #: KEYED BY THE DEFINITION'S UUID, never by its name: a field can be
+    #: renamed and a name-keyed store would orphan every value already saved
+    #: under the old one. `CustomFieldInputs.jsx` writes the same keys, and
+    #: `_invoice_custom_fields` resolves them back to labels for the PDF —
+    #: which is the only place the id is ever turned into something a human
+    #: reads, because an id must never reach a screen or a page.
+    #:
+    #: `{}` is the empty answer and is what a document with no extra fields
+    #: stores. NOT validated against the definitions here: an org that deletes
+    #: a field must not thereby make every existing invoice unsaveable, so an
+    #: unknown key is kept and simply goes unrendered.
+    custom_data: dict = {}
     doc_status: str = ""
     #: The LOGIN credited with the sale — `users.user_id` (TEXT), attributed to
     #: an account rather than an employee because commission and the sales
@@ -819,16 +835,17 @@ async def create_invoice(
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
                 " balance_due, notes, terms, created_by, doc_status, client_id, "
-                " customer_ref, compliance_snapshot, salesperson_id) "
+                " customer_ref, compliance_snapshot, salesperson_id, custom_data) "
                 # `client_id` is appended as $23 rather than slotted in beside
                 # `contact_id`: $18 is deliberately bound twice (total and
                 # balance_due), so renumbering to keep the columns tidy is a
                 # chance to break the one placeholder that is not 1:1.
                 # `salesperson_id` follows the same rule as $26 — appended, not
-                # slotted in — for exactly that reason.
+                # slotted in — for exactly that reason, and `custom_data` is
+                # appended as $27 under the same rule.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
                 " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22, "
-                " NULLIF($23,'')::uuid, NULLIF(btrim($24),''), $25::jsonb, NULLIF($26,'')) "
+                " NULLIF($23,'')::uuid, NULLIF(btrim($24),''), $25::jsonb, NULLIF($26,''), $27::jsonb) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
                 inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
@@ -846,6 +863,14 @@ async def create_invoice(
                 # $26. Never None (untyped NULL through PgBouncer = instant 500);
                 # empty string is "no salesperson", NULLIF turns it to NULL.
                 body.salesperson_id or "",
+                # $27. Dumped here rather than passed as a dict for the same
+                # reason `line_items` is on line 12: this file's convention is
+                # to serialise at the call site, and `db.py::_json_encoder`
+                # passes an already-serialised object straight through instead
+                # of nesting it. `{}` — never None — because the column is
+                # `NOT NULL DEFAULT '{}'` and "no extra fields" is an empty
+                # object, not an absent one.
+                json.dumps(body.custom_data or {}),
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -1006,13 +1031,58 @@ async def update_invoice(
         _sp_set = f", salesperson_id=NULLIF(${_by_idx + 1},'')"
         _sp_params = [body.salesperson_id or ""]
 
+    # ── THE CUSTOMER'S REFERENCE, WHICH THIS ROUTE COULD NOT CHANGE ─────────
+    #
+    # `customer_ref` was on the create INSERT and on nothing else. So an
+    # unpaid invoice — which this product deliberately lets a firm correct and
+    # re-send — could have every other field amended and not this one: the form
+    # posted the new PO number, the API accepted the request, and the column
+    # kept whatever it was created with. Silently, with a 200. Exactly the
+    # class of failure `test_the_customer_reference_is_declared_on_the_request`
+    # exists to catch one door earlier, and it only covered the other door.
+    #
+    # Gated on `model_fields_set` for the reason the company block above spells
+    # out at length: `InvoiceCreate.customer_ref` DEFAULTS to "", so binding it
+    # unconditionally would make a PATCH that never mentions the reference
+    # erase one — a description typo costing the customer's PO number off their
+    # own invoice. Named-and-blank still clears it, which is how a reference
+    # entered in error is removed.
+    #
+    # `btrim`+`NULLIF` matches the INSERT: the CHECK refuses '' and '   '.
+    _ref_set = ""
+    _ref_params = []
+    _ref_idx = _by_idx + 1 + len(_sp_params)
+    if "customer_ref" in _named:
+        _ref_set = f", customer_ref=NULLIF(btrim(${_ref_idx}),'')"
+        _ref_params = [body.customer_ref or ""]
+
+    # ── The org's own fields ────────────────────────────────────────────────
+    #
+    # Same append-together rule as the four clauses above, and the index is
+    # DERIVED from the parameters that will actually be bound rather than
+    # written out as a number. There are now sixteen possible parameter counts
+    # on this statement — four optional clauses — and a hard-coded `$21` here
+    # would be correct on some of those paths and would bind somebody's user id
+    # into a jsonb column on the others. The `_by_idx` comment above records
+    # that exact bug being avoided once already.
+    #
+    # Gated on `model_fields_set` for the same reason as the reference: `{}` is
+    # the model default, and an unconditional bind would let any PATCH that
+    # does not mention custom fields wipe every value the org's own fields hold
+    # on that invoice. Sending `{}` explicitly still clears them.
+    _cd_set = ""
+    _cd_params = []
+    if "custom_data" in _named:
+        _cd_set = f", custom_data=${_ref_idx + len(_ref_params)}::jsonb"
+        _cd_params = [json.dumps(body.custom_data or {})]
+
     row = await pool.fetchrow(
         "UPDATE public.ganit_invoices SET "
         " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
         " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
         " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
         " discount=$13, total=$14, balance_due=$14, notes=$15, terms=$16,"
-        " updated_at=NOW()" + _client_set + _by_set + _sp_set + " "
+        " updated_at=NOW()" + _client_set + _by_set + _sp_set + _ref_set + _cd_set + " "
         "WHERE id=$17::uuid AND org_id=$18::uuid "
         "RETURNING id, invoice_number, total, doc_status",
         body.contact_id, inv_date, due, body.place_of_supply, body.is_igst,
@@ -1021,7 +1091,7 @@ async def update_invoice(
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
         body.notes, body.terms, str(invoice_id), org_id,
-        *_client_params, user["user_id"], *_sp_params,
+        *_client_params, user["user_id"], *_sp_params, *_ref_params, *_cd_params,
     )
     return {"status": "updated", **dict(row)}
 
@@ -1132,6 +1202,78 @@ async def get_invoice(
     }
 
 
+async def _invoice_custom_fields(pool, org_id: str, custom_data) -> list[dict]:
+    """The org's own invoice fields, as `{label, value, type}` — for the PDF.
+
+    ── Why the router does this and not the renderer ────────────────────────
+
+    `ganit_invoices.custom_data` is keyed by the field DEFINITION's uuid, not
+    by its name (`CustomFieldInputs.jsx` keys by id deliberately, so renaming
+    a field does not orphan every value already stored under the old name).
+    A uuid is not a label and must never reach a page, so the labels have to be
+    read out of `graha_custom_fields` — a database round trip, which
+    `services/invoice_pdf.py` has never had and must not grow: it renders in a
+    worker thread via `asyncio.to_thread`.
+
+    ── The order of the two cheap guards is the point ───────────────────────
+
+    An invoice with no values returns BEFORE the query. Today that is every
+    invoice in the product — 97 of 97 carry no custom data, because until
+    migration 257 there was nowhere to put any — so the ordinary PDF download
+    costs exactly what it cost yesterday and gains a query only once a firm
+    actually defines and fills a field.
+
+    ⚠ AND `custom_data` MAY BE NULL. The column arrives with
+    `DEFAULT '{}'`, which backfills existing rows, but a NULL can still be
+    written explicitly and every row created between the deploy and the
+    migration has no column at all — `dict(row)` then has no such key and
+    `.get` returns None. All three cases collapse to `{}` here rather than
+    raising on `.items()` inside the renderer, because a PDF that 500s is
+    strictly worse than a PDF without the firm's extra fields.
+
+    ── An unrecognised key is DROPPED, and that is deliberate ───────────────
+
+    Only ACTIVE definitions are joined, so a value whose field was deleted
+    prints nothing: there is no label left to print it under, and inventing one
+    from the uuid would put an id on a customer's invoice. The value is not
+    erased — `delete_custom_field` only flips `is_active`, so re-activating the
+    definition brings every stored value back onto the document.
+    """
+    if isinstance(custom_data, str):
+        # Defensive for the same reason `line_items` is parsed defensively
+        # three routes above: jsonb was double-encoded across this codebase
+        # once, and an unrepaired row must render a document rather than throw.
+        try:
+            custom_data = json.loads(custom_data or "{}")
+        except (TypeError, ValueError):
+            custom_data = {}
+    if not isinstance(custom_data, dict) or not custom_data:
+        return []
+
+    defs = await pool.fetch(
+        "SELECT id, field_name, field_type FROM public.graha_custom_fields "
+        "WHERE org_id=$1::uuid AND entity_type=$2 AND is_active=TRUE "
+        # The same ORDER BY `list_custom_fields` uses, so the sequence on the
+        # document is the sequence the admin arranged on the settings tab and
+        # the sequence the form asked for them in. Three surfaces, one order.
+        "ORDER BY sort_order, field_name",
+        org_id, "invoice",
+    )
+
+    out = []
+    for d in defs:
+        value = custom_data.get(str(d["id"]))
+        # `None` and `""` are "not filled in". `False` and `0` are answers and
+        # are passed on — the renderer decides what an unticked box means, and
+        # it is the only place that decision should live.
+        if value is None or value == "":
+            continue
+        out.append({
+            "label": d["field_name"], "value": value, "type": d["field_type"],
+        })
+    return out
+
+
 @router.get("/invoices/{invoice_id}/pdf")
 async def download_invoice_pdf(
     invoice_id: UUID,
@@ -1184,6 +1326,14 @@ async def download_invoice_pdf(
     for jsonb_field in ("line_items",):
         if isinstance(invoice.get(jsonb_field), str):
             invoice[jsonb_field] = json.loads(invoice[jsonb_field])
+
+    # The org's own fields, resolved from uuid keys to LABELS before the
+    # renderer sees them — see `_invoice_custom_fields`. `custom_data` itself
+    # also reaches the renderer through `SELECT i.*` and is ignored there; this
+    # is the only key `invoice_pdf` reads for them, so the id never travels
+    # anywhere it could be printed.
+    invoice["custom_fields"] = await _invoice_custom_fields(
+        pool, org_id, invoice.get("custom_data"))
 
     contact = {
         "name": invoice.pop("contact_name", None),

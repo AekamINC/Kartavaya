@@ -245,7 +245,10 @@ export default function OrderForm({ onCreated, onCancel }) {
         // person you have just taken an order from is not a lead: filed as one
         // they pollute every lead list and feed lead scoring with somebody who
         // has already bought.
-        contact_type: 'customer',
+        //
+        // `'contact'` and no longer `'customer'` (migration 254) — the company
+        // on this form is the customer, and it is already `form.client_id`.
+        contact_type: 'contact',
       });
       const made = {
         id: String(r.data?.id), name: r.data?.name || name,

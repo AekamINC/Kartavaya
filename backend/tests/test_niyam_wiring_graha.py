@@ -305,7 +305,9 @@ CONTACT_ID = uuid.UUID("c0000000-0000-0000-0000-000000000001")
 
 CONVERTED_ROW = {
     "id": str(CONTACT_ID),
-    "contact_type": "customer",
+    # `contact` — migration 254 removed `customer` as a kind of person. The
+    # customer is the COMPANY, and `client_id` below is it.
+    "contact_type": "contact",
     "company": "Acme",
     "client_id": "a0000000-0000-0000-0000-000000000001",
 }
@@ -317,7 +319,10 @@ async def test_convert_lead_emits_the_row_as_converted(pool, emitted):
         pool.calls.append((q, a))
         if "UPDATE public.graha_contacts" in q:
             return dict(CONVERTED_ROW)
-        return {"id": str(CONTACT_ID), "contact_type": "lead"}
+        # `client_id` is read by the conversion now: a lead that already
+        # belongs to a company converts without asking for one.
+        return {"id": str(CONTACT_ID), "contact_type": "lead",
+                "client_id": CONVERTED_ROW["client_id"]}
 
     pool.fetchrow = _fetchrow
 
@@ -334,7 +339,7 @@ async def test_convert_lead_emits_the_row_as_converted(pool, emitted):
     assert kw["contact_id"] == str(CONTACT_ID)
     # The row AS CONVERTED: contact_type is what the contact became and
     # client_id is the company it now belongs to — never the pre-check row.
-    assert kw["row"]["contact_type"] == "customer"
+    assert kw["row"]["contact_type"] == "contact"
     assert kw["row"]["client_id"] == CONVERTED_ROW["client_id"]
 
     # The pre-check rides inside the transaction under FOR UPDATE, so two
@@ -359,10 +364,10 @@ async def test_convert_lead_unknown_contact_is_404_and_silent(pool, emitted):
 
 
 @pytest.mark.asyncio
-async def test_convert_lead_already_customer_is_400_and_silent(pool, emitted):
+async def test_convert_lead_already_converted_is_400_and_silent(pool, emitted):
     async def _fetchrow(q, *a):
         pool.calls.append((q, a))
-        return {"id": str(CONTACT_ID), "contact_type": "customer"}
+        return {"id": str(CONTACT_ID), "contact_type": "contact"}
 
     pool.fetchrow = _fetchrow
 
@@ -370,5 +375,42 @@ async def test_convert_lead_already_customer_is_400_and_silent(pool, emitted):
         await graha.convert_lead(CONTACT_ID, user={"user_id": ACTOR}, org_id=ORG)
     assert e.value.status_code == 400
     assert emitted == []
+    assert not any("UPDATE public.graha_contacts" in q for q, _ in pool.calls), \
+        "the refusal wrote anyway"
+
+
+@pytest.mark.asyncio
+async def test_convert_lead_with_no_company_is_refused_and_silent(pool, emitted):
+    """THE FLAW THE OWNER NAMED, AS A TEST.
+
+    "so only customer doesnt have client it got converted to customer and sales
+    order got generated without an customer or client how invoice can be assign
+    correctly. thats big flaw."
+
+    `convert_lead` used to do exactly one thing — set `contact_type='customer'`
+    — and never created or required a `graha_clients` row, while its own comment
+    claimed "client_id is the company it now belongs to". A lead converted this
+    way became a customer belonging to no company, and every document raised
+    against them afterwards belonged to no company either: 21 invoices worth
+    ₹2,54,172 and a ₹49,08,800 order reached exactly that state.
+
+    A conversion that cannot name a company must refuse, and it must refuse
+    SILENTLY — an automation rule firing `lead.converted` for a conversion that
+    did not happen is worse than no rule.
+    """
+    async def _fetchrow(q, *a):
+        pool.calls.append((q, a))
+        return {"id": str(CONTACT_ID), "contact_type": "lead", "client_id": None}
+
+    pool.fetchrow = _fetchrow
+
+    with pytest.raises(HTTPException) as e:
+        await graha.convert_lead(CONTACT_ID, user={"user_id": ACTOR}, org_id=ORG)
+
+    assert e.value.status_code == 400
+    # The message names what to do, the standard `validate_tds_challan` is held
+    # to — a refusal that does not say how to proceed is a dead end.
+    assert "company" in str(e.value.detail).lower()
+    assert emitted == [], "a refused conversion still announced itself"
     assert not any("UPDATE public.graha_contacts" in q for q, _ in pool.calls), \
         "the refusal wrote anyway"

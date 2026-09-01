@@ -203,7 +203,39 @@ async def download_quotation_pdf(
         "quote_number": invoice.get("invoice_number"),
         "quote_date": invoice.get("invoice_date"),
         "valid_until": invoice.get("due_date"),
-        "reference": invoice.get("notes") or "",
+        # ── YES, THE QUOTATION NEEDS THE CUSTOMER'S REFERENCE TOO ────────────
+        #
+        # A quotation is answering something: an RFQ number, a tender number, a
+        # framework contract, a work order the client has already raised. The
+        # client's buyer files the reply against that number, so a quotation
+        # without it is at least as hard to place as an invoice without a PO —
+        # and this is the SAME COLUMN and the SAME FORM FIELD, because a
+        # quotation is a `ganit_invoices` row with `invoice_type='quotation'`
+        # and `InvoiceForm.jsx` serves all five document types from one layout.
+        # Someone who fills "Customer reference" in on a quotation is entitled
+        # to see it come out on the quotation.
+        #
+        # The design ALREADY HAS THE CELL. `quotation_pdf.py:138` prints a
+        # `Reference` cell in the meta strip, in mono, exactly where an
+        # identifier belongs — so nothing new is drawn and no second generator
+        # grows a second opinion about what a reference is. All that was wrong
+        # was what fed it.
+        #
+        # ⚠ AND IT WAS FED `notes`, WHICH IS NOT A REFERENCE. `notes` is the
+        # free-text box the form labels "Notes" and hints "Shown on the
+        # invoice" — delivery instructions, a thank-you, a caveat. Under a
+        # mono `Reference` heading a sentence reads as an identifier the client
+        # should quote back, which is wrong in both directions: it dresses
+        # prose up as a code, and it left the actual code off the page.
+        #
+        # `notes` is KEPT AS THE FALLBACK rather than deleted. Every quotation
+        # issued before today printed its notes in this cell, and silently
+        # blanking that for a quotation whose customer_ref is empty would take
+        # information off a document the client may already be holding. Where
+        # both exist the reference wins, because that is what the cell means.
+        # (`notes` still has no home of its own on either generator — recorded
+        # as an open gap, not fixed here.)
+        "reference": invoice.get("customer_ref") or invoice.get("notes") or "",
         "scope_summary": invoice.get("terms") or "",
         "line_items": invoice.get("line_items") or [],
         "subtotal": invoice.get("subtotal"),

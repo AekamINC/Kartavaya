@@ -204,7 +204,9 @@ _AUDIENCE_ALIASES = {"label": "tag"}
 # staging.graha_contacts.contact_type CHECK, migration 018. The comparison is
 # exact and case sensitive because the column is, so 'Customer' would silently
 # match nobody — which is why the wrong case is refused here rather than tried.
-CONTACT_TYPES = ("lead", "customer", "vendor", "partner")
+#: `customer` removed by migration 254 — a customer is a COMPANY
+#: (`graha_clients.is_sales_customer`), not a kind of person.
+CONTACT_TYPES = ("lead", "contact", "vendor", "partner")
 
 _SCORE_REFUSAL = "min_score must be a whole number between 0 and 100."
 
@@ -309,8 +311,11 @@ def _audience_filter_validator(cls, v):
     return normalise_audience_filter(v)
 
 
+#: `customer` removed by migration 254 — a customer is a COMPANY, so a segment
+#: of "customers" was never a segment of people. `contact` is the person at a
+#: client; whether that client is a customer is `graha_clients.is_sales_customer`.
 _TYPE_PLURALS = {
-    "lead": "leads", "customer": "customers",
+    "lead": "leads", "contact": "contacts",
     "vendor": "vendors", "partner": "partners",
 }
 

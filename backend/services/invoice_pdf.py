@@ -208,6 +208,82 @@ def _org_gstin_line(org_gstin: str, org_pan: str, invoice_type: str) -> str:
 # stay as a defensive net for a bypassed check, not as a customer-facing mark.
 
 
+def _custom_details_html(fields) -> str:
+    """The org's OWN extra fields on this invoice, as a labelled block — or "".
+
+    ── What arrives here, and what does NOT ─────────────────────────────────
+
+    `invoice["custom_fields"]` is a list of `{label, value, type}` already
+    resolved by `routers/ganit.py::_invoice_custom_fields`. It is NOT the raw
+    `ganit_invoices.custom_data` column, which also reaches this module through
+    `SELECT i.*` and is deliberately ignored: that jsonb is keyed by the field
+    definition's UUID (`CustomFieldInputs.jsx` keys by id on purpose, so
+    renaming a field does not orphan every value already saved under the old
+    name), and a UUID is not a label. Resolving it needs `graha_custom_fields`,
+    which needs a database, which this module has never had and must not grow —
+    `generate_invoice_pdf` is called from a worker thread.
+
+    So the router does the join and this renders the pairs. The consequence
+    worth stating: a caller that does not resolve them passes nothing and this
+    returns "", which is why `scripts/render_documents.py` renders a document
+    with no additional details rather than crashing on a missing key.
+
+    ── Which values print ───────────────────────────────────────────────────
+
+    Only fields with something to say. An org that defines six invoice fields
+    and fills two on this invoice gets two rows, not six with four dashes — the
+    same rule the meta strip's customer reference follows, and for the same
+    reason: an empty labelled row on a customer's invoice states a gap that is
+    usually not a gap.
+
+    ⚠ AN UNTICKED CHECKBOX IS NOT AN ANSWER, and prints nothing. A checkbox
+    starts unticked, so `false` is indistinguishable from "nobody was asked",
+    and printing "No" against every unticked box would put the firm's internal
+    defaults on the face of a customer's invoice. A ticked one prints "Yes",
+    because `true` was a choice somebody made.
+
+    Zero is NOT the same case and DOES print: a number field holding 0 was
+    typed, and `0` is a value a reader may be relying on.
+
+    A `date` value is passed through `R.date_label` for the reason the meta
+    strip already gives — this document must not be the one printing the
+    database's `2026-07-08` where the rest of the set prints `08 Jul 2026`.
+    A value that does not parse as a date is passed through unchanged.
+    """
+    lines = []
+    for f in fields or []:
+        if not isinstance(f, dict):
+            continue
+        label = str(f.get("label") or "").strip()
+        if not label:
+            continue
+        value = f.get("value")
+        # `bool` before anything else: `isinstance(True, int)` is true in
+        # Python, so a ticked box tested as a number would print "1".
+        if isinstance(value, bool):
+            if not value:
+                continue
+            text = "Yes"
+        else:
+            text = str(value if value is not None else "").strip()
+            if not text:
+                continue
+            if str(f.get("type") or "") == "date":
+                text = R.date_label(text)
+        lines.append(f'{R.esc(label)} <span class="num num--left">{R.esc(text)}</span>')
+
+    if not lines:
+        return ""
+    # The same label/value shape as the Payment details block below, because it
+    # is the same kind of content: short named facts, not prose. `.party__a` is
+    # brand.css's body ink and `.num--left` its left-aligned tabular figures.
+    return R.block(
+        "Additional details",
+        f'<div class="party__a">{"<br>".join(lines)}</div>',
+        top="12px",
+    )
+
+
 def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | None = None) -> str:
     check = check or DocumentCheck(document="invoice")
     invoice, org, contact = invoice or {}, org or {}, contact or {}
@@ -258,7 +334,51 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
             "Place of supply",
             R.esc(invoice.get("place_of_supply") or "") or "&mdash;",
         ))
-    meta = R.meta_strip(meta_cells)
+
+    # ── The customer's own reference, when they gave one ─────────────────────
+    #
+    # `customer_ref` has been captured on the form, stored, CHECK-constrained
+    # and shown in the register since migration 192 — and printed on nothing.
+    # Measured 2026-09-01: 45 of 97 live invoices carry a value, so on nearly
+    # half the documents this product has ever issued, the purchase-order or
+    # work-order number the customer's own accounts-payable team matches the
+    # payment against was asked for, kept, and then left off the one artefact
+    # the customer actually receives. The owner's report — "org > client >
+    # asked to have PO in their invoice" — is precisely this gap, and the whole
+    # of it: the column, the form field and the API were already there.
+    #
+    # THE LABEL IS THE FORM'S OWN WORDING, and deliberately not a new one.
+    # `InvoiceForm.jsx` asks for "Customer reference" and explains it as "Their
+    # PO, contract or work-order number, if they gave one". Printing it here as
+    # "Your reference" or "PO no." would be a second name for one field, and
+    # the person who typed it could not then tell whether the thing on the page
+    # is the thing they filled in — nor could the customer, who quotes it back.
+    #
+    # APPENDED, so nothing already on the strip moves. `.meta` is a four-column
+    # grid (brand.css:73) and the three cells above fill three of them, so this
+    # takes the empty fourth rather than reflowing the statutory particulars a
+    # reader looks for in a fixed place.
+    #
+    # ⚠ ABSENT RENDERS NOTHING AT ALL — no cell, no label, not a dash. 52 of
+    # those 97 invoices carry no reference, and a labelled empty cell would
+    # announce a gap on half the documents in the product where there is none:
+    # most customers simply give no PO. That is the same rule the recipient's
+    # GSTIN follows twenty lines below, for the same reason.
+    #
+    # `.strip()` mirrors `ganit_invoices_customer_ref_ck`, which refuses '' and
+    # '   ' precisely so that "has a reference" has one answer. The check post-
+    # dates 45 rows and the router is not the only thing that can write this
+    # column, so whitespace is treated here as what it is — no reference —
+    # rather than trusted not to exist.
+    #
+    # Mono for the same reason the quotation's Reference cell is mono
+    # (`quotation_pdf.py:139`): it is an identifier to be copied character for
+    # character onto a remittance advice, not prose to be read.
+    customer_ref = str(invoice.get("customer_ref") or "").strip()
+    if customer_ref:
+        meta_cells.append(("Customer reference", R.esc(customer_ref)))
+
+    meta = R.meta_strip(meta_cells, mono_labels=("Customer reference",))
 
     # ── parties ──────────────────────────────────────────────────────────────
     billed_name = R.esc(contact.get("name") or "")
@@ -389,9 +509,16 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
         org.get("authorized_signatory_designation") or "",
     )
 
+    # The org's own fields sit BELOW the money and ABOVE the payment details:
+    # they qualify the supply ("Site", "Delivery note", "Vehicle no."), so they
+    # belong with the document's content rather than tucked into the terms
+    # column, and they must not push the figures down the page. Empty renders
+    # as "" and the join below simply skips it.
+    custom_html = _custom_details_html(invoice.get("custom_fields"))
+
     page = "".join([
         head, meta, party_block, lines_table,
-        totals_html, export_note, words_html,
+        totals_html, export_note, words_html, custom_html,
         R.parties(bank_html + terms_html, sign, flush=True),
         R.gap_note(check),
         R.foot(

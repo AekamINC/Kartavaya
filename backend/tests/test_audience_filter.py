@@ -232,8 +232,8 @@ def _contact(n: int, **kw) -> dict:
 # non-matches in here, so "fewer than everyone" is a real reduction rather than
 # an empty table.
 BOOK = [
-    _contact(1, contact_type="customer", company="Acme Ltd", tags=["vip"], lead_score=90),
-    _contact(2, contact_type="customer", company="Beta Foods", tags=[], lead_score=40),
+    _contact(1, contact_type="contact", company="Acme Ltd", tags=["vip"], lead_score=90),
+    _contact(2, contact_type="contact", company="Beta Foods", tags=[], lead_score=40),
     _contact(3, contact_type="lead", company="Acme Ltd", tags=["vip"], lead_score=80),
     _contact(4, contact_type="lead", company="Gamma Traders", tags=[], lead_score=5),
     _contact(5, contact_type="vendor", company="Delta Supply", tags=["vip"], lead_score=60),
@@ -252,14 +252,14 @@ async def test_no_filter_is_the_whole_org_and_that_is_the_bug_being_fixed():
 
 
 @pytest.mark.parametrize("filters,expected_emails", [
-    ({"type": "customer"},        {"c01@example.com", "c02@example.com"}),
+    ({"type": "contact"},        {"c01@example.com", "c02@example.com"}),
     ({"tag": "vip"},              {"c01@example.com", "c03@example.com", "c05@example.com"}),
     ({"min_score": 60},           {"c01@example.com", "c03@example.com", "c05@example.com"}),
     ({"source": "website"},       {c["email"] for c in BOOK}),
     ({"company": "acme"},         {"c01@example.com", "c03@example.com"}),
     # Two predicates AND together. A filter that ORed them would be wider than
     # either half, which is the one direction a segment must never fail in.
-    ({"type": "customer", "company": "acme"}, {"c01@example.com"}),
+    ({"type": "contact", "company": "acme"}, {"c01@example.com"}),
 ])
 async def test_a_filtered_campaign_reaches_fewer_contacts_than_an_unfiltered_one(
     filters, expected_emails,
@@ -476,7 +476,7 @@ async def test_the_audience_is_resolved_before_the_suppression_list_is_read(
     api_client, mock_pool, as_admin, in_org, open_gate, monkeypatch,
 ):
     pool = _Contacts(BOOK, unsubscribed=SUPPRESSED)
-    resp = await _preview(api_client, pool, monkeypatch, {"type": "customer"})
+    resp = await _preview(api_client, pool, monkeypatch, {"type": "contact"})
 
     assert resp.status_code == 200, resp.text
     assert pool.reads == ["audience", "unsubscribes"], (
@@ -489,7 +489,7 @@ async def test_an_unsubscribe_outside_the_segment_is_not_counted_against_it(
     api_client, mock_pool, as_admin, in_org, open_gate, monkeypatch,
 ):
     pool = _Contacts(BOOK, unsubscribed=SUPPRESSED)
-    body = (await _preview(api_client, pool, monkeypatch, {"type": "customer"})).json()
+    body = (await _preview(api_client, pool, monkeypatch, {"type": "contact"})).json()
 
     # The customer segment is contacts 1 and 2. Only contact 2 has unsubscribed.
     assert body["matched"] == 2, "matched is not the size of the segment"
@@ -508,7 +508,7 @@ async def test_the_suppressed_address_is_absent_from_the_sample(
     # unsubscribed address listed in an audience panel is the same defect as an
     # unsubscribed address receiving the mail.
     pool = _Contacts(BOOK, unsubscribed=SUPPRESSED)
-    body = (await _preview(api_client, pool, monkeypatch, {"type": "customer"})).json()
+    body = (await _preview(api_client, pool, monkeypatch, {"type": "contact"})).json()
     assert {c["email"] for c in body["contacts"]} == {"c01@example.com"}
 
 
@@ -562,7 +562,7 @@ async def test_send_reports_only_the_suppressions_inside_the_segment(
         "id": "cccccccc-0000-0000-0000-000000000001",
         "name": "Launch", "template_id": None, "subject": "Hi",
         "body_html": "<p>Hi</p>", "channel": "email", "status": "draft",
-        "audience_filter": {"type": "customer"},
+        "audience_filter": {"type": "contact"},
     }
 
     async def _fetchrow(q, *a):

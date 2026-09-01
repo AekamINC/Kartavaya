@@ -160,7 +160,7 @@ def test_a_contact_type_outside_the_check_is_refused_naming_the_four():
     with pytest.raises(HTTPException) as exc:
         norm({"type": "prospect"})
     assert exc.value.status_code == 400
-    for t in ("lead", "customer", "vendor", "partner"):
+    for t in ("lead", "contact", "vendor", "partner"):
         assert t in exc.value.detail
 
 
@@ -179,7 +179,7 @@ def test_label_is_still_accepted_and_stored_as_tag():
 def test_a_filter_that_arrived_as_json_text_is_still_read():
     # db.py's jsonb codec is allowed to give up behind PgBouncer, in which case
     # a stored filter comes back as text.
-    assert norm('{"type": "customer"}') == {"type": "customer"}
+    assert norm('{"type": "contact"}') == {"type": "contact"}
 
 
 def test_the_empty_filter_survives_normalisation_unchanged():
@@ -228,9 +228,9 @@ class _FakePool:
 
 
 CONTACTS = [
-    {"id": "1", "name": "Aa", "email": "aa@example.com", "type": "customer", "company": "Acme"},
-    {"id": "2", "name": "Bb", "email": "BB@example.com", "type": "customer", "company": "Acme"},
-    {"id": "3", "name": "Cc", "email": "cc@example.com", "type": "customer", "company": "Acme"},
+    {"id": "1", "name": "Aa", "email": "aa@example.com", "type": "contact", "company": "Acme"},
+    {"id": "2", "name": "Bb", "email": "BB@example.com", "type": "contact", "company": "Acme"},
+    {"id": "3", "name": "Cc", "email": "cc@example.com", "type": "contact", "company": "Acme"},
 ]
 
 
@@ -238,7 +238,7 @@ async def test_the_preview_separates_matched_from_who_will_receive():
     # A bare count is not something you can send on: "3 contacts" reads as three
     # emails, but /send silently drops the suppressed one and delivers two.
     pool = _FakePool([[{"email": "bb@example.com"}]])
-    body = await prachar._audience_preview_body(pool, "org", {"type": "customer"}, CONTACTS)
+    body = await prachar._audience_preview_body(pool, "org", {"type": "contact"}, CONTACTS)
 
     assert body["matched"] == 3
     assert body["count"] == body["matched"]      # campaign-send.spec.ts reads count
@@ -297,8 +297,11 @@ def test_turning_the_gate_off_is_shouted_rather_than_mentioned():
 
 
 def test_the_summary_names_the_type_and_the_company():
-    s = prachar._audience_summary({"type": "customer", "company": "acme"})
-    assert s == ("customers who are linked to an existing client "
+    s = prachar._audience_summary({"type": "contact", "company": "acme"})
+    # "contacts", not "customers" — migration 254. A customer is a COMPANY, so
+    # a SEGMENT OF PEOPLE could never have been "customers" in the first place;
+    # the sentence was describing the wrong kind of thing.
+    assert s == ("contacts who are linked to an existing client "
                  "and whose company matches “acme”")
 
 

@@ -197,7 +197,10 @@ describe('ContactsTab · one component, `crm` decides the CRM-only controls', ()
     await render(<ContactsTab />);
     await openRecord();
 
-    expect(container.textContent).toContain('Convert to Customer');
+    // Renamed by migration 254 — the lead becomes a contact AT a client,
+    // and the client is the customer.
+    expect(container.textContent).toContain('Convert to client');
+    expect(container.textContent).not.toContain('Convert to Customer');
     expect(urls().some(u => u.includes('/timeline'))).toBe(true);
   });
 

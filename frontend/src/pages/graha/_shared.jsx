@@ -14,7 +14,13 @@ import React from 'react';
 import Tag from '../../components/ui/Tag';
 import { mixAlpha } from '../../lib/statusColors';
 
-export const CONTACT_TYPES = ['lead', 'customer', 'vendor', 'partner'];
+/* 'customer' was removed by migration 254. A customer is a COMPANY —
+   `graha_clients.is_sales_customer` — not a kind of person. A `contact` is
+   somebody at a client; a `lead` is somebody not yet won. Measured before
+   the change: 26 of 35 clients had MIXED contact types and 7 were
+   simultaneously 'customer' and 'vendor', so the per-person type disagreed
+   with the company relationship more often than it agreed. */
+export const CONTACT_TYPES = ['lead', 'contact', 'vendor', 'partner'];
 export const ACTIVITY_TYPES = ['call', 'email', 'meeting', 'note', 'task'];
 export const TYPE_COLORS = {
   lead: 'var(--warn)', customer: 'var(--ok)',

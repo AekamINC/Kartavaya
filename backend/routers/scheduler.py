@@ -989,6 +989,85 @@ async def run_billing(x_cron_secret: str = Header("")):
     return {**billing, "client_auto_invoices": client}
 
 
+@router.post("/cron/platform-billing", dependencies=[])
+async def run_platform_billing(x_cron_secret: str = Header("")):
+    """Daily: raise DRAFT upstream invoices for armed `org_billing_lines`.
+
+    THE UPSTREAM HALF OF BILLING — what Aekam charges its organisations for the
+    Kartavaya platform — where `/cron/billing` above sweeps the DOWNSTREAM half,
+    what an organisation charges its own clients. The two are separate documents
+    in separate tables (`subscription_invoices` vs `ganit_invoices`) with
+    separate numbering series, and they are separate endpoints so that one
+    failing cannot mask or truncate the other.
+
+    ── WHAT A TICK CAN DO, MEASURED RATHER THAN ASSERTED ────────────────────
+
+    NOTHING, TODAY. `sweep_platform_invoices` bills only lines with
+    `auto_invoice = TRUE`, and that column is FALSE on all four live billing
+    lines (Demo, E2E, UK AekamINC, Unicode — counted against the database on
+    2026-09-01, when `subscription_invoices` also held zero rows). So the first
+    tick after this endpoint is armed writes nothing at all, and keeps writing
+    nothing until somebody turns a line on deliberately.
+
+    That is the intended state on the day this deploys, and it is why this is a
+    NEW endpoint rather than a call added to `/cron/billing`: `billing` is
+    already in Railway's `cron-daily` loop, so folding this in would have armed
+    an unattended invoice writer as a side effect of a deploy. This one does not
+    run until a cron is created for it, and creating that cron is a decision
+    with a date on it rather than a consequence of merging.
+
+    ⚠ AND ONE THING IS OWED BEFORE IT IS ARMED. Migration 256 gives
+    `subscription_invoices` a `doc_status`, and the sweep writes 'draft' with a
+    NULL `due_date` — which keeps a draft off `GET /v1/admin/invoices/overdue`,
+    since `NULL < CURRENT_DATE` is NULL. But `GET /v1/invoices`, the
+    organisation's OWN billing tab, does `SELECT *` with no status filter and
+    would list a draft to the customer as though it were issued. That endpoint
+    needs `AND doc_status = 'final'` before the first line is armed. It is in
+    `routers/subscription.py` and is not part of this change.
+
+    ── WHY IT CAN FAIL, AND WHY THAT IS A 500 ───────────────────────────────
+
+    Per-organisation failures are isolated inside the sweep — one org's bad line
+    must not cost every org after it in the loop its invoice — so a partly
+    failed run has REAL INVOICES ALREADY COMMITTED and cannot be rolled back.
+    That makes the status code a signal to a person rather than a transaction
+    boundary, which is exactly what `fanout_failure` was written for, so the
+    judgement is made by that function rather than by a second copy of it here.
+    """
+    await _verify_cron(x_cron_secret)
+
+    # Unguarded, per this file's rule above: an import inside `try: … except
+    # ImportError` is exempted from the wiring check in
+    # `tests/test_billing_lines_wiring.py`, which is the only thing that would
+    # notice this module going missing from a deploy. Seven handlers in this
+    # file used to hide exactly that and answered 200 for months.
+    from services.platform_billing import sweep_platform_invoices
+
+    result = await sweep_platform_invoices()
+
+    problem = fanout_failure(
+        "platform-billing", result["organisations"], result["failed"])
+    if problem:
+        log.error("Cron 'platform-billing': %s", problem)
+        raise HTTPException(500, {
+            "job": "platform-billing",
+            "error": problem,
+            # The work that DID succeed, named in the failure. A person reading
+            # this at 03:00 needs to know which invoices now exist before they
+            # decide whether re-running is safe — and re-running IS safe, because
+            # `invoice_billing_lines` refuses a line already billed for a period.
+            "created": result["created"],
+            "invoices": [i["invoice_number"] for i in result["invoices"]],
+        })
+
+    log.info(
+        "Cron 'platform-billing': %d organisation(s) with armed lines, "
+        "%d draft invoice(s) raised, %d skipped",
+        result["organisations"], result["created"], result["skipped"],
+    )
+    return result
+
+
 @router.post("/cron/agents", dependencies=[])
 async def run_agents(x_cron_secret: str = Header("")):
     """Hourly: run the deadline agent for every active organisation.

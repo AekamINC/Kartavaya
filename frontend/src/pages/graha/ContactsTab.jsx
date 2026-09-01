@@ -250,12 +250,38 @@ export default function ContactsTab({ crm = true }) {
     } catch { pushToast({ title: 'Could not delete contact', type: 'error' }); }
   }
 
-  async function convertLead(id) {
+  /* ── CONVERTING A LEAD ATTACHES THEM TO A COMPANY ────────────────────────
+   *
+   * This used to POST with no body, and the endpoint set `contact_type =
+   * 'customer'` and nothing else — no company, no link. The owner named the
+   * consequence: "so only customer doesnt have client it got converted to
+   * customer and sales order got generated without an customer or client how
+   * invoice can be assign correctly. thats big flaw."
+   *
+   * A won lead is a person at a CLIENT, and the client is the customer. If they
+   * already belong to one, converting needs nothing typed. If they do not, the
+   * picker below asks — because the alternative is a document that belongs to
+   * nobody, and 21 invoices worth ₹2,54,172 got made exactly that way.
+   */
+  const [converting, setConverting] = useState(null);   // the contact being won
+  const [convertClient, setConvertClient] = useState('');
+
+  async function convertLead(id, clientId = '') {
     try {
-      await api.post(`/v1/graha/contacts/${id}/convert`);
-      pushToast({ title: 'Lead converted to customer', type: 'success' });
+      await api.post(`/v1/graha/contacts/${id}/convert`,
+        clientId ? { client_id: clientId } : {});
+      pushToast({ title: 'Converted — they now belong to a client', type: 'success' });
+      setConverting(null);
+      setConvertClient('');
       loadDetail(id);
     } catch (e) { pushToast({ title: apiErrorText(e, 'Conversion failed'), type: 'error' }); }
+  }
+
+  /** Straight through when the company is already known; ask when it is not. */
+  function startConvert(c) {
+    if (c.client_id) { convertLead(c.id, c.client_id); return; }
+    setConvertClient('');
+    setConverting(c.id);
   }
 
   async function removeLabel(contactId, labelId) {
@@ -395,12 +421,69 @@ export default function ContactsTab({ crm = true }) {
                   <button className="k-btn k-btn--ghost" onClick={() => startEditContact(c)}>Edit</button>
                   {/* Conversion writes a CRM deal, so it is offered only where
                       the CRM is. */}
+                  {/* "Convert to client", not "Convert to Customer" — migration
+                      254 removed `customer` as a kind of person. What happens
+                      is that the lead becomes a contact AT a company, and that
+                      company is flagged as a sales customer. */}
                   {crm && c.contact_type === 'lead' && (
-                    <button className="k-btn k-btn--primary" onClick={() => convertLead(c.id)}>Convert to Customer</button>
+                    <button className="k-btn k-btn--primary" onClick={() => startConvert(c)}>
+                      Convert to client
+                    </button>
                   )}
                   <Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} />
                 </div>
               </div>
+
+              {/* Asked only when the lead belongs to no company yet. A lead who
+                  already has one converts on the first click — there is nothing
+                  to ask, and a dialog that always appears is a dialog people
+                  learn to dismiss without reading. */}
+              {converting === c.id && (
+                <div className="gr__panel gr__panel--flat">
+                  <p className="gr__sub">
+                    Which company is this? A customer is a company, so the
+                    invoices you raise later have somewhere to attach.
+                  </p>
+                  <div className="gr__grid">
+                    {field('Client', (
+                      <select
+                        className="k-input"
+                        value={convertClient}
+                        onChange={e => setConvertClient(e.target.value)}
+                      >
+                        <option value="">Choose a client…</option>
+                        {clientOptions.map(o => (
+                          <option key={o.id} value={o.id}>{o.name}</option>
+                        ))}
+                      </select>
+                    ))}
+                  </div>
+                  <div className="gr__acts">
+                    <button
+                      type="button"
+                      className="k-btn k-btn--ghost"
+                      onClick={() => setConverting(null)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="k-btn k-btn--primary"
+                      disabled={!convertClient}
+                      onClick={() => convertLead(c.id, convertClient)}
+                    >
+                      Convert
+                    </button>
+                  </div>
+                  {clientOptions.length === 0 && (
+                    <p className="gr__sub">
+                      You have no clients yet. Add one on the Clients tab, then
+                      come back — this is the record everything else hangs off.
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="gr__dgrid">
                 <div className="gr__dpair"><strong>Email:</strong> {c.email || '—'}</div>
                 <div className="gr__dpair"><strong>Phone:</strong> {c.phone || '—'}</div>
