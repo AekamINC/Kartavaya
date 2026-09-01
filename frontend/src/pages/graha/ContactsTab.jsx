@@ -138,10 +138,6 @@ export default function ContactsTab({ crm = true }) {
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
   const [clientOptions, setClientOptions] = useState([]);
-  /* The sales patches, for the picker. Same enrichment contract as the
-     client dropdown below: if this fetch fails the form still works and
-     simply offers no territory. */
-  const [territoryOptions, setTerritoryOptions] = useState([]);
   const [editContact, setEditContact] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   // A failed load left `contacts` at [] and rendered the "No contacts yet"
@@ -155,7 +151,13 @@ export default function ContactsTab({ crm = true }) {
     // The client dropdown is an enrichment: it failing must not take the list
     // with it, so the form simply offers "— None —" and nothing else.
     api.get('/v1/graha/clients').then(r => setClientOptions(rows(r))).catch(() => {});
-    api.get('/v1/graha/territories').then(r => setTerritoryOptions(rows(r))).catch(() => {});
+    /* `/v1/graha/territories` is NOT fetched here any more. It fed a Territory
+       picker on the contact form, and a territory routes a CUSTOMER to the rep
+       who covers that patch — a company-level fact, so the picker is gone. The
+       request went with it: it was a round trip on every contacts page load
+       whose only consumer no longer exists. Measured in the owner's browser on
+       2026-09-01, `territories` was one of the slow duplicated calls on this
+       very page (19.57s cold, fetched three times). */
   }, []);
 
   useEffect(() => { load(); }, []);
@@ -297,16 +299,6 @@ export default function ContactsTab({ crm = true }) {
     );
   };
 
-  /* The picker renders territory NAMES. The id lives only in the option's
-     `value`, never as text — `scripts/check-rendered-ids.mjs` is positional and
-     this is the shape it admits, the same one the client dropdown uses. */
-  const territoryField = (value, onChange) => field('Territory', (
-    <select className="k-input" value={value || ''} onChange={e => onChange(e.target.value)}>
-      <option value="">— None —</option>
-      {territoryOptions.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-    </select>
-  ));
-
   /* Sort and pagination only: this list's SEARCH is server-side already and
      reaches rows past the 200 the endpoint returns, which a client-side box
      cannot. Two search boxes on one table is worse than one in the wrong place.
@@ -362,9 +354,21 @@ export default function ContactsTab({ crm = true }) {
                 {field('Designation', <input className="k-input" value={editContact.designation} onChange={e => setEditContact({ ...editContact, designation: e.target.value })} />)}
                 {field('Source', <input className="k-input" value={editContact.source} onChange={e => setEditContact({ ...editContact, source: e.target.value })} />)}
                 {field('Lead Score', <input className="k-input" type="number" min="0" max="100" value={editContact.lead_score} onChange={e => setEditContact({ ...editContact, lead_score: parseInt(e.target.value, 10) || 0 })} />)}
-                {field('GSTIN', <input className="k-input" value={editContact.gstin} onChange={e => setEditContact({ ...editContact, gstin: e.target.value })} />)}
+                {/* ── GSTIN, PAN AND TERRITORY BELONG TO THE COMPANY ─────────────
+                    A registration is a fact about a legal entity, not about a
+                    person who works there. Two contacts at one client could
+                    hold two different GSTINs here and the product would have
+                    no way to say which one an invoice should carry — and a
+                    territory routes a CUSTOMER to the rep who covers that
+                    patch, which is also a company-level fact.
+
+                    ⚠ THE COLUMNS ARE NOT DROPPED. 46 contacts carry a gstin
+                    and 89 carry a territory_id today; deleting the columns
+                    would destroy that, and it is not this change's business to
+                    decide where it should land. The fields stop being OFFERED
+                    and stop being SHOWN; the data stays exactly where it is
+                    until the client consolidation moves it deliberately. */}
                 {field('PAN', <input className="k-input" value={editContact.pan} onChange={e => setEditContact({ ...editContact, pan: e.target.value })} />)}
-                {territoryField(editContact.territory_id, v => setEditContact({ ...editContact, territory_id: v }))}
                 {addressFields(editContact.billing_address, a => setEditContact({ ...editContact, billing_address: a }))}
                 <CustomFieldInputs
                   entity="contact"
@@ -400,8 +404,6 @@ export default function ContactsTab({ crm = true }) {
               <div className="gr__dgrid">
                 <div className="gr__dpair"><strong>Email:</strong> {c.email || '—'}</div>
                 <div className="gr__dpair"><strong>Phone:</strong> {c.phone || '—'}</div>
-                <div className="gr__dpair"><strong>GSTIN:</strong> {c.gstin || '—'}</div>
-                <div className="gr__dpair"><strong>PAN:</strong> {c.pan || '—'}</div>
                 <div className="gr__dpair"><strong>Source:</strong> {c.source || '—'}</div>
                 <div className="gr__dpair"><strong>Lead Score:</strong> {c.lead_score ?? '—'}/100</div>
                 {/* THE NAME. This drew `c.assigned_to.substring(0, 8)` —
@@ -414,9 +416,6 @@ export default function ContactsTab({ crm = true }) {
                     expression, which `NOT_A_RENDER` reads as control flow. The
                     server sends `assigned_to_name` now. */}
                 <div className="gr__dpair"><strong>Assigned To:</strong> {c.assigned_to_name || '—'}</div>
-                {/* Which sales patch this contact routes to — the column 7.0
-                    made writable. The NAME, never the id. */}
-                <div className="gr__dpair"><strong>Territory:</strong> {c.territory_name || '—'}</div>
                 <div className="gr__dpair"><strong>Last Contacted:</strong> {c.last_contacted_at ? new Date(c.last_contacted_at).toLocaleDateString('en-IN') : '—'}</div>
                 <div className="gr__dpair"><strong>Converted:</strong> {c.converted_at ? new Date(c.converted_at).toLocaleDateString('en-IN') : '—'}</div>
               </div>
@@ -590,7 +589,6 @@ export default function ContactsTab({ crm = true }) {
                 and two fields for one fact is how a contact ends up filed
                 under "Acme" and "Acme Pvt Ltd" at the same time. */}
             {field('Designation', <input className="k-input" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} />)}
-            {field('GSTIN', <input className="k-input" value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value })} />)}
             {field('Source', <input className="k-input" placeholder="e.g. Website, Referral" value={form.source} onChange={e => setForm({ ...form, source: e.target.value })} />)}
             {field('Client / Company', (
               <select className="k-input" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
@@ -598,7 +596,6 @@ export default function ContactsTab({ crm = true }) {
                 {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             ))}
-            {territoryField(form.territory_id, v => setForm({ ...form, territory_id: v }))}
             {addressFields(form.billing_address, a => setForm({ ...form, billing_address: a }))}
             {/* The org's own fields. Defined in the Custom Fields tab, stored
                 in `custom_data`, and until now rendered nowhere at all. */}

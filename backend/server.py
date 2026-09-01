@@ -550,6 +550,26 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # ── HOW LONG A BROWSER MAY SKIP THE PREFLIGHT ──────────────────────────
+    #
+    # Starlette defaults this to 600 seconds and never said so out loud, which
+    # means every distinct path re-ran an OPTIONS round trip every ten minutes.
+    # The frontend is cross-origin from this API in every environment (see the
+    # note below) and `api.js` sends an Authorization header and an org header,
+    # so EVERY request is preflighted — there is no simple-request path here to
+    # fall back on.
+    #
+    # Measured in the owner's browser on 2026-09-01, on one page load of
+    # /graha: five preflights at 9.78-9.79s each. Most of that was the sleeping
+    # container (`sleepApplication` was true on production and is now false),
+    # but the round trips themselves are pure latency from Singapore and they
+    # were being paid over and over.
+    #
+    # 7200 rather than 86400: Chrome CAPS the preflight cache at 2 hours and
+    # silently ignores anything larger, so a bigger number would be a comment
+    # that lies. Firefox allows 24h; this is the number that is true in the
+    # browser most of these customers use.
+    max_age=7200,
     # `allow_headers` governs REQUEST headers. Without `expose_headers` the
     # browser hands JavaScript only the six CORS-safelisted RESPONSE headers,
     # so everything below was set by a handler and then discarded before any

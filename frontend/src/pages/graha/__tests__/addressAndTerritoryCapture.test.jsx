@@ -149,21 +149,39 @@ describe('a contact can be given an address and a territory', () => {
     expect(sent.billing_address.city).toBe('Surat');
   });
 
-  it('posts territory_id, and the picker never draws the id on screen', async () => {
+  it('does NOT offer a territory — a sales patch belongs to the company', async () => {
+    /* ── THIS TEST WAS INVERTED ON 2026-09-01, DELIBERATELY ────────────────
+     *
+     * It used to assert that the create form POSTS `territory_id`, and it was
+     * correct when Phase 7.0 wrote it: the column was unreachable and this
+     * screen was the surface that reached it.
+     *
+     * The owner's rule now: "for contact we dont need gstin, pan, territory."
+     * A territory routes a CUSTOMER to the rep who covers that patch, and the
+     * customer is the company — `graha_clients` — not a person who happens to
+     * work there. Two contacts at one client could otherwise sit in two
+     * different patches and the product would have no way to say which one owns
+     * the account.
+     *
+     * Inverted rather than deleted. A deleted test is a rule nobody can see any
+     * more; this one still names the field and still fails if somebody puts the
+     * picker back without deciding to.
+     */
     await mount(<ContactsTab />);
     await act(async () => { buttonSaying('+ Add Contact').click(); });
-    const picker = byLabel('Territory');
-    expect(picker, 'there is no territory picker on the create form').toBeTruthy();
-    // The NAME is what a person reads; the id lives only in `value`. This is the
-    // shape `scripts/check-rendered-ids.mjs` admits, and the rule is the
-    // owner's: never render a user, member or org id.
-    expect(picker.textContent).toContain('Gujarat');
-    expect(picker.textContent).not.toContain('t-gujarat');
+    expect(
+      byLabel('Territory'),
+      'the contact form must not offer a territory — it is a company-level fact',
+    ).toBeFalsy();
+  });
 
-    typeInto(byLabel('Name *'), 'Rohan Shah');
-    pick(picker, 't-mumbai');
-    await submitForm();
-    expect(api.post.mock.calls[0][1].territory_id).toBe('t-mumbai');
+  it('no longer spends a request on territories it cannot use', async () => {
+    // The picker's only consumer is gone, so the fetch went with it. On the
+    // owner's 2026-09-01 trace `territories` was one of the slow duplicated
+    // calls on this very page.
+    await mount(<ContactsTab />);
+    const asked = api.get.mock.calls.map((c) => c[0]);
+    expect(asked.some((u) => String(u).includes('/territories'))).toBe(false);
   });
 
   it('a contact with no address typed posts an EMPTY address, not an invented one', async () => {
@@ -175,6 +193,9 @@ describe('a contact can be given an address and a territory', () => {
 
     const sent = api.post.mock.calls[0][1];
     expect(Object.values(sent.billing_address).every((v) => v === '')).toBe(true);
+    // Still sent, still empty. The FIELD is gone from the form; the column is
+    // NOT dropped — 89 contacts carry a territory_id today and deleting it is
+    // not this change's business. An empty string overwrites nothing on create.
     expect(sent.territory_id).toBe('');
   });
 });
