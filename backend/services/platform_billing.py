@@ -91,13 +91,48 @@ import json
 import logging
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import NamedTuple, Optional
 from uuid import uuid4
 
 from db import get_pool
 from services import billing_lines
 from services.credits import next_period
 from services.platform_proration import money, period_bounds, prorate
+
+
+class Halted(NamedTuple):
+    """A period the sweep deliberately REFUSED to bill, and stopped on.
+
+    ⚠ NOT THE SAME THING AS "nothing due", and the whole reason this type
+    exists is that it used to be reported as though it were.
+
+    `_sweep_one_org` returned `None` for both, and the caller counted every
+    `None` into `skipped`. So an organisation whose September nets to a credit —
+    stalled, and stalled again every morning, with October and November blocked
+    behind it — appeared in the response as `skipped: 1`, identical to an
+    organisation with simply nothing to bill. The endpoint answered 200 either
+    way, the Railway cron went green either way, and the only trace was a
+    `log.warning` in a 03:00 log nobody reads.
+
+    That directly contradicts this file's neighbour: `routers/scheduler.py`'s
+    banner is "A CRON THAT CANNOT DO ITS JOB MUST NOT ANSWER 200".
+
+    Carrying the numbers rather than a bare flag because the person who has to
+    clear it needs to know WHICH period and BY HOW MUCH before they open the
+    billing console.
+    """
+    org_id: str
+    org_name: str
+    period: date
+    subtotal: Decimal
+
+    def as_dict(self) -> dict:
+        return {
+            "org_id": self.org_id,
+            "org": self.org_name,
+            "period": self.period.isoformat(),
+            "subtotal": float(self.subtotal),
+        }
 
 log = logging.getLogger(__name__)
 
@@ -535,6 +570,7 @@ async def sweep_platform_invoices(
 
     created: list[dict] = []
     skipped = 0
+    halted: list[dict] = []
     failed: dict[str, str] = {}
 
     for oid, org_lines in by_org.items():
@@ -542,7 +578,12 @@ async def sweep_platform_invoices(
         try:
             raised = await _sweep_one_org(pool, oid, org_name, org_lines, today)
             if raised is None:
+                # Nothing due. The ordinary, uninteresting outcome.
                 skipped += 1
+            elif isinstance(raised, Halted):
+                # Stopped on purpose, and STUCK: every later period is blocked
+                # behind this one until a person raises it.
+                halted.append(raised.as_dict())
             else:
                 created.append(raised)
         except Exception as exc:                                     # noqa: BLE001
@@ -558,6 +599,9 @@ async def sweep_platform_invoices(
         "organisations": len(by_org),
         "created": len(created),
         "skipped": skipped,
+        # Named separately from `skipped` so a caller — and the cron's exit code
+        # — can see the difference between "nothing to do" and "cannot proceed".
+        "halted": halted,
         "failed": failed,
         "invoices": created,
     }
@@ -643,7 +687,10 @@ async def _sweep_one_org(pool, oid: str, org_name: str, org_lines, today: date):
                     "issued unattended; raise it from the billing console.",
                     org_name, f"{period:%Y-%m}", subtotal,
                 )
-                return None
+                # `Halted`, not `None`: the caller must be able to tell this
+                # apart from "nothing due" — see the class docstring.
+                return Halted(org_id=oid, org_name=org_name,
+                              period=period_start, subtotal=subtotal)
 
             async with conn.transaction():
                 raised = await _raise_invoice(

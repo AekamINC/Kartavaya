@@ -1499,29 +1499,23 @@ async def test_a_credit_only_period_halts_rather_than_issuing_a_credit_note(fake
     assert only_invoice(fake_db)["subtotal"] == Decimal("8000.00")
 
 
-async def test_a_halted_organisation_is_counted_as_skipped_and_should_not_be(fake_db):
-    """⚠ A DEFECT, PINNED RATHER THAN ASSERTED TO BE CORRECT.
+async def test_a_halt_is_reported_apart_from_having_nothing_to_do(fake_db):
+    """The two outcomes that used to be one number.
 
     Two organisations, two different situations:
 
-      · Dormant Ltd has an armed line that is not due until December. Nothing to
-        do, and nothing wrong.
-      · Unicode Group has a September that nets to zero. The sweep CANNOT do its
-        job for it, has stopped, and will stop again every morning until a person
-        raises the period from the billing console. Every month after September
-        is blocked behind it.
+      · Dormant Ltd has an armed line not due until December. Nothing to do, and
+        nothing wrong. That is a SKIP.
+      · Unicode Group's September nets to zero. The sweep CANNOT do its job for
+        it, has stopped, and will stop again every morning until a person raises
+        the period from the billing console. Every month after September is
+        blocked behind it. That is a HALT.
 
-    The run reports `skipped: 2` and cannot tell them apart. The only trace of
-    the difference is a WARNING in a Railway log at 03:00, and this file's own
-    banner — "a cron that cannot do its job must not answer 200" — is the
-    standard that says that is not enough.
-
-    ⚠ THIS TEST IS EXPECTED TO PASS TODAY AND IS MEANT TO START FAILING. The fix
-    is a distinct bucket — `halted: [{org, period, subtotal}]` — that
-    `fanout_failure` can see, so `/cron/platform-billing` turns red instead of
-    green. When somebody adds it, this test goes red and is rewritten. It is the
-    same device as `test_live_the_customers_own_invoice_list_still_shows_drafts`
-    below, and it is a great deal harder to overlook than a note.
+    ⚠ THIS TEST WAS INVERTED. It used to assert `skipped == 2` and carried a
+    note saying it was pinning a defect rather than endorsing it — a halted
+    organisation was bucketed with one that had nothing to do, the endpoint
+    answered 200, and the only trace of the difference was a WARNING in a
+    Railway log at 03:00. It now asserts the fix.
     """
     fake_db.org(PLATFORM_ORG, "Aekam Inc", platform=True)
     fake_db.org(SECOND_ORG, "Dormant Ltd")
@@ -1537,14 +1531,52 @@ async def test_a_halted_organisation_is_counted_as_skipped_and_should_not_be(fak
 
     assert out["organisations"] == 2
     assert out["created"] == 0
-    assert out["skipped"] == 2, (
-        "a halted organisation is bucketed with one that had nothing to do")
     assert out["failed"] == {}
-    # There is no other field carrying the difference — the whole result is
-    # these six keys, and none of them names Unicode Group.
-    assert set(out) == {"date", "organisations", "created", "skipped",
-                        "failed", "invoices"}
-    assert "Unicode Group" not in json.dumps(out, default=str)
+
+    # THE POINT: one of each, not two of the same.
+    assert out["skipped"] == 1, "Dormant Ltd had nothing to do — that is a skip"
+    assert len(out["halted"]) == 1, "Unicode Group is stalled — that is a halt"
+
+    stalled = out["halted"][0]
+    assert stalled["org"] == "Unicode Group"
+    assert stalled["period"] == "2026-09-01"
+    assert stalled["subtotal"] == 0.0
+    assert stalled["org_id"] == CUSTOMER_ORG
+
+    # The organisation that is stuck is NAMED. It was absent from the whole
+    # payload before, which is what made the halt invisible.
+    assert "Unicode Group" in json.dumps(out, default=str)
+    # And the one that simply had nothing to do is NOT reported as a problem.
+    assert "Dormant Ltd" not in json.dumps(out["halted"], default=str)
+
+
+async def test_nothing_due_does_not_produce_a_halt(fake_db):
+    """THE ANTI-VACUITY PARTNER.
+
+    Without this, `halted` could be populated on every quiet run and the test
+    above would still pass — turning the cron permanently red and training
+    whoever watches it to ignore the colour, which is worse than the silence it
+    replaced.
+    """
+    fake_db.org(PLATFORM_ORG, "Aekam Inc", platform=True)
+    fake_db.org(SECOND_ORG, "Dormant Ltd")
+    fake_db.line(SECOND_LINE, SECOND_ORG, period_start=date(2026, 12, 1))
+
+    out = await sweep_platform_invoices(today=TODAY)
+
+    assert out["created"] == 0
+    assert out["skipped"] == 1
+    assert out["halted"] == [], "a quiet run must not report a halt"
+
+
+async def test_a_normal_run_reports_no_halt(fake_db):
+    """The second half of the floor: a run that BILLS must also be clean."""
+    one_armed_org(fake_db)
+
+    out = await sweep_platform_invoices(today=TODAY)
+
+    assert out["created"] == 1
+    assert out["halted"] == []
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1591,20 +1623,21 @@ async def test_the_cron_turns_a_partial_failure_red(fake_db, cron):
     assert fake_db.invoices == []
 
 
-async def test_the_cron_answers_200_when_it_could_not_do_its_job(fake_db, cron):
-    """⚠ THE HARM OF THE `skipped` BUCKET, AT THE ENDPOINT.
+async def test_the_cron_turns_RED_when_it_could_not_do_its_job(fake_db, cron):
+    """This file's banner, enforced: a cron that cannot do its job must not
+    answer 200.
 
-    Unicode Group's September nets to zero, so the sweep halts and every month
-    after September is blocked behind it. The endpoint answers 200 with
-    `skipped: 1`, the Railway cron stays green, and an organisation that has not
-    been invoiced since September looks exactly like an organisation with
-    nothing to bill.
+    Unicode Group's period nets to zero, so the sweep halts and every month
+    after it is blocked. The endpoint used to answer 200 with `skipped: 1` —
+    Railway stayed green, and an organisation that had not been invoiced for
+    months looked exactly like one with nothing to bill.
 
-    PINNED, NOT ENDORSED — see
-    `test_a_halted_organisation_is_counted_as_skipped_and_should_not_be`. When
-    the halt gets its own bucket this call raises instead, and this test is
-    rewritten to expect the 500.
+    ⚠ INVERTED from `test_the_cron_answers_200_when_it_could_not_do_its_job`,
+    which pinned that behaviour deliberately and said in its own docstring that
+    it should start failing when the bucket landed. It has.
     """
+    from fastapi import HTTPException
+
     fake_db.org(PLATFORM_ORG, "Aekam Inc", platform=True)
     fake_db.org(CUSTOMER_ORG, "Unicode Group")
     fake_db.line(PLATFORM_LINE, CUSTOMER_ORG, period_start=date(2020, 1, 1),
@@ -1613,12 +1646,51 @@ async def test_the_cron_answers_200_when_it_could_not_do_its_job(fake_db, cron):
                  description="Goodwill credit", amount=Decimal("12000.00"),
                  period_start=date(2020, 1, 1), period_end=date(2020, 1, 1))
 
+    with pytest.raises(HTTPException) as raised:
+        await cron.run_platform_billing(x_cron_secret=CRON_SECRET_FOR_TESTS)
+
+    assert raised.value.status_code == 500
+    detail = raised.value.detail
+    assert detail["job"] == "platform-billing"
+    # The organisation is NAMED, and so is the way out. A 500 that does not say
+    # what to do is the failure-into-silence this codebase keeps finding.
+    assert "Unicode Group" in detail["error"]
+    assert "billing console" in detail["error"]
+    assert len(detail["halted"]) == 1
+    assert detail["halted"][0]["org"] == "Unicode Group"
+
+    # The refusal is still correct: nothing was invoiced.
+    assert fake_db.invoices == []
+
+
+async def test_the_cron_stays_GREEN_on_a_quiet_run(fake_db, cron):
+    """ANTI-VACUITY for the test above.
+
+    A handler that raised unconditionally would satisfy it. This is the run with
+    nothing due — it must return normally, or the cron is red every morning and
+    the colour stops meaning anything.
+    """
+    fake_db.org(PLATFORM_ORG, "Aekam Inc", platform=True)
+    fake_db.org(SECOND_ORG, "Dormant Ltd")
+    fake_db.line(SECOND_LINE, SECOND_ORG, period_start=date(2026, 12, 1))
+
     result = await cron.run_platform_billing(x_cron_secret=CRON_SECRET_FOR_TESTS)
 
     assert result["created"] == 0
     assert result["skipped"] == 1
+    assert result["halted"] == []
     assert result["failed"] == {}
-    assert fake_db.invoices == []
+
+
+async def test_the_cron_returns_normally_when_it_actually_bills(fake_db, cron):
+    """And the ordinary success path still answers 200 with the invoice."""
+    one_armed_org(fake_db)
+
+    result = await cron.run_platform_billing(x_cron_secret=CRON_SECRET_FOR_TESTS)
+
+    assert result["created"] == 1
+    assert result["halted"] == []
+    assert len(fake_db.invoices) == 1
 
 
 async def test_the_cron_refuses_without_the_secret(fake_db, cron):

@@ -1060,6 +1060,45 @@ async def run_platform_billing(x_cron_secret: str = Header("")):
             "invoices": [i["invoice_number"] for i in result["invoices"]],
         })
 
+    # ── A HALT IS NOT A SKIP, AND IT MUST TURN THIS CRON RED ────────────────
+    #
+    # `sweep_platform_invoices` stops on an organisation whose period nets to
+    # zero or a credit: a cron does not issue a credit note, and it does not put
+    # a negative invoice in front of a customer unattended. That refusal is
+    # CORRECT and is not being changed here.
+    #
+    # What was wrong is that it was invisible. A halt returned `None` from
+    # `_sweep_one_org`, the caller counted it into `skipped`, and the response
+    # was indistinguishable from "nothing due" — so an organisation stalled
+    # since September, with October and November blocked behind it, showed up
+    # as `skipped: 1` and this endpoint answered 200. Railway went green every
+    # morning over an account that was not being billed at all.
+    #
+    # This file's own banner is "A CRON THAT CANNOT DO ITS JOB MUST NOT ANSWER
+    # 200", and a sweep that cannot advance an organisation has not done its
+    # job. So a halt is a 500 — AFTER the `failed` check above, because a
+    # genuine exception is the more urgent of the two and should name itself
+    # first.
+    #
+    # ⚠ THE INVOICES THAT WERE RAISED ARE NAMED IN THE FAILURE, and re-running
+    # is safe: `invoice_billing_lines` refuses a line already billed for a
+    # period, which is the same guarantee the `failed` branch relies on.
+    if result["halted"]:
+        stalled = ", ".join(
+            f"{h['org']} ({h['period']}, nets to {h['subtotal']:.2f})"
+            for h in result["halted"])
+        log.error("Cron 'platform-billing': halted on %s", stalled)
+        raise HTTPException(500, {
+            "job": "platform-billing",
+            "error": (f"{len(result['halted'])} organisation(s) cannot be "
+                      f"billed and every later period is blocked behind them: "
+                      f"{stalled}. A credit or zero-value period is not issued "
+                      f"unattended — raise it from the billing console."),
+            "halted": result["halted"],
+            "created": result["created"],
+            "invoices": [i["invoice_number"] for i in result["invoices"]],
+        })
+
     log.info(
         "Cron 'platform-billing': %d organisation(s) with armed lines, "
         "%d draft invoice(s) raised, %d skipped",
