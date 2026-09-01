@@ -33,6 +33,7 @@ import Corrections from './pahchan/Corrections';
 import PublishPayroll from './pahchan/PublishPayroll';
 import History from './pahchan/History';
 import Notice from './pahchan/Notice';
+import Enroll from './pahchan/Enroll';
 import Consent from './pahchan/Consent';
 
 /**
@@ -87,6 +88,15 @@ const TABS = [
   { id: 'history',     label: 'My attendance' },
   { id: 'notice',      label: 'What we record' },
   { id: 'consent',     label: 'Consent' },
+  /* `enroll` is the employee's OWN reference photos; `enrollment` below is HR's
+     review queue for everybody's. Two tabs, two audiences, and the names are
+     one letter apart — worth the confusion because the alternative is one tab
+     that behaves differently depending on who opened it.
+     It sits at the end of the employee run, which now reads: what was recorded
+     about you, what we record and why, whether you agreed, and what you are
+     compared against. `notice` stays directly after `history` — a test pins
+     that adjacency and it is the point of both tabs. */
+  { id: 'enroll',      label: 'My photos' },
   { id: 'enrollment',  label: 'Enrollment' },
   { id: 'policy',      label: 'Policy' },
   { id: 'analytics',   label: 'Analytics' },
@@ -158,6 +168,7 @@ export default function PahchanPage() {
         {tab === 'history' && <History />}
         {tab === 'notice' && <Notice />}
         {tab === 'consent' && <Consent />}
+        {tab === 'enroll' && <Enroll />}
         {tab === 'enrollment' && <EnrollQueue />}
         {tab === 'policy' && <PahchanPolicy />}
         {tab === 'analytics' && <ModuleAnalyticsTab module="pahchan" />}

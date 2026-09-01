@@ -182,6 +182,24 @@ export default function Clock() {
     const video = videoRef.current;
     if (!video) return;
     const capturedAt = new Date().toISOString();
+    /* ── THE FIX IS TAKEN AT THE SHUTTER, NOT AT THE SEND ──────────────────
+     *
+     * This used to run inside `send()`, AFTER the photo upload, and the comment
+     * there argued "so a slow upload does not age the fix". That has it exactly
+     * backwards. The punch's authoritative time is `captured_at`, which is this
+     * line — so a fix taken after a 30-second upload on a bad connection is a
+     * claim about where somebody was thirty seconds after the moment the punch
+     * records. A site worker who photographs themselves at the gate and walks
+     * inside while the upload retries gets a fix from wherever they ended up,
+     * checked against the geofence as though it were the gate.
+     *
+     * Started here and awaited later, not awaited here: §2 is that NOTHING
+     * BLOCKS A PUNCH, and `captureGeoFix` already resolves null rather than
+     * throwing. Kicking it off in parallel with the compression means the fix
+     * is usually already resolved by the time the upload finishes, so this
+     * costs no wall-clock either.
+     */
+    const geo = captureGeoFix();
     const blob = await compressCapture(video, video.videoWidth, video.videoHeight);
     stopCamera();
     if (!blob) {
@@ -190,7 +208,7 @@ export default function Clock() {
       setPhase('ready');
       return;
     }
-    setShot({ blob, url: URL.createObjectURL(blob), capturedAt });
+    setShot({ blob, url: URL.createObjectURL(blob), capturedAt, geo });
     setPhase('review');
   };
 
@@ -205,8 +223,12 @@ export default function Clock() {
    *
    * @param {Blob|null} blob        the selfie, or null on the escape path
    * @param {string}    capturedAt  when the shutter fired, not when this ran
+   * @param {Promise|null} geoAt    the fix STARTED at `capturedAt`. Awaited
+   *   here so a slow upload never delays it and never ages it either. Null
+   *   only on the escape path, which starts its own at the moment of the tap
+   *   because that tap IS its shutter.
    */
-  const send = async (blob, capturedAt) => {
+  const send = async (blob, capturedAt, geoAt = null) => {
     setPhase('sending');
     const direction = nextDirection(me?.punches);
     if (!punchIdRef.current) punchIdRef.current = newClientPunchId();
@@ -228,9 +250,10 @@ export default function Clock() {
       }
     }
 
-    // After the photo, so a slow upload does not age the fix. §2: a null fix is
-    // a flag, never a refusal.
-    const geo = await captureGeoFix();
+    // Started at the shutter (see `shoot`). §2: a null fix is a flag, never a
+    // refusal, and `captureGeoFix` resolves null rather than throwing — so this
+    // await cannot fail the punch however the fix went.
+    const geo = await (geoAt || captureGeoFix());
 
     try {
       const r = await api.post('/v1/pahchan/punch', {
@@ -397,7 +420,7 @@ export default function Clock() {
               type="button"
               className="btn btn--fill btn--lg"
               disabled={phase === 'sending'}
-              onClick={() => send(shot?.blob, shot?.capturedAt)}
+              onClick={() => send(shot?.blob, shot?.capturedAt, shot?.geo)}
             >
               {phase === 'sending' ? 'Sending…' : DIRECTION_LABEL[direction]}
             </button>

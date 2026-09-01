@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CAPACITOR_DEBUG</key>
+	<string>$(CAPACITOR_DEBUG)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+        <string>Kartavaya</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<!-- ── THE TWO STRINGS iOS SHOWS THE EMPLOYEE ───────────────────────────
+	     Copied VERBATIM from mobile/app.json, where they were written for the
+	     Expo build and reviewed once. They are the sentence a person reads in
+	     the system permission sheet, and iOS refuses to show the sheet at all
+	     if the key is absent — so a missing string here is not a cosmetic
+	     gap, it is a camera that never opens and a punch that cannot be made.
+
+	     Both are DPDP-worded on purpose. The location one names the moment the
+	     read happens ("at the moment you punch and at no other time") because
+	     a permission sheet is the only place most employees will ever be told,
+	     and "while using the app" is what iOS says, not what we do.
+
+	     Only these two. The container has no file picker — Enroll.jsx and
+	     Clock.jsx both refuse the gallery, and that refusal is the security
+	     property the whole comparison rests on — so NSPhotoLibraryUsageDescription
+	     would declare a capability the app deliberately does not have, and
+	     invite an App Review question with no good answer. Microphone likewise:
+	     voice notes are a mobile-app feature, not a web one. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Take the selfie that records your clock in and clock out, and capture site photos and receipts to attach to tasks. Attendance photos are visible only to your HR team and your reporting manager.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Record where you clocked in and out, so your attendance can be confirmed against your site. Your location is read at the moment you punch and at no other time.</string>
+	<!-- No encryption beyond HTTPS. Declaring it here is what stops Apple
+	     asking the export-compliance question on every single upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+    <false/>
+    <key>UISceneConfigurations</key>
+    <dict>
+      <key>UIWindowSceneSessionRoleApplication</key>
+      <array>
+        <dict>
+            <key>UISceneConfigurationName</key>
+            <string>Default Configuration</string>
+            <key>UISceneDelegateClassName</key>
+            <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+            <key>UISceneStoryboardFile</key>
+            <string>Main</string>
+        </dict>
+      </array>
+    </dict>
+	</dict>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+</dict>
+</plist>

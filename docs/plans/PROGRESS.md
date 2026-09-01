@@ -8444,3 +8444,43 @@ the server, and "the queue survives a force-stop" reads `None` rather than `0`
 after a cold launch — **a missing badge and an empty queue look identical**, and
 `run-as` cannot read the MMKV store on a release APK, so that one is unresolved
 rather than a defect.
+
+## 2026-09-01 — approved queue: web form templates, Pahchan phase 0, iOS phase 1
+
+**Two orphaned capabilities found by building the approved features, not by
+looking for them.** Both are the same shape: engine complete, no caller, no
+error, no log line.
+
+1. **`graha_web_forms.destination`** — dispatched on since migration 251,
+   settable by nothing. 2 forms, both `crm_contact`, 24 submissions, zero of
+   anything else. The `hr_application` handler was written, reviewed and tested
+   against a value no customer could store.
+2. **Self-enrollment** — `POST /enrollment` accepts `source='self_capture'` and
+   `EnrollQueue.jsx` reviews the results; no web screen could produce one. 0
+   enrollment photos product-wide, 14 of 14 punches flagged `noref`.
+
+**Shipped:** Templates → Web form templates (6 templates, destination validated
+server-side, presentation block on the public route built rather than copied);
+Pahchan → My photos (camera-only, no file picker, lands pending); the geo fix
+moved to the shutter; `frontend/ios/` scaffolded with the two usage strings.
+
+**Tests:** 10 catalogue + 24 destination/presentation + 9 enrollment + 11 iOS
+plist. Every one mutation-tested. Two lessons worth keeping:
+
+- The catalogue test holds an **independently written** copy of the five-key
+  contract rather than importing the app's list. Importing it would make the
+  test agree with whatever the app currently believes.
+- The first draft of the presentation leak test put its secrets only at the top
+  of `settings`, and a mutation spreading the INNER block passed it — **the
+  assertion was satisfied by the shape of its own fixture**, the fault this
+  codebase keeps finding. Both nestings are populated now.
+
+**Not done, and not claimed:** the iOS project has never been compiled — Xcode
+does not run on Windows. Scaffold and plist verified; build unproven.
+
+**Two phase-0 items from proposal 94 were dropped after examination, not
+skipped:** the notice-ack localStorage latch (the server already owns the ack and
+`/me` returns it — a local latch could show the clock to somebody whose ack never
+persisted) and resetting the retake counter on a successful capture (it would
+hide the no-photo escape hatch from somebody whose camera had failed three times
+and then produced a bad frame).

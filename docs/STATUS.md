@@ -2372,6 +2372,69 @@ Set to `2026-08-01` on those two lines only; reversal is
 their eight runs disagree with the rows beneath them; **E2E is clean on all 17**,
 so this is not a code path everyone hits.
 
+### 2026-09-01 — Pahchan phase 0 closed, and the iOS container exists
+
+**🟡 An iPhone punch would now arrive CLEAN, and no iPhone has made one.** Five
+changes, four of them in shared web code so the Android app and the browser got
+them too:
+
+- **`accuracy_m = 0` cleared the very check it should fail.** All 14 punches in
+  the product carry it — the signature of Playwright's `setGeolocation`, not a
+  phone. `pahchan.py:646` now flags `<= 0`, not just null.
+- **The altitude pair was gated on non-null**, and Android's `getAltitude()`
+  returns `0.0` with no vertical fix, so silent handsets punched in at sea level.
+  Gated on a strictly positive `altitudeAccuracy` now, on web and mobile both.
+- **The location fix was taken AFTER the photo upload.** The punch's
+  authoritative time is `captured_at`, so on a slow connection the fix described
+  where somebody was thirty seconds later — a worker who photographs themselves
+  at the gate and walks inside was checked against wherever they ended up. Taken
+  at the shutter now, started in parallel with the compression so it costs
+  nothing.
+- **Nothing opened the clock by URL.** `/pahchan?tab=clock` works (validated
+  against the tab ids) and the manifest carries a "Clock in or out" shortcut.
+- **THERE WAS NO SELF-ENROLLMENT SCREEN ANYWHERE ON THE WEB.** This is why
+  **0 enrollment photos exist product-wide and 14 of 14 punches are flagged
+  `noref`** — every punch this product has ever taken is unverifiable, not
+  because the comparison is hard but because there is nothing to compare
+  against. `EnrollQueue.jsx` has always REVIEWED self-captures; nothing could
+  make one, and `POST /enrollment` has accepted `source='self_capture'` the
+  whole time. Pahchan → **My photos** is that screen.
+
+**iOS phase 1 is scaffolded and UNCOMPILED.** `frontend/ios/` exists, carries the
+two DPDP-worded usage strings verbatim from `mobile/app.json`, and `npm run ios`
+syncs and opens Xcode. ⚠ **Nothing has been built** — Xcode does not run on
+Windows, so the scaffold and the plist are verified and the compile is not.
+`docs/IOS-CONTAINER.md` holds the Mac steps. A simulator build needs no Apple
+account; only TestFlight and the App Store do.
+
+**The blocker is still not Apple.** 22 of 30 employees have no login and would be
+refused on any device.
+
+### 2026-09-01 — a web form can finally land somewhere other than the CRM
+
+**🟡 `destination` was unreachable for its whole life.** Migration 251 added
+`graha_web_forms.destination`, `submit_web_form` has dispatched on it since, and
+`services/webforms/destinations.py` carries a handler for `hr_application` with
+its own ownership and module checks. `WebFormCreate` had no such field, so every
+form took the column default:
+
+    SELECT destination, count(*), sum(submission_count)
+      FROM public.graha_web_forms GROUP BY destination;
+    -> crm_contact | 2 | 24        (and no other row)
+
+Engine supported end to end, unreachable from any screen, and silent — which is
+why it survived review. Templates → **Web form templates** is the first thing in
+the product that can publish a form landing anywhere else. Six starting points;
+`create_web_form` validates the destination against the same dict the dispatcher
+reads, and refuses an `hr_application` form with no job opening at CREATE rather
+than letting a candidate discover it.
+
+`read_web_form` (unauthenticated) also answers a presentation block now, so a
+template can reword the five fixed fields. ⚠ It **builds** that block from three
+named keys and copies nothing else — returning `settings` would hand a stranger
+`job_opening_id`, the exact value `land_hr_application` refuses to read from a
+payload. 🟡 not ✅: no customer has published one yet.
+
 **🟡 Pahchan can now be clocked from a browser — and still nobody can use it.**
 `POST /v1/pahchan/punch` has been complete for months and had exactly ONE
 caller, `mobile/src/screens/pahchan/ClockScreen.tsx`. There is no iOS build of
