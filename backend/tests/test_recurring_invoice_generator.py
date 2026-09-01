@@ -57,11 +57,24 @@ class _Pool:
     advisory lock inside a transaction.
     """
 
-    def __init__(self, rows=None, last_number=None, org=None, contact=None):
+    #: The employer of the contact each profile bills.
+    #:
+    #: ⚠ THE FIXTURE HAD NO ANSWER FOR THIS AND THE OLD CODE DID NOT ASK. The
+    #: generator now refuses to mint an invoice with no company, because 21 live
+    #: invoices worth ₹2,54,172 were minted exactly that way — all 21 of the
+    #: product's client-less invoices came from this path. So the fake pool has
+    #: to model a contact WITH an employer, which is what a billable retainer
+    #: actually looks like. `client_id=None` is the interesting case and it has
+    #: its own test below rather than being the silent default.
+    DEFAULT_CLIENT_ID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+
+    def __init__(self, rows=None, last_number=None, org=None, contact=None,
+                 client_id=DEFAULT_CLIENT_ID):
         self.rows = rows or []
         self.last_number = last_number
         self.org = _ORG_OK if org is None else org
         self.contact = _CONTACT_OK if contact is None else contact
+        self.client_id = client_id
         self.fetched = []
         self.executed = []
 
@@ -95,6 +108,9 @@ class _Pool:
             return None
         if "invoice_number FROM public.ganit_invoices" in q:
             return self.last_number
+        # `resolve_order_company` — which company the billed contact works for.
+        if "client_id::text FROM public.graha_contacts" in q:
+            return self.client_id
         return None
 
     async def fetch(self, sql, *a):
@@ -362,3 +378,53 @@ async def test_the_insert_names_doc_status_at_all():
     await G.generate_due_invoices(pool, "org-1")
     sql = next(s for s, _ in pool.executed if "INSERT INTO public.ganit_invoices" in s)
     assert "doc_status" in sql
+
+# ── A retainer with no company does not bill ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_a_profile_whose_contact_has_no_employer_does_not_bill():
+    """THE DEFECT THIS PATH ACTUALLY SHIPPED.
+
+    Measured against production on 2026-09-01: 21 live invoices worth ₹2,54,172
+    carry no `client_id`, and ALL TWENTY-ONE came from a recurring profile —
+    none from an order, none from a deal. Three profiles were still armed and
+    pointed at contacts with no employer, so every run added more.
+
+    An invoice with no company appears on no customer ledger, in no
+    receivables-by-client figure and on no statement of account. It is not
+    merely mis-filed: `GET /vikray/customers` ends its WHERE with
+    `AND (o.client_id IS NOT NULL OR o.contact_id IS NOT NULL)`, so such a
+    document can drop off the customers list altogether.
+
+    Nothing errored. The retainer billed, the invoice looked right, and the
+    money was invisible per customer — which is why it ran for weeks.
+    """
+    pool = _Pool([_rec()], client_id=None)
+    out = await G.generate_due_invoices(pool, "org-1")
+
+    assert out["generated"] == 0, "an invoice belonging to nobody was minted"
+    assert out["skipped_no_client"] == 1
+    # Not folded into the generic `skipped`, which also counts malformed
+    # templates — a caller showing one total cannot tell "your template is
+    # broken" from "this customer has no company", and only the second names
+    # something a person can go and fix.
+    assert out["skipped"] == 0
+    # And it wrote nothing at all.
+    assert not any("INSERT INTO public.ganit_invoices" in sql
+                   for sql, _args in pool.executed)
+
+
+@pytest.mark.asyncio
+async def test_a_profile_whose_contact_has_an_employer_still_bills():
+    """The anti-vacuity floor for the test above.
+
+    Every assertion there passes over a generator that has stopped billing
+    ANYTHING, which is exactly how a fix like this goes wrong.
+    """
+    pool = _Pool([_rec()])
+    out = await G.generate_due_invoices(pool, "org-1")
+
+    assert out["generated"] == 1
+    assert out["skipped_no_client"] == 0
+    assert any("INSERT INTO public.ganit_invoices" in sql
+               for sql, _args in pool.executed)

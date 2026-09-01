@@ -305,6 +305,13 @@ async def test_generating_a_recurring_invoice_emits_invoice_created(rig):
         ("FROM public.ganit_recurring", _RECURRING),
         ("INSERT INTO public.ganit_invoices", _INV_ROW),
     ]
+    # The company the billed contact works for. `generate_recurring_invoice`
+    # refuses outright without one as of 2026-09-01 — all 21 of the product's
+    # client-less invoices came from this path — so a fixture that models a
+    # BILLABLE retainer has to answer this lookup.
+    p.fetchval_responses = [
+        ("client_id::text FROM public.graha_contacts", "c-1"),
+    ]
     await ganit.generate_recurring_invoice("r1", user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_created"].calls) == 1

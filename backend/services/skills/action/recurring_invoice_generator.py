@@ -278,7 +278,7 @@ async def _doc_status_for(pool, org_id: str, rec, amounts: dict,
 async def generate_due_invoices(pool, org_id: str) -> dict:
     """Raise an invoice for every recurring definition that is due.
 
-    Returns {generated, skipped, awaiting_send, held_as_draft} — `awaiting_send`
+    Returns {generated, skipped, skipped_no_client, awaiting_send, held_as_draft} — `awaiting_send`
     counts rows whose template asks for auto-send, which this function
     deliberately does not perform (see the module docstring), and
     `held_as_draft` counts invoices written but not made final because they
@@ -310,6 +310,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
     )
 
     generated = skipped = awaiting_send = held_as_draft = 0
+    skipped_no_client = 0
 
     for rec in recurrings:
         try:
@@ -327,6 +328,33 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
             client_id = await resolve_order_company(
                 pool, org_id, "",
                 str(rec["contact_id"]) if rec["contact_id"] else "")
+
+            # ⚠ NO COMPANY, NO INVOICE — AND IT SAYS WHICH PROFILE.
+            #
+            # This path wrote a NULL `client_id` straight through. Measured
+            # 2026-09-01: 21 live invoices worth ₹2,54,172 have no company and
+            # ALL TWENTY-ONE came from a recurring profile. An invoice with no
+            # company appears on no customer ledger and no statement, and
+            # `GET /vikray/customers` filters it off the customers list
+            # entirely.
+            #
+            # A `continue` with its own counter, NOT a raise. The `except
+            # Exception` below would catch a raise and fold it into the generic
+            # `skipped` alongside malformed templates — turning a specific,
+            # fixable data problem into an anonymous number, which is the
+            # failure-into-silence pattern this codebase keeps finding. Counted
+            # separately and logged with the profile id, so the answer to "why
+            # did my retainer not bill?" is in the log rather than inferable.
+            if not client_id:
+                log.warning(
+                    "Recurring profile %s bills contact %s, who is not linked "
+                    "to a client. Skipped: an invoice must belong to a company "
+                    "to reach that customer's ledger. Set the contact's company "
+                    "and it will bill on the next run.",
+                    rec["id"], rec["contact_id"],
+                )
+                skipped_no_client += 1
+                continue
 
             # WHAT EACH LINE COST US, stamped on at the moment of writing.
             #
@@ -416,6 +444,10 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
     return {
         "generated": generated,
         "skipped": skipped,
+        # Reported separately from `skipped` on purpose: this one names a thing
+        # a person can go and fix, and a caller that shows only a total cannot
+        # tell "your template is broken" from "this customer has no company".
+        "skipped_no_client": skipped_no_client,
         "awaiting_send": awaiting_send,
         "held_as_draft": held_as_draft,
     }

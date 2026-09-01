@@ -2620,6 +2620,40 @@ async def generate_recurring_invoice(
         pool, org_id, "",
         str(rec["contact_id"]) if rec["contact_id"] else "")
 
+    # ⚠ AND IT REFUSES RATHER THAN MINTING AN INVOICE THAT BELONGS TO NOBODY.
+    #
+    # `resolve_order_company` answers None when the profile's contact has no
+    # employer, and this path used to write that None straight into
+    # `client_id`. Measured against production on 2026-09-01: 21 live invoices
+    # worth ₹2,54,172 have no company, and ALL TWENTY-ONE came from a recurring
+    # profile — none from an order and none from a deal. Three profiles were
+    # still armed and pointed at client-less contacts, so every run added more.
+    #
+    # An invoice with no company cannot appear on that customer's ledger, in
+    # receivables-by-client, or on a statement of account. It is not merely
+    # mis-filed: `GET /vikray/customers` filters on
+    # `client_id IS NOT NULL OR contact_id IS NOT NULL`, so such a document can
+    # disappear from the customers list entirely.
+    #
+    # Refused HERE and not in `resolve_order_company` itself: that helper is
+    # called from eleven places and at least one of them must keep returning
+    # None — converting an accepted quotation whose client has since been
+    # archived, where a 400 would strand a spent serial with no way forward
+    # (see the note at the quotation-conversion call site). The rule belongs on
+    # the paths that MINT a new document, not on the shared lookup.
+    #
+    # The message names the screen that fixes it, which is the same standard
+    # `validate_tds_challan` is held to: a refusal that does not say what to do
+    # is a dead end.
+    if not client_id:
+        raise HTTPException(
+            400,
+            "This retainer bills a contact who is not linked to a client. "
+            "Open the contact and set the company it belongs to, then generate "
+            "again — an invoice has to belong to a company to appear on their "
+            "ledger.",
+        )
+
     # A generated invoice is still an invoice being raised — rules on
     # invoice.created (retainer billing above all) must hear about this path
     # too, or automation works from the create form and not from recurring.
