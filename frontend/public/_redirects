@@ -1,12 +1,4 @@
 # Cloudflare Pages SPA fallback — W3 of docs/CLOUDFLARE-MIGRATION.md.
 # Inert on Vercel. On Pages, static assets match first, then functions/
 # (which owns /i/:token — see functions/i/[token].js), then this.
-# ⚠ A REQUEST UNDER /assets/ MUST NEVER REACH THIS LINE.
-# On 2026-08-31 one did: a hashed stylesheet that did not resolve was answered
-# with index.html at status 200, and the /assets/* rule in _headers stamped that
-# HTML `immutable, max-age=31536000`. The edge then served the app shell under a
-# stylesheet URL, cf-cache-status HIT, for a year. Every visitor on that edge got
-# an unstyled app and `MIME type ('text/html')` in the console.
-# `functions/assets/[[path]].js` now answers that gap with a no-store 404, which
-# runs before this catch-all. Do not remove one without the other.
 /* /index.html 200

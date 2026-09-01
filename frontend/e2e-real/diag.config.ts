@@ -35,7 +35,7 @@ export default defineConfig({
       name: 'real-chrome',
       testMatch: /diag-boot\.spec\.ts/,
       outputDir: path.join(OUT, 'chrome'),
-      use: { ...devices['Desktop Chrome'], channel: 'chrome', serviceWorkers: 'block' },
+      use: { ...devices['Desktop Chrome'], channel: 'chrome', baseURL: 'https://kartavaya.pages.dev' },
     },
   ],
 });
