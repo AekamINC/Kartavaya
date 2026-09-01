@@ -8759,3 +8759,39 @@ deleted an order BY NAME to avoid exactly this, and I did the un-scoped thing by
 hand ten minutes later. Every ad-hoc cleanup gets an org_id filter.
 
 **Totals:** 2,685 backend, 3,400 frontend, 9 live-schema, 20 gates, build clean.
+
+
+## 2026-09-01 — upstream billing is ARMED and SCHEDULED
+
+All four client organisations now carry `auto_invoice = TRUE`, and the sweep has
+raised the first upstream invoices this product has ever issued:
+
+    KSUB-202609-0001  Unicode Group      12,000 + 18% =  14,160  draft
+    KSUB-202609-0002  Demo - Kartavaya   10,000 + 18% =  11,800  draft
+    KSUB-202609-0003  E2E Test & Assoc   12,000 + 18% =  14,160  draft
+    KSUB-202609-0004  UK AekamINC        20,000 + 18% =  23,600  draft
+                                        ------------------------
+                                         54,000 + 9,720 = 63,720
+
+Four invoices, four guard rows, four distinct (org, period) pairs — one document
+per organisation per month, exactly. **Aekam Inc is billed nothing**, and
+migration 252's trigger still refuses to let it be.
+
+**Idempotence proven across a MIXED batch, which is the case that matters.** The
+second run, with Unicode already billed and the other three newly armed, returned
+`created: 3, skipped: 1` — it billed only the ones that were due. The third run
+returned `created: 0, skipped: 4`.
+
+⚠ **AND THE ARMING DID NOTHING UNTIL THE CRON KNEW ABOUT IT.** `auto_invoice` on
+a line only matters if something calls the sweep, and none of the nine Railway
+cron services did — `/cron/platform-billing` had no caller at all. Added to
+`cron-daily-prod` (`15 1 * * *`) beside `billing`, the client-side sweep it
+mirrors, and applied with a variable write because a redeploy reuses the old
+snapshot and would have kept the old command.
+
+Next real firing: 2026-10-01, when September is billed and October becomes due.
+Every run between now and then answers `created: 0, skipped: 4`.
+
+**Still owed:** a halted organisation is bucketed as `skipped`, indistinguishable
+from "nothing due", in a file whose own banner says a cron that cannot do its job
+must not answer 200. Two tests pin that and say to rewrite them when it is fixed.
