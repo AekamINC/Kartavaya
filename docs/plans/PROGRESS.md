@@ -8526,3 +8526,45 @@ is a person running the script after adding the digest.
 `--check` (which exits 1 when a newer release exists) are both ready; creating
 the scheduled service is infra and costs compute, so it is left as an explicit
 step rather than done silently.
+
+
+## 2026-09-01 — upstream billing: pro-rata, and the owner's exemption as a rule
+
+**Migration 252** adds `auto_invoice` + `invoice_from` to `org_billing_lines` —
+the two columns `client_service_lines` has carried since 223 — and a trigger
+refusing any billing line for an org with `is_platform_org`.
+
+`auto_invoice` defaults FALSE, so the migration changes the behaviour of nothing
+that exists. The four live lines (Demo ₹10k, E2E ₹12k, UK AekamINC ₹20k, Unicode
+₹12k, all monthly, all open) keep being exactly what they were.
+
+**The owner's exemption was a convention and is now a rule.** Aekam Inc had zero
+billing lines because nobody had added one. Proven live: the trigger refuses the
+insert, and the probe ran inside a transaction that aborts either way so a
+failing trigger could not have left a charge behind.
+
+**`services/platform_proration.py`** does the mid-term maths. Decimal throughout,
+actual days inclusive at both ends, month-end anchors clamped so a 31st does not
+walk forward through the year.
+
+⚠ **TWO OWN-GOALS WORTH RECORDING, BOTH THE SAME FAULT.**
+
+1. The headline property test — "every change date in a year reconciles" —
+   compared the split against `prorate(old) + prorate(new)`. But `prorate`
+   rounds, so the expected value was computed by the very independent-rounding
+   the code exists to avoid. **A mutation that rounded both halves separately
+   left it green.** Satisfied by its own construction, over exactly the defect it
+   was named for.
+2. Rewriting it to compare against full precision then **failed against my own
+   implementation**, which summed two already-rounded halves rather than
+   quantising the exact total once. A real paisa drift on real dates in October
+   and December. Fixed: total is quantised from the exact figure, `before` on its
+   own, `after` is the remainder — so `before + after == total` by construction.
+
+The corrected test catches the regression in 8 of 12 months. The earlier one
+caught it in none.
+
+**Not done:** `sweep_platform_invoices` — the automation that turns an armed line
+into an actual invoice. The schema and the arithmetic are in place and tested;
+the sweep is the next step, and nothing is armed (`auto_invoice` is true on zero
+rows), so the product's behaviour is unchanged until it is written.
