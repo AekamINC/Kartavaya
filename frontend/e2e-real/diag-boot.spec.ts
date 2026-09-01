@@ -77,8 +77,9 @@ test('diag — what the browser reports on /dashboard', async ({ page }) => {
     const out: any = { linked: href.map((h) => h.slice(-30)) };
     for (const h of href) {
       try {
-        const r = await fetch(h, { cache: 'reload' });
-        out[h.slice(-30)] = `${r.status} ${r.headers.get('content-type')}`;
+        const r = await fetch(h);  // default cache mode, as a <link> would
+        const t = await r.text();
+        out[h.slice(-30)] = `${r.status} ${r.headers.get('content-type')} :: ${t.slice(0, 180).replace(/\s+/g, ' ')}`;
       } catch (e: any) { out[h.slice(-30)] = 'threw ' + String(e.message).slice(0, 60); }
     }
     return out;
