@@ -39,6 +39,8 @@ import { avatarBg } from '../components/ui/Avatar';
 import TemplateCard from './templates/TemplateCard';
 import TaskTemplateForm from './templates/TaskTemplateForm';
 import ApplyTemplateModal from './templates/ApplyTemplateModal';
+import WebFormTemplatesTab from './templates/WebFormTemplatesTab';
+import { WEB_FORM_TEMPLATES } from './templates/webFormTemplates';
 import { useLanguage } from '../components/CustomizePanel';
 import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
@@ -206,11 +208,18 @@ export default function TemplatesPage() {
   };
 
   const isProject = tab === 'project';
+  /* The third tab is not a list of the firm's saved things — it is the
+     product's own catalogue, so it loads nothing, cannot fail to load, and
+     shares none of the state below. Everything under it is gated on this
+     rather than restructured, because `current` is `isProject ? … : …` and a
+     third tab would otherwise silently render the TASK list. */
+  const isWebForm = tab === 'webform';
   const current = isProject ? projTemplates : taskTemplates;
 
   const TABS = [
     ['project', 'Project templates', 'परियोजना', projTemplates.length],
     ['task', 'Task templates', 'कार्य', taskTemplates.length],
+    ['webform', 'Web form templates', 'प्रपत्र', WEB_FORM_TEMPLATES.length],
   ];
 
   return (
@@ -239,11 +248,13 @@ export default function TemplatesPage() {
         ))}
       </div>
 
-      {loading && <SkeletonCardGrid count={6} columns={3} lines={3} />}
+      {isWebForm && <WebFormTemplatesTab />}
 
-      {!loading && loadErr && <ErrorState kind={loadErr} onRetry={load} />}
+      {!isWebForm && loading && <SkeletonCardGrid count={6} columns={3} lines={3} />}
 
-      {!loading && !loadErr && (
+      {!isWebForm && !loading && loadErr && <ErrorState kind={loadErr} onRetry={load} />}
+
+      {!isWebForm && !loading && !loadErr && (
         <>
           <div className="k-tmpl-grid">
             {current.map((t, idx) => {

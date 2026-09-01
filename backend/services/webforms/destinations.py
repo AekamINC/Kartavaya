@@ -138,3 +138,51 @@ def handler_for(destination: str):
         return DESTINATIONS[destination]
     except KeyError:
         raise HTTPException(500, "This form is misconfigured and cannot accept submissions.")
+
+
+#: Everything a form's `destination` may be set to, including the one the
+#: router owns inline. Migration 251's CHECK constraint holds the same set.
+#:
+#: ⚠ THIS EXISTS BECAUSE `destination` WAS UNREACHABLE. Migration 251 added the
+#: column and `submit_web_form` dispatched on it from the day it shipped, but
+#: `WebFormCreate` never carried the field — so every form this product could
+#: create took the DEFAULT, and a live count on 2026-09-01 proves it: two forms,
+#: both `crm_contact`, 24 submissions between them, zero of anything else. The
+#: handler above was written, reviewed and tested against a value no customer
+#: could ever store. Engine-supported and UI-unreachable is its own fault class
+#: and it does not announce itself: nothing errors, the feature is simply not
+#: there.
+ALLOWED_DESTINATIONS: frozenset[str] = frozenset({"crm_contact"}) | frozenset(DESTINATIONS)
+
+
+def validate_destination(destination: str, settings: dict) -> None:
+    """Refuse a destination the code cannot serve, at CREATE rather than at submit.
+
+    Two separate checks, and the second is the one that matters to a customer.
+
+    The destination itself is checked against the allowlist — the SQL rule
+    applied to a routing decision, and the same set the CHECK constraint holds,
+    so a value that passes here cannot be refused by the database and a value
+    the database would take cannot bypass this.
+
+    Then the settings each destination REQUIRES. `land_hr_application` refuses a
+    form with no `job_opening_id` with "This form is not accepting applications
+    yet." — correct at submit time, but by then a firm has published a slug, put
+    it on their careers page, and the first person to fill it in is the one who
+    finds out. Checking at create means the firm finds out instead, on the
+    screen that can fix it, which is the same argument `validate_tds_challan`
+    makes about naming the field and the screen rather than failing late.
+    """
+    if destination not in ALLOWED_DESTINATIONS:
+        raise HTTPException(
+            400,
+            "Choose where this form should send its submissions: "
+            + ", ".join(sorted(ALLOWED_DESTINATIONS)),
+        )
+    if destination == "hr_application" and not str(
+        (settings or {}).get("job_opening_id") or ""
+    ).strip():
+        raise HTTPException(
+            400,
+            "Pick the job opening this form applies to before publishing it.",
+        )

@@ -4336,6 +4336,16 @@ class WebFormCreate(BaseModel):
     settings: dict = {}
     auto_assign_to: str = ""
     auto_source: str = "web_form"
+    #: Which module the submission lands in. The default keeps every form ever
+    #: created before 2026-09-01 behaving exactly as it did — all two of them,
+    #: both `crm_contact`, which is the whole population.
+    #:
+    #: ⚠ NOT VALIDATED HERE. A pydantic `Literal` would pin the set in a THIRD
+    #: place, and this codebase has already been bitten by one rule kept in
+    #: three copies. `validate_destination` reads the same dict the dispatcher
+    #: reads, so the allowlist, the CHECK constraint and the handler table
+    #: cannot drift apart without something failing loudly.
+    destination: str = "crm_contact"
 
 
 @router.get("/web-forms")
@@ -4351,7 +4361,7 @@ async def list_web_forms(
         # object that outlives the admin who made it, so "who published this
         # form?" is the question this list could never answer.
         "SELECT w.id, w.name, w.slug, w.fields, w.settings, w.auto_assign_to, w.auto_source, "
-        "w.submission_count, w.is_active, "
+        "w.submission_count, w.is_active, w.destination, "
         # `actor_select` is comma-TERMINATED, so it must be followed by another
         # column and never by the FROM — the two timestamps sit after it for
         # exactly that reason.
@@ -4379,6 +4389,10 @@ async def create_web_form(
     slug = re.sub(r"[^a-z0-9-]", "", body.slug.lower().strip())
     if not slug:
         raise HTTPException(400, "Invalid slug")
+    # Before the write, not after it: a form whose destination the dispatcher
+    # cannot serve is a slug on somebody's website that refuses every visitor.
+    from services.webforms.destinations import validate_destination
+    validate_destination(body.destination, body.settings)
     try:
         row = await pool.fetchrow(
             # `$8` is `user["user_id"]` — a TEXT member id like
@@ -4391,12 +4405,15 @@ async def create_web_form(
             # a line of it changing. Left as-is on purpose — the fix belonged
             # in the column, not here.
             "INSERT INTO public.graha_web_forms "
-            "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6::text,''), $7, $8) "
-            "RETURNING id, name, slug",
+            "(org_id, name, slug, fields, settings, auto_assign_to, auto_source, "
+            " created_by, destination) "
+            "VALUES ($1::uuid, $2, $3, $4::jsonb, $5::jsonb, NULLIF($6::text,''), $7, "
+            " $8, $9) "
+            "RETURNING id, name, slug, destination",
             org_id, body.name, slug, json.dumps(body.fields),
             json.dumps(body.settings),
             body.auto_assign_to, body.auto_source, user["user_id"],
+            body.destination,
         )
     except asyncpg.exceptions.UniqueViolationError:
         raise HTTPException(409, "A form with this slug already exists")
@@ -4475,13 +4492,68 @@ async def read_web_form(slug: str, request: Request):
     """
     pool = await get_pool()
     form = await pool.fetchrow(
-        "SELECT name, fields FROM public.graha_web_forms "
+        "SELECT name, fields, settings FROM public.graha_web_forms "
         "WHERE slug=$1 AND is_active=TRUE",
         slug,
     )
     if not form:
         raise HTTPException(404, "Form not found")
-    return {"name": form["name"], "fields": form["fields"] or []}
+    return {
+        "name": form["name"],
+        "fields": form["fields"] or [],
+        "presentation": _presentation(form["settings"]),
+    }
+
+
+#: The five keys `submit_web_form` actually reads. A label may be renamed and a
+#: field may be hidden; nothing here can ADD a box, because a box whose contents
+#: the server discards is the orphaned-capability fault pointing at the visitor.
+_PUBLIC_FIELD_KEYS = frozenset({"name", "email", "phone", "company", "message"})
+
+
+def _presentation(settings) -> dict:
+    """The part of a form's settings a STRANGER may see. Picked, never spread.
+
+    ⚠ `settings` IS NOT SAFE TO RETURN. It is a free-form jsonb blob the firm
+    controls, and it already holds `job_opening_id` — the id `land_hr_application`
+    refuses to read from the payload precisely because a uuid in public reach is
+    a parameter and not a secret. Returning the blob would hand over the very
+    value the handler guards, plus whatever a firm puts there next.
+
+    So this builds a NEW dict out of three named keys and copies nothing else.
+    A settings blob that grows a field next year is private by default; making
+    something public stays a decision somebody has to write down here.
+
+    `name` cannot be hidden however the firm configures it — the server refuses
+    a submission without one, so hiding it would draw a form that cannot be
+    sent.
+    """
+    if isinstance(settings, str):
+        try:
+            settings = json.loads(settings)
+        except (ValueError, TypeError):
+            settings = {}
+    block = (settings or {}).get("presentation") or {}
+    if not isinstance(block, dict):
+        return {}
+
+    labels = block.get("labels")
+    labels = labels if isinstance(labels, dict) else {}
+    hide = block.get("hide")
+    hide = hide if isinstance(hide, list) else []
+
+    return {
+        "intro": str(block.get("intro") or "")[:300],
+        "labels": {
+            str(k): str(v)[:80]
+            for k, v in labels.items()
+            if str(k) in _PUBLIC_FIELD_KEYS and str(v or "").strip()
+        },
+        "hide": [
+            str(k) for k in hide
+            if str(k) in _PUBLIC_FIELD_KEYS and str(k) != "name"
+        ],
+    }
 
 
 @router.post("/f/{slug}")

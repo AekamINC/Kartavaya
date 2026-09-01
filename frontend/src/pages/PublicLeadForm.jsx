@@ -54,6 +54,34 @@ const FIELDS = [
 
 const BLANK = { name: '', email: '', phone: '', company: '', message: '' };
 
+/**
+ * The five fixed fields, with the firm's own wording laid over them.
+ *
+ * ⚠ THIS RENAMES AND HIDES. IT CANNOT ADD.
+ * `submit_web_form` reads exactly five keys and ignores the form's stored
+ * `fields`, so drawing a sixth box would collect something the server throws
+ * away — the same orphaned-capability fault this file's header already names,
+ * pointing at the visitor instead of at the firm. The server's
+ * `_presentation()` filters to these keys too, so a label for an invented key
+ * never arrives here in the first place; this is the second of the two checks,
+ * not the only one.
+ *
+ * Renaming matters because one form is not one purpose. "How can we help?" is
+ * the right question on a contact form and the wrong one on a job application,
+ * and until now every hosted form asked it.
+ *
+ * `name` survives any configuration — the submit button is disabled without
+ * one, so hiding it would draw a form that can never be sent.
+ */
+function fieldsFor(presentation) {
+  const p = presentation || {};
+  const labels = p.labels || {};
+  const hide = new Set(Array.isArray(p.hide) ? p.hide : []);
+  return FIELDS
+    .filter((f) => f.key === 'name' || !hide.has(f.key))
+    .map((f) => (labels[f.key] ? { ...f, label: labels[f.key] } : f));
+}
+
 export default function PublicLeadForm() {
   const { slug } = useParams();
   const [state, setState] = useState('loading');   // loading | ready | gone | offline
@@ -182,10 +210,10 @@ export default function PublicLeadForm() {
               <form className="pub__pad pub__stack" onSubmit={submit}>
                 <h1 className="pub__title">{form?.name || 'Get in touch'}</h1>
                 <p className="pub__lede">
-                  Leave your details and somebody will come back to you.
-                  Only your name is needed.
+                  {form?.presentation?.intro
+                    || 'Leave your details and somebody will come back to you. Only your name is needed.'}
                 </p>
-                {FIELDS.map((f) => (
+                {fieldsFor(form?.presentation).map((f) => (
                   <label key={f.key} className="k-formpanel__label">
                     <span>{f.label}{f.required ? ' *' : ''}</span>
                     {f.long ? (
