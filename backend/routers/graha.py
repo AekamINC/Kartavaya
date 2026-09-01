@@ -958,7 +958,17 @@ async def create_contact(
     _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
-    valid_types = ("lead", "customer", "vendor", "partner")
+    # ⚠ THIS LIST AND THE DATABASE'S CHECK MUST AGREE, AND FOR ONE AFTERNOON
+    # THEY DID NOT. Migration 255 removed 'customer' from
+    # `graha_contacts_contact_type_check` and this allowlist was not moved with
+    # it, so creating a contact was broken in BOTH directions: `'contact'` — the
+    # only correct value — was refused here with a 400, and `'customer'` passed
+    # this check and then died on the constraint as an unexplained 500.
+    #
+    # Found by driving the real endpoint rather than by any test, which is the
+    # argument for driving it. A grep for the migration would not have found
+    # this line; only a request that actually tried to create a contact did.
+    valid_types = ("lead", "contact", "vendor", "partner")
     if body.contact_type not in valid_types:
         raise HTTPException(400, f"contact_type must be one of: {', '.join(valid_types)}")
 

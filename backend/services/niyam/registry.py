@@ -369,9 +369,13 @@ REGISTRY: dict[str, tuple] = {
         Field("created_by", "Created by", "select"),
     ),
     LEAD_CONVERTED: lambda: (
-        # 018's CHECK on graha_contacts.contact_type — what the contact BECAME.
+        # The CHECK on graha_contacts.contact_type — what the contact BECAME.
+        # 'customer' was removed by migration 255: a customer is a COMPANY
+        # (`graha_clients.is_sales_customer`), not a kind of person. A rule
+        # condition offering a value the column can no longer hold would never
+        # match anything, silently.
         Field("contact_type", "Contact type", "select",
-              ("lead", "customer", "vendor", "partner")),
+              ("lead", "contact", "vendor", "partner")),
         Field("company", "Company", "text"),
         Field("client_id", "Client", "select"),
         Field("converted_by", "Converted by", "select"),
