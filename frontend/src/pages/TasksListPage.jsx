@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSkeletonGate } from '../hooks/useSkeletonGate';
 import { api } from '../lib/api';
+import { sharedGet } from '../lib/sharedGet';
 import { currentUser } from '../lib/auth';
 import { navContext } from '../components/layout/navConfig';
 import { useToast } from '../components/ui/toast';
@@ -183,8 +184,8 @@ export default function TasksListPage() {
     // `Promise.all` they were fatal together, so a `/categories` 500 blanked a
     // list of tasks that had arrived intact.
     const tasksReq = api.get(`/tasks${archived ? '?archived=true' : ''}`);
-    const teamsReq = api.get('/teams').catch(() => null);
-    const catsReq  = api.get('/categories').catch(() => null);
+    const teamsReq = sharedGet('/teams').catch(() => null);
+    const catsReq  = sharedGet('/categories').catch(() => null);
     try {
       const tRes = await tasksReq;
       setTasks(Array.isArray(tRes.data) ? tRes.data : []);

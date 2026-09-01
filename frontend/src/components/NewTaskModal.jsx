@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import FocusTrap from './ui/FocusTrap';
 import { api } from '../lib/api';
 
+import { sharedGet } from '../lib/sharedGet';
 import { PRIORITY_COLOR, logger } from '../lib/utils';
 // `Avatar` rather than a hand-rolled circle: `AVATAR_COLORS` is the legacy list
 // and still carries the retired `#0082c6`, `#8b5cf6` and `#f59e0b` (00 §9), and
@@ -132,7 +133,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
     setTitleError(false); setAssigneeOpen(false); setTemplates([]); setSubtasks([]); setShowTemplatePicker(false); setUploadError('');
 
-    api.get('/teams').then(r => setProjects(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    sharedGet('/teams').then(r => setProjects(Array.isArray(r.data) ? r.data : [])).catch(() => {});
 
     setTimeout(() => titleRef.current?.focus(), 80);
 

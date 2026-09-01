@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api, rows } from '../lib/api';
+import { sharedGet } from '../lib/sharedGet';
 import { currentUser } from '../lib/auth';
 import { navContext } from './layout/navConfig';
 import ConfirmDialog from './ui/ConfirmDialog';
@@ -245,7 +246,7 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     setComments([]); setActivity([]); setEntries([]); setTimer(null); setTimeErr(null); setAttachments([]);
     setMembers([]); setMyRole(null); setActLoad(false);
 
-    api.get('/categories').then(r => setCategories(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    sharedGet('/categories').then(r => setCategories(Array.isArray(r.data) ? r.data : [])).catch(() => {});
 
     Promise.all([
       api.get(`/tasks/${taskId}`),

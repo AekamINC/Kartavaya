@@ -49,6 +49,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { sharedGet } from '../../lib/sharedGet';
 import { NotificationsModal } from '../NotificationsModal';
 import NewTaskModal from '../NewTaskModal';
 import Sidebar from './Sidebar';
@@ -267,7 +268,7 @@ export default function AppShell() {
     if (cached) {
       try { setTeams(JSON.parse(cached)); setTeamsLoaded(true); } catch (_) {}
     }
-    api.get('/teams')
+    sharedGet('/teams')
       .then(r => {
         setTeams(r.data);
         try { localStorage.setItem('kv_teams_cache', JSON.stringify(r.data)); } catch (_) {}

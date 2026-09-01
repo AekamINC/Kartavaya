@@ -13,6 +13,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
+import { sharedGet } from '../lib/sharedGet';
 import { currentUser } from '../lib/auth';
 import { ChevronRight, X, ListChecks } from 'lucide-react';
 import { Secondary } from './Bilingual';
@@ -69,7 +70,7 @@ export default function OnboardingChecklist({ onNewTask }) {
 
   const refresh = useCallback(async () => {
     const [projectsRes, usersRes, tasksRes] = await Promise.all([
-      api.get('/teams').catch(() => null),
+      sharedGet('/teams').catch(() => null),
       api.get('/users').catch(() => null),
       api.get('/tasks').catch(() => null),
     ]);
