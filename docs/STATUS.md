@@ -12,6 +12,78 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-01 — ⚠ THE EDGE CACHED THE APP SHELL UNDER A STYLESHEET URL
+
+**If every e2e suite fails at once, read this before debugging the product.** It
+cost four full suite runs and ~40 "product failures" that were one cache entry.
+
+### The symptom and the cause
+
+Every test times out against an unstyled **"Loading Kartavaya"** splash:
+
+    Refused to apply style from '.../assets/index-<hash>.css'
+    because its MIME type ('text/html') is not a supported stylesheet MIME type
+
+`public/_redirects` ends with `/* /index.html 200`; `public/_headers` gives
+`/assets/*` `max-age=31536000, immutable`. Each is right alone. Together, the
+moment a hashed asset does not resolve, the catch-all answers it with the app
+shell at **status 200** and the `/assets/*` rule stamps that HTML **immutable
+for a year**. The edge freezes it: `200 text/html`, `cf-cache-status: HIT`,
+body `<!doctype html>`.
+
+### ⚠ `curl` CANNOT SEE IT
+
+curl returned `text/css` for the same URL in the same minute a browser got
+`text/html`, because this machine's cache entry was healthy. I trusted curl
+three times and re-ran the suites instead of the app. **Measure from inside a
+browser** — `fetch()` in the page, or read the Playwright failure screenshot.
+
+Ruled out by measurement, so do not re-investigate: the chrome channel (bundled
+Chromium and real Chrome fail identically), the service worker
+(`serviceWorkers: 'block'` changes nothing), headless detection (headed fails
+too), browser cache (fresh profile per run), and every
+Accept/Accept-Encoding/Referer/Sec-Fetch variant.
+
+### ✅ The unblock — run against pages.dev
+
+`real.config.ts:131` is `baseURL: process.env.E2E_BASE_URL || 'https://app.kartavaya.com'`,
+and `kartavaya.pages.dev` is the SAME deployment with a clean cache:
+
+    E2E_BASE_URL=https://kartavaya.pages.dev npx playwright test --config=e2e-real/suite11.config.ts
+
+Suite 11 was 13/0, went 8/5 while poisoned, and returned to **13/0** there.
+
+**Still owed: a Cloudflare cache purge for `app.kartavaya.com`** (owner action),
+or a CSS content change to rotate the hash and abandon the poisoned URL.
+
+### ⚠ AND DO NOT "FIX" IT WITH A PAGES FUNCTION — I DID, AND IT TOOK PROD DOWN
+
+`b8786e0e` added `functions/assets/[[path]].js` to answer a missing asset with a
+404 instead of the shell, taking the routing order from a comment in
+`_redirects` ("static assets match first, then functions/"). **That ordering
+describes _redirects, not Functions.** A Pages Function that matches a path
+handles that path, static file or not — so it 404'd **every** asset. Measured on
+pages.dev, which has no cached copies: all three assets index.html references
+came back `404 text/plain`. Reverted in `b1621b14`; recovered in ~60s.
+
+Any real fix must distinguish "file exists" from "file missing", which a
+catch-all Function cannot do.
+
+### Stage B, re-run clean against pages.dev
+
+    suite 11  13/0     suite 12  12/0  (was 11/1)   suite 17  12/0  (was 11/1)
+    suite 18  14/0     suite 20  14/2               suite 22  12/1
+
+12.10 and 17.11 were floors measuring the wrong thing, both now fixed and green.
+The three remaining reds are product-side and design-level: **20.05** rows off
+`--row-h` on 9 screens (manav#notices 137.6px against a 50px token), **20.13** a
+DateInput popover inside a Modal drawn where it cannot be clicked (shared
+component, ~64 call sites), and **22.93** `button.k-dock__pill` intercepting 8
+controls across 8 screens — the corner dock covers whatever sits bottom-right,
+which `--k-dock-clear` only fixes for the last row.
+
+---
+
 ## 2026-08-31 LATE — WAVE 2 RE-TRIAGE: 54/7, AND NOT ONE OF THE SEVEN WAS THE PRODUCT
 
 Five were faults in checks written hours earlier; two were fixtures **migration
