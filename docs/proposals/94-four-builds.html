@@ -1,0 +1,579 @@
+<title>Four Builds to Approve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --paper:      #F6F5F1;
+    --card:       #FFFFFF;
+    --ink:        #14201C;
+    --ink-2:      #4A5A54;
+    --ink-3:      #7B8A84;
+    --rule:       #DEDCD4;
+    --rule-soft:  #EBE9E2;
+    --teal:       #0B7A6E;
+    --teal-soft:  #E4F0ED;
+    --brick:      #A3402F;
+    --brick-soft: #F6E8E4;
+    --amber:      #8A6A16;
+
+    --f-display: 'Newsreader', Georgia, 'Times New Roman', serif;
+    --f-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    --measure: 68ch;
+    --pad:     clamp(1.1rem, 3.5vw, 2.6rem);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #101613;
+      --card:       #171F1B;
+      --ink:        #E8EDEA;
+      --ink-2:      #A9B7B1;
+      --ink-3:      #7C8B85;
+      --rule:       #2A352F;
+      --rule-soft:  #202A25;
+      --teal:       #5FD0BE;
+      --teal-soft:  #14322D;
+      --brick:      #E8927F;
+      --brick-soft: #33201C;
+      --amber:      #D8B45C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #101613;
+    --card:       #171F1B;
+    --ink:        #E8EDEA;
+    --ink-2:      #A9B7B1;
+    --ink-3:      #7C8B85;
+    --rule:       #2A352F;
+    --rule-soft:  #202A25;
+    --teal:       #5FD0BE;
+    --teal-soft:  #14322D;
+    --brick:      #E8927F;
+    --brick-soft: #33201C;
+    --amber:      #D8B45C;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { padding: var(--pad); max-width: 1180px; }
+
+  /* ── Masthead ─────────────────────────────────────────────── */
+  .mast { border-bottom: 2px solid var(--ink); padding-bottom: 1.4rem; margin-bottom: 2.6rem; }
+  .eyebrow {
+    font-size: .72rem; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600; margin: 0 0 .7rem;
+  }
+  h1 {
+    font-family: var(--f-display); font-weight: 400; font-size: clamp(2.1rem, 6vw, 3.3rem);
+    line-height: 1.08; letter-spacing: -.02em; margin: 0 0 .6rem; text-wrap: balance;
+  }
+  .standfirst {
+    font-family: var(--f-display); font-size: clamp(1.02rem, 2.2vw, 1.24rem);
+    color: var(--ink-2); max-width: var(--measure); margin: 0; line-height: 1.5;
+  }
+  .meta {
+    margin-top: 1.1rem; font-size: .8rem; color: var(--ink-3);
+    display: flex; flex-wrap: wrap; gap: .5rem 1.4rem;
+  }
+  .meta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ── Section ──────────────────────────────────────────────── */
+  section { margin: 0 0 3.4rem; }
+  .sec-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; margin-bottom: .25rem; }
+  .module {
+    font-size: .68rem; letter-spacing: .12em; text-transform: uppercase; font-weight: 600;
+    color: var(--teal); background: var(--teal-soft);
+    padding: .28rem .6rem; border-radius: 3px; white-space: nowrap;
+  }
+  h2 {
+    font-family: var(--f-display); font-weight: 400; font-size: clamp(1.5rem, 3.6vw, 2.05rem);
+    letter-spacing: -.015em; margin: 0; line-height: 1.15; text-wrap: balance;
+  }
+  .ask { color: var(--ink-2); max-width: var(--measure); margin: .5rem 0 1.5rem; }
+  .ask em { font-style: italic; color: var(--ink); }
+
+  h3 {
+    font-family: var(--f-body); font-size: .74rem; letter-spacing: .11em;
+    text-transform: uppercase; font-weight: 600; color: var(--ink-3);
+    margin: 2rem 0 .8rem; padding-bottom: .4rem; border-bottom: 1px solid var(--rule-soft);
+  }
+
+  /* ── Today vs Proposed ────────────────────────────────────── */
+  .ledger { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+  @media (min-width: 800px) { .ledger { grid-template-columns: 1fr 1fr; gap: 1.4rem; } }
+
+  .col { background: var(--card); border: 1px solid var(--rule); border-radius: 5px; padding: 1.2rem 1.3rem; }
+  .col--today    { border-top: 3px solid var(--brick); }
+  .col--proposed { border-top: 3px solid var(--teal); }
+  .col h4 {
+    font-size: .72rem; letter-spacing: .11em; text-transform: uppercase; font-weight: 600;
+    margin: 0 0 .9rem;
+  }
+  .col--today h4    { color: var(--brick); }
+  .col--proposed h4 { color: var(--teal); }
+  .col ul { margin: 0; padding-left: 1.05rem; }
+  .col li { margin-bottom: .72rem; }
+  .col li:last-child { margin-bottom: 0; }
+  .col li::marker { color: var(--ink-3); }
+
+  .num {
+    font-variant-numeric: tabular-nums; font-weight: 600;
+    background: var(--brick-soft); color: var(--brick);
+    padding: .05rem .3rem; border-radius: 3px; white-space: nowrap;
+  }
+  .num--good { background: var(--teal-soft); color: var(--teal); }
+
+  code, .mono {
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+    font-size: .855em; background: var(--rule-soft); padding: .08rem .32rem;
+    border-radius: 3px; color: var(--ink-2); word-break: break-word;
+  }
+
+  /* ── Screen sketch ────────────────────────────────────────── */
+  .screen {
+    background: var(--card); border: 1px solid var(--rule); border-radius: 5px;
+    overflow: hidden; margin-top: .5rem;
+  }
+  .screen__bar {
+    background: var(--rule-soft); border-bottom: 1px solid var(--rule);
+    padding: .5rem .9rem; font-size: .74rem; color: var(--ink-2); font-weight: 500;
+    display: flex; gap: .5rem; align-items: center;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rule); flex: none; }
+  .screen__body { padding: 1.1rem 1.2rem; }
+  .tabs { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: 1rem; border-bottom: 1px solid var(--rule-soft); }
+  .tab { font-size: .78rem; padding: .35rem .65rem; color: var(--ink-3); border-bottom: 2px solid transparent; }
+  .tab--on { color: var(--teal); border-bottom-color: var(--teal); font-weight: 600; }
+  .tab--new { color: var(--teal); border: 1px dashed var(--teal); border-radius: 3px 3px 0 0; font-weight: 600; }
+
+  .tbl-scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: .82rem; min-width: 520px; }
+  th {
+    text-align: left; font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600; padding: .45rem .6rem .45rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  td { padding: .55rem .6rem .55rem 0; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0; }
+  tr:last-child td { border-bottom: 0; }
+  .new-cell { color: var(--teal); font-weight: 600; }
+  .tag {
+    font-size: .68rem; padding: .1rem .38rem; border-radius: 3px;
+    background: var(--rule-soft); color: var(--ink-3);
+  }
+
+  .field { margin-bottom: .85rem; }
+  .field__l { display: block; font-size: .72rem; color: var(--ink-2); margin-bottom: .25rem; font-weight: 500; }
+  .field__c {
+    border: 1px solid var(--rule); border-radius: 4px; padding: .42rem .6rem;
+    font-size: .82rem; color: var(--ink); background: var(--paper);
+  }
+  .field__c--new { border-color: var(--teal); color: var(--teal); }
+  .field__h { font-size: .72rem; color: var(--ink-3); margin-top: .25rem; }
+
+  /* ── Notes ───────────────────────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--rule); padding: .1rem 0 .1rem 1rem;
+    margin: 1.3rem 0; color: var(--ink-2); max-width: var(--measure);
+  }
+  .note--warn { border-left-color: var(--brick); }
+  .note--warn strong { color: var(--brick); }
+  .note--good { border-left-color: var(--teal); }
+  .note--good strong { color: var(--teal); }
+
+  /* ── Decision ────────────────────────────────────────────── */
+  .decide {
+    margin-top: 1.6rem; background: var(--card);
+    border: 1px solid var(--rule); border-left: 4px solid var(--ink); border-radius: 5px;
+    padding: 1.05rem 1.2rem;
+  }
+  .decide h5 {
+    font-size: .7rem; letter-spacing: .11em; text-transform: uppercase;
+    color: var(--ink-3); font-weight: 600; margin: 0 0 .7rem;
+  }
+  .decide p { margin: 0 0 .55rem; max-width: var(--measure); }
+  .decide p:last-child { margin-bottom: 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: .45rem; margin-top: .85rem; }
+  .chip {
+    font-size: .74rem; padding: .28rem .62rem; border-radius: 999px;
+    border: 1px solid var(--rule); color: var(--ink-2); background: var(--paper);
+  }
+  .chip b { color: var(--ink); font-weight: 600; }
+
+  footer {
+    margin-top: 3.5rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+    font-size: .8rem; color: var(--ink-3); max-width: var(--measure);
+  }
+  a { color: var(--teal); }
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Proposal 94 · Aekam Inc · 1 September 2026</p>
+    <h1>Four builds to approve</h1>
+    <p class="standfirst">
+      Each section pairs what the product does today against what I propose, with the
+      screen described closely enough to build from. Every number below was measured
+      against the live database on the day of writing, not estimated.
+    </p>
+    <div class="meta">
+      <span><b>Database</b> toacecaewujfxjfrjwco · schema public</span>
+      <span><b>Measured</b> 1 Sep 2026</span>
+      <span><b>Approve</b> section by section</span>
+    </div>
+  </header>
+
+  <!-- ══ 1 · STATUTORY SETTINGS ══════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="module">Vetana · Payroll</span>
+      <h2>A firm sets its own statutory policy</h2>
+    </div>
+    <p class="ask">
+      Your instruction: <em>“we need a settings page in payroll and HRMS where the org adds
+      their own policy. We will not mandate.”</em> This builds that, and nothing in it forces
+      a firm to enter anything.
+    </p>
+
+    <div class="ledger">
+      <div class="col col--today">
+        <h4>Today</h4>
+        <ul>
+          <li><span class="num">67 of 90</span> live payslips deduct <b>₹0.00</b> professional tax. The ladder covers <span class="num">7 states of ~22</span>. A firm in Chennai or Kochi deducts nothing, silently.</li>
+          <li><b>Neither module has a Settings tab.</b> Vetana has 7 tabs, Manav 17. The PT ladder editor exists and works — it is buried at the bottom of the Statutory tab, under a compliance calendar.</li>
+          <li>Every statutory switch is <b>per employee</b>. A firm that does not operate ESI must untick it on 30 salary structures, one at a time. There is nowhere to say it once.</li>
+          <li>PT on a bonus is <b>inexpressible at any price</b>. PF and ESI have two inclusion switches each; PT has none. Maharashtra’s ₹25,000 exemption for women is likewise impossible — no gender on the slab table.</li>
+        </ul>
+      </div>
+      <div class="col col--proposed">
+        <h4>Proposed</h4>
+        <ul>
+          <li>A <b>Settings tab</b> in Vetana, and the same pattern in Manav. The existing ladder editors move there, where a person would look for them.</li>
+          <li><b>Four nullable columns, no new table</b> — so no new tenancy surface to get wrong. Two inclusion switches for PT; <code>gender</code> and <code>basis</code> on the slab table.</li>
+          <li><b>Statutory defaults for new employees</b>: say “we don’t operate ESI” once, and every salary structure created afterwards inherits it.</li>
+          <li>Half-yearly states (Tamil Nadu, Kerala, Puducherry) become expressible: the administrator types the government circular’s numbers <b>verbatim</b>, rather than dividing by six and hoping.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note note--good">
+      <strong>Every default preserves today’s arithmetic exactly.</strong> The migration must
+      change not one payslip. That is the acceptance test, not a hope: re-run a processed
+      month and every figure is identical.
+    </div>
+
+    <h3>The screen — Vetana → Settings</h3>
+    <div class="screen">
+      <div class="screen__bar"><span class="dot"></span> Vetana · Payroll</div>
+      <div class="screen__body">
+        <div class="tabs">
+          <span class="tab">Runs</span><span class="tab">Payslips</span>
+          <span class="tab">Structures</span><span class="tab">Statutory</span>
+          <span class="tab">Reports</span><span class="tab tab--new">Settings ✦ new</span>
+        </div>
+        <p style="font-size:.78rem;color:var(--ink-3);margin:0 0 .8rem">
+          Professional tax ladder — <i>optional. Nothing here can stop a payroll run.</i>
+        </p>
+        <div class="tbl-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>State</th><th class="n">From</th><th class="n">To</th><th class="n">Amount</th>
+                <th>Applies in</th><th>Applies to</th><th>Basis</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Gujarat</td><td class="n">6,000</td><td class="n">8,999</td><td class="n">₹100</td>
+                <td>Every month</td><td class="new-cell">Everyone</td><td class="new-cell">Per month</td>
+                <td>Edit · Remove</td>
+              </tr>
+              <tr>
+                <td>Maharashtra</td><td class="n">0</td><td class="n">25,000</td><td class="n">₹0</td>
+                <td>Every month</td><td class="new-cell">Women only</td><td class="new-cell">Per month</td>
+                <td><span class="tag">Shared</span></td>
+              </tr>
+              <tr>
+                <td>Tamil Nadu</td><td class="n">21,001</td><td class="n">30,000</td><td class="n">₹135</td>
+                <td>Every month</td><td class="new-cell">Everyone</td><td class="new-cell">Per half-year</td>
+                <td>Edit · Remove</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style="font-size:.72rem;color:var(--teal);margin:.7rem 0 0">
+          ✦ Two new columns. When <b>Per half-year</b> is chosen, the amount header reads
+          “Per half-year” and the band header reads “Half-yearly income”.
+        </p>
+      </div>
+    </div>
+
+    <h3>And below it — statutory defaults</h3>
+    <div class="screen">
+      <div class="screen__body">
+        <p style="font-size:.78rem;color:var(--ink-2);margin:0 0 .9rem">
+          These apply to salary structures created from now on. <b>Existing employees are not
+          changed, and no issued payslip is restated.</b>
+        </p>
+        <div class="tbl-scroll">
+          <table>
+            <thead><tr><th>Deduction</th><th>Default for new employees</th><th>Set by</th></tr></thead>
+            <tbody>
+              <tr><td>Provident fund</td><td class="new-cell">Applicable</td><td>Priya Nair · 12 Aug 2026</td></tr>
+              <tr><td>State insurance (ESI)</td><td class="new-cell">Not applicable</td><td>Priya Nair · 12 Aug 2026</td></tr>
+              <tr><td>Professional tax</td><td class="new-cell">Applicable</td><td>—</td></tr>
+              <tr><td>PT charged on bonus</td><td class="new-cell">Not applicable ✦</td><td>—</td></tr>
+              <tr><td>PT charged on commission</td><td class="new-cell">Not applicable ✦</td><td>—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <h5>Approving this means</h5>
+      <p>One migration adding four nullable columns and one unique index; five backend edits; one new tab and one new file in the frontend. No new table, so no new RLS surface.</p>
+      <p><b>It does not decide what any state charges.</b> The slabs remain yours or your CA’s to enter — this only makes them enterable.</p>
+      <div class="chips">
+        <span class="chip"><b>Size</b> 1–2 days</span>
+        <span class="chip"><b>Risk</b> low — every default is today’s behaviour</span>
+        <span class="chip"><b>Proof</b> re-run a month, every figure identical</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 2 · BILLING ═════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="module">Hub · Billing</span>
+      <h2>What a customer is charged</h2>
+    </div>
+    <p class="ask">
+      The striking part of this one: <em>almost nothing needs building.</em> Every writer
+      already exists. Four of the five steps are operator actions through screens that are
+      already deployed.
+    </p>
+
+    <div class="ledger">
+      <div class="col col--today">
+        <h4>Today</h4>
+        <ul>
+          <li><b>No Kartavaya customer has ever been invoiced.</b> <span class="num">0</span> subscription invoices, <span class="num">0</span> billing lines, <span class="num">0</span> invoice lines. All three tables empty.</li>
+          <li><b>₹54,000 a month is charged by nothing.</b> Four orgs carry a monthly price with no billing line: Demo ₹10,000 · E2E ₹12,000 · UK AekamINC ₹20,000 · Unicode ₹12,000.</li>
+          <li>Both admin screens <b>are already built and mounted</b>. Nobody has ever used them. Meanwhile the customer’s own billing page returns an empty ledger to every paying org.</li>
+          <li><code>/cron/billing</code> is armed and real — but between rolling the period forward and raising the org→client invoice, <b>nothing turns a billing line into a platform invoice</b>.</li>
+        </ul>
+      </div>
+      <div class="col col--proposed">
+        <h4>Proposed</h4>
+        <ul>
+          <li><b>Steps 0–3 need no code and no migration.</b> Four operator actions through the product, and the acceptance test is already deployed.</li>
+          <li><b>Step 1</b> — set the monthly price the row already carries, for the four drifting orgs. The write repairs the missing line in the same transaction.</li>
+          <li><b>Step 3</b> — raise one real platform invoice from a preview. A paying customer’s ledger stops being empty.</li>
+          <li><b>Step 4</b> — one ~40-line sweep, modelled line-for-line on the org→client one that already solved every one of these problems downstream.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note note--good">
+      <strong>The acceptance test is a single number.</strong>
+      <code>/api/health</code> → <code>billing_drift.platform_line</code> must go
+      <b>4 → 0</b>. It has been 4 the whole time and nothing said so until last night.
+    </div>
+
+    <div class="note note--warn">
+      <strong>One thing is genuinely blocked on you.</strong> Aekam Inc has no GSTIN and no
+      state code, and the invoice builder <b>refuses</b> without them. That refusal is
+      correct — a tax invoice the department would reject is worse than no invoice — and it
+      must not be relaxed. It needs the real registration entered once.
+    </div>
+
+    <h3>The chain, and where it breaks</h3>
+    <div class="screen">
+      <div class="screen__body">
+        <div class="tbl-scroll">
+          <table>
+            <thead><tr><th>Step</th><th>Table</th><th class="n">Rows today</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td>Org has a plan</td><td><code>subscriptions</code></td><td class="n">5</td><td class="new-cell">works</td></tr>
+              <tr><td>Price on the org</td><td><code>organisations.monthly_price</code></td><td class="n">4</td><td class="new-cell">works</td></tr>
+              <tr><td>Billing line</td><td><code>org_billing_lines</code></td><td class="n">0</td><td style="color:var(--brick);font-weight:600">breaks here</td></tr>
+              <tr><td>Platform invoice</td><td><code>subscription_invoices</code></td><td class="n">0</td><td style="color:var(--brick)">never reached</td></tr>
+              <tr><td>Customer sees a ledger</td><td>Billing page</td><td class="n">0</td><td style="color:var(--brick)">empty for everyone</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <h5>Approving this means</h5>
+      <p>I run steps 1–3 against live data — that is four writes through existing admin screens, raising <b>one real platform invoice</b> for one org. Then I write the ~40-line sweep so it happens monthly without anyone pressing anything.</p>
+      <p><b>It does not decide your pricing.</b> Every step uses the number already sitting on the org row.</p>
+      <div class="chips">
+        <span class="chip"><b>Size</b> half a day, mostly operating not coding</span>
+        <span class="chip"><b>Blocked on</b> Aekam’s GSTIN + state</span>
+        <span class="chip"><b>Proof</b> billing_drift 4 → 0</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 3 · WEB FORMS ═══════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="module">Cross-module</span>
+      <h2>One form, more than one destination</h2>
+    </div>
+    <p class="ask">
+      You asked whether web forms should become their own section, usable by HR and vendors
+      rather than only CRM. <em>Yes</em> — and the table is already shaped for it. The only
+      CRM-specific thing is where a submission lands.
+    </p>
+
+    <div class="ledger">
+      <div class="col col--today">
+        <h4>Today</h4>
+        <ul>
+          <li><span class="num--good num">24</span> submissions across 2 forms — and the feature only began working on <b>31 August</b>, when a broken clause was fixed. Before that it had produced zero rows, ever.</li>
+          <li><b>The field builder does not exist.</b> The <code>fields</code> column is rich jsonb that <b>nothing reads</b>; the public page renders a hardcoded list. Both live forms have <code>fields = []</code>.</li>
+          <li>Slugs are <b>globally unique across all tenants</b>. “careers”, “jobs” and “apply” are claimed once product-wide, first come — and the loser is told somebody else holds the word.</li>
+          <li><b>A job applicant cannot apply.</b> All <span class="num">18</span> candidates were typed by staff; no CV was ever uploaded, and there is no anonymous upload route anywhere.</li>
+        </ul>
+      </div>
+      <div class="col col--proposed">
+        <h4>Proposed</h4>
+        <ul>
+          <li><b>One column</b> — <code>destination</code>, defaulting to today’s behaviour — plus one nullable foreign key per destination.</li>
+          <li>A server-side <b>allowlist dictionary</b> maps destination to handler. The column is looked up in it, never interpolated into SQL.</li>
+          <li>The submit becomes <b>one transaction</b>, which also fixes an existing split write, and starts refusing a non-object payload that today causes an unauthenticated 500.</li>
+          <li>A top-level <b>Webforms</b> section. The Graha tab stays as a filtered deep link — one builder, not two.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note note--warn">
+      <strong>This is an unauthenticated public write, so the guards matter more than the feature.</strong>
+      The job opening is read from the form’s own settings and <b>never from the payload</b> —
+      the same rule the CRM handler already applies. A real foreign key per destination, not a
+      polymorphic pair: a real key is checkable, and this codebase’s repeated lesson is that
+      unverifiable columns rot.
+    </div>
+
+    <h3>The screen — a form’s destination</h3>
+    <div class="screen">
+      <div class="screen__bar"><span class="dot"></span> Webforms → New form</div>
+      <div class="screen__body">
+        <div class="field">
+          <span class="field__l">Form name</span>
+          <div class="field__c">Careers — Article Assistant</div>
+        </div>
+        <div class="field">
+          <span class="field__l">Where should submissions go? ✦</span>
+          <div class="field__c field__c--new">A job application → Manav ▾</div>
+          <div class="field__h">A lead → Graha CRM · A job application → Manav · A vendor enquiry → Kray</div>
+        </div>
+        <div class="field">
+          <span class="field__l">Job opening ✦</span>
+          <div class="field__c field__c--new">Article Assistant — Ahmedabad ▾</div>
+          <div class="field__h">Read from the form, never from the submitted data.</div>
+        </div>
+        <div class="field">
+          <span class="field__l">Public link</span>
+          <div class="field__c">app.kartavaya.com/f/<b>unicode</b>/careers-article-assistant</div>
+          <div class="field__h">✦ Scoped per firm, so “careers” is not claimed once for everybody.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="decide">
+      <h5>Approving this means</h5>
+      <p>One migration with three statements; one new backend service holding the allowlist; the existing CRM handler moved verbatim into it; one new section in the navigation. Phase two adds an anonymous CV upload — rate limited, sniffed, size capped.</p>
+      <p><b>An open question I will not decide for you:</b> a public form creating HR candidates is a far more attractive spam target than a lead form. Today the only guard is a rate limit. I would add a honeypot field at minimum.</p>
+      <div class="chips">
+        <span class="chip"><b>Size</b> 1 day phase one</span>
+        <span class="chip"><b>Risk</b> public write — guards described above</span>
+        <span class="chip"><b>Proof</b> one application lands as a candidate</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ 4 · iOS ═════════════════════════════════════════════ -->
+  <section>
+    <div class="sec-head">
+      <span class="module">Pahchan · iOS &amp; iPadOS</span>
+      <h2>Clock in on an iPhone, without an Apple account first</h2>
+    </div>
+    <p class="ask">
+      You wanted something runnable to show a director before asking for the developer
+      account. <em>That is achievable</em> — because the web clock already works, and the
+      demo needs no Apple account and no Mac.
+    </p>
+
+    <div class="ledger">
+      <div class="col col--today">
+        <h4>Today</h4>
+        <ul>
+          <li><b>The web clock works.</b> <span class="num--good num">14</span> punches, every one with a photo and a location fix. It is already an installable PWA, and the camera permission is verified live and pinned by a build gate.</li>
+          <li><b>There is no iOS project</b> — and the Android container that does exist declares exactly <b>one</b> permission, internet. No camera, no location. <b>It cannot clock in either.</b></li>
+          <li><span class="num">14 of 14</span> punches are flagged “no reference photo”, because there are <span class="num">0</span> enrollment photos product-wide and the web has <b>no self-enrollment screen at all</b>.</li>
+          <li><span class="num">22 of 30</span> employees would be refused: only 8 are linked to a login. And nothing opens the clock by URL, so a home-screen icon lands on the dashboard.</li>
+        </ul>
+      </div>
+      <div class="col col--proposed">
+        <h4>Proposed</h4>
+        <ul>
+          <li><b>Phase 0 — no Apple account, no Mac, no new endpoint.</b> Six changes to the web app: a URL that opens the clock, a self-enrollment screen, and four correctness fixes.</li>
+          <li><b>Phase 1 — the container.</b> Add the iOS target to the Capacitor config that already exists, paste the two usage strings already written for Android, and run it in the simulator.</li>
+          <li>The two permission strings are <b>already DPDP-worded</b> — “your location is read at the moment you punch and at no other time.”</li>
+          <li>Only <b>distribution</b> is gated behind the paid account. Building and demonstrating on a simulator, or on your own device for seven days, is not.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note note--warn">
+      <strong>A real defect found while surveying this.</strong> All 14 punches carry
+      <code>accuracy_m = 0</code> — the signature of a scripted browser, not a phone. The
+      server flags a fix only when accuracy is missing or above the threshold, so a
+      <b>zero clears the very check it should fail</b>. One-line guard, included in phase 0.
+    </div>
+
+    <div class="note">
+      <strong>The honest blocker is not iOS.</strong> It is that 22 of 30 employees have no
+      login, so they would be refused on any device. That is worth fixing before a demo,
+      and it is not an Apple problem.
+    </div>
+
+    <div class="decide">
+      <h5>Approving this means</h5>
+      <p>Phase 0 is six web changes and takes about a day — and it improves the <b>Android</b> app and the browser too, because they share the screen. Phase 1 is roughly another day to a running simulator build you can put in front of a director.</p>
+      <p><b>What the paid account actually buys</b> is TestFlight and the App Store. Nothing before that needs it.</p>
+      <div class="chips">
+        <span class="chip"><b>Size</b> ~2 days to a demo</span>
+        <span class="chip"><b>Apple account</b> not needed until distribution</span>
+        <span class="chip"><b>Proof</b> a punch from an iPhone simulator, unflagged</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Every figure here was read from the production database on 1 September 2026 and
+    re-verified before publication. Where something is your decision rather than a design
+    question, it is marked as such rather than assumed. Nothing in this document has been
+    built — approve a section and it goes straight to implementation.
+  </footer>
+
+</div>

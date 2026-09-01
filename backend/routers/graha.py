@@ -4514,8 +4514,65 @@ async def submit_web_form(
         raise HTTPException(404, "Form not found")
 
     payload = await request.json()
+    # ⚠ A NON-OBJECT BODY WAS AN UNAUTHENTICATED 500. `await request.json()`
+    # happily returns a list, a string or a number, and every `payload.get(...)`
+    # below then raises AttributeError — a 500 with no CORS headers, from a route
+    # any stranger can reach. One line, and it is the cheapest hardening on the
+    # only unauthenticated write in the product.
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Send the form fields as an object.")
+
     org_id = str(form["org_id"])
     form_id = str(form["id"])
+
+    # ── WHERE THIS SUBMISSION LANDS ────────────────────────────────────────
+    #
+    # `destination` defaults to 'crm_contact' (migration 251), so every form
+    # that existed before this line keeps the behaviour it had. Anything else
+    # is dispatched to `services/webforms/destinations.py`, whose DESTINATIONS
+    # dict is the server-side allowlist — the stored value is looked up there
+    # and never interpolated.
+    #
+    # The CRM path below is NOT routed through that module, deliberately. It
+    # had never once worked until 2026-08-31 and now carries 24 real
+    # submissions; moving it to make the two look symmetrical would put the
+    # only proven public write back into the state it just came out of.
+    from services.webforms.destinations import handler_for
+    #: The only columns a destination handler may link its row through. One per
+    #: real foreign key on `graha_web_form_submissions`.
+    _SUBMISSION_LINK_COLUMNS = {"contact_id", "candidate_id"}
+    destination = str(form["destination"] or "crm_contact")
+    lander = handler_for(destination)
+
+    if lander is not None:
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                link_col, link_id = await lander(
+                    _conn, org_id=org_id, form=dict(form), payload=payload)
+                # ⚠ `link_col` REACHES AN INTERPOLATED IDENTIFIER, so it is
+                # checked against an explicit allowlist rather than trusted for
+                # coming from our own handler. CLAUDE.md's rule is about the
+                # SHAPE of the code, not about whether today's callers happen
+                # to be safe: the next handler someone adds is the risk, and it
+                # will be written by somebody reading this line.
+                if link_col not in _SUBMISSION_LINK_COLUMNS:
+                    raise HTTPException(500, "This form is misconfigured and cannot accept submissions.")
+                sub = await _conn.fetchrow(
+                    "INSERT INTO public.graha_web_form_submissions "
+                    f"(org_id, form_id, data, {link_col}, ip_address, status) "
+                    "VALUES ($1::uuid, $2::uuid, $3::jsonb, $4::uuid, $5, 'processed') "
+                    "RETURNING id",
+                    org_id, form_id, json.dumps(payload, default=str), link_id,
+                    request.client.host if request.client else "",
+                )
+                # Same reasoning as the CRM path: no `updated_by`, because a
+                # stranger submitting a form is not an edit anyone made to it.
+                await _conn.execute(
+                    "UPDATE public.graha_web_forms "
+                    "   SET submission_count=submission_count+1 WHERE id=$1::uuid",
+                    form_id,
+                )
+        return {"status": "submitted", "id": str(sub["id"])}
 
     name = str(payload.get("name", ""))[:200]
     email = str(payload.get("email", ""))[:200]
