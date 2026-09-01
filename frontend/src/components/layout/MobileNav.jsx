@@ -15,13 +15,12 @@
  * below 44 — see 15-mobile-web.md.
  */
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { mobileNavFor } from './navConfig';
 import { useCustomize } from '../CustomizePanel';
 import { ICONS } from './navIcons';
 
 export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
-  const navigate = useNavigate();
   const location = useLocation();
   // The three link slots are the reader's own arrangement. The right three
   // differ per person rather than per product — sales reach for CRM and Sales
@@ -53,23 +52,47 @@ export default function MobileNav({ unread = 0, onNewTask, onOpenMore }) {
         }
 
         const active = it.kind === 'link' && isActive(it.to);
-        const onClick = it.kind === 'more' ? onOpenMore : () => navigate(it.to);
 
-        return (
-          <button
-            key={it.en}
-            type="button"
-            className={'mnav__i' + (active ? ' on' : '')}
-            onClick={onClick}
-            aria-current={active ? 'page' : undefined}
-            aria-expanded={it.kind === 'more' ? false : undefined}
-          >
+        /* The inner content is identical either way — only the ELEMENT differs,
+           because only one of these two is a destination. */
+        const inner = (
+          <>
             <span aria-hidden="true" style={{ display: 'inline-flex' }}>{ICONS[it.icon]}</span>
             <span className="mnav__lbl">{it.en}</span>
             {it.badge === 'unread' && unread > 0 && (
               <span className="mnav__dot" aria-label={`${unread} unread`} role="status" />
             )}
-          </button>
+          </>
+        );
+
+        /* ⚠ "More" IS NOT A DESTINATION. It opens a drawer in this tab and has
+           no URL, so it stays a button — wrapping it in an anchor would put an
+           href on something that goes nowhere, which is worse for a screen
+           reader than the button it already is. Everything with a `to` becomes
+           a real link so it can be opened in a new tab; see Sidebar.jsx. */
+        if (it.kind === 'more') {
+          return (
+            <button
+              key={it.en}
+              type="button"
+              className={'mnav__i' + (active ? ' on' : '')}
+              onClick={onOpenMore}
+              aria-expanded={false}
+            >
+              {inner}
+            </button>
+          );
+        }
+
+        return (
+          <Link
+            key={it.en}
+            to={it.to}
+            className={'mnav__i' + (active ? ' on' : '')}
+            aria-current={active ? 'page' : undefined}
+          >
+            {inner}
+          </Link>
         );
       })}
     </nav>

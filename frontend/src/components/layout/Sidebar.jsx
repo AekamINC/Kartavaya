@@ -11,7 +11,7 @@
  * visual weight.
  */
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
@@ -56,7 +56,6 @@ function loadCollapsed() {
  *   column of unlabelled icons with no reason to be narrow.
  */
 export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide = false, onNavigate }) {
-  const navigate  = useNavigate();
   const location  = useLocation();
   const user      = currentUser();
 
@@ -147,7 +146,33 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
     return [...want].every(([k, v]) => have.get(k) === v);
   };
 
-  const go = (to) => { navigate(to); onNavigate?.(); };
+  /* ── EVERY DESTINATION IS AN ANCHOR NOW ──────────────────────────────────
+   *
+   * This was `go = (to) => { navigate(to); onNavigate?.(); }` on a
+   * `<button onClick>`, and it is the reason the owner reported that "user
+   * cannot open anything in new tab". Nothing was BLOCKING a new tab — the app
+   * never produced a link to open. A button has no href, so ctrl-click,
+   * middle-click, ⌘-click and the browser's own "Open link in new tab" all had
+   * nothing to act on, across all 32 staff destinations.
+   *
+   * `<Link>` renders a real `<a href>`; React Router still intercepts a plain
+   * left click, so in-app navigation is unchanged and no SPA state is lost.
+   * No stylesheet change was needed: `editorial.css:32` already resets every
+   * anchor to `color: inherit; text-decoration: none`, so `.side__item` renders
+   * identically as an <a>.
+   *
+   * ⚠ NOT `<NavLink>`. `pages/client/ClientShell.jsx:73-74` records why it was
+   * rejected once already: NavLink's own matcher marks a parent current on
+   * every child path, and this sidebar has prefixes that collide (`/client` is
+   * a prefix of two other screens). `isActive` above already handles that AND
+   * the `?tab=` case, which NavLink cannot see at all.
+   */
+
+  /* A modified click is the browser opening a second tab — this one is not
+     navigating, so the mobile drawer must stay exactly where it is. Closing it
+     would be the one visible sign that ctrl-click had "done something" here. */
+  const closesDrawer = (e) =>
+    !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0);
 
   const initials = ((user?.full_name || user?.name || 'U')
     .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase());
@@ -343,11 +368,11 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
                                      : 0;
                     const secondaryLabel = showGu ? guLabel : hi;
                     return (
-                      <button
+                      <Link
                         key={en}
-                        type="button"
+                        to={to}
                         className={'side__item' + (isActive(to) ? ' on' : '')}
-                        onClick={() => go(to)}
+                        onClick={(e) => { if (closesDrawer(e)) onNavigate?.(); }}
                         title={rail ? en : undefined}
                         aria-current={isActive(to) ? 'page' : undefined}
                       >
@@ -371,7 +396,7 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
                             {badgeCount > 9 ? '9+' : badgeCount}
                           </span>
                         )}
-                      </button>
+                      </Link>
                     );
                   })}
                 </div>

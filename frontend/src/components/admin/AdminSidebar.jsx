@@ -7,7 +7,7 @@
  * (00 §9), which is why nothing in here reads the accent tokens.
  */
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { adminNavFor } from './adminNav';
 import { ICONS } from '../layout/navIcons';
 import { Secondary } from '../Bilingual';
@@ -19,7 +19,6 @@ import { Secondary } from '../Bilingual';
  *   fallback. Shows every row, as it did before there were role rows to read.
  */
 export default function AdminSidebar({ open = false, orgCount = null, onNavigate, platformRoles, legacyAdmin = false }) {
-  const navigate = useNavigate();
   const location = useLocation();
   const items = React.useMemo(
     () => adminNavFor(platformRoles, legacyAdmin),
@@ -30,14 +29,23 @@ export default function AdminSidebar({ open = false, orgCount = null, onNavigate
     location.pathname === to ||
     (to !== '/admin' && location.pathname.startsWith(to + '/'));
 
-  const go = (to) => { navigate(to); onNavigate?.(); };
+  /* Anchors, for the same reason as the staff sidebar — see Sidebar.jsx. A
+     platform admin looking at one org's data while comparing another's is
+     exactly the person who needs two tabs, and a <button onClick> gave them
+     nothing to ctrl-click. */
+  const closesDrawer = (e) =>
+    !(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0);
 
   return (
     <aside className={'adm__side' + (open ? ' adm__side--open' : '')}>
-      <button type="button" className="adm__back" onClick={() => go('/dashboard')}>
+      <Link
+        to="/dashboard"
+        className="adm__back"
+        onClick={(e) => { if (closesDrawer(e)) onNavigate?.(); }}
+      >
         <span aria-hidden="true" style={{ display: 'inline-flex' }}>{ICONS.chevL}</span>
         Back to Kartavaya
-      </button>
+      </Link>
 
       {/* Support access is never silent. The pulse and the count say, on every
           screen, that this session is looking at other organisations' data. */}
@@ -49,11 +57,11 @@ export default function AdminSidebar({ open = false, orgCount = null, onNavigate
 
       <nav className="adm__nav" aria-label="Platform admin">
         {items.map(({ to, icon, en, hi, count }) => (
-          <button
+          <Link
             key={to}
-            type="button"
+            to={to}
             className={'adm__item' + (isActive(to) ? ' on' : '')}
-            onClick={() => go(to)}
+            onClick={(e) => { if (closesDrawer(e)) onNavigate?.(); }}
             aria-current={isActive(to) ? 'page' : undefined}
           >
             <span className="adm__ic" aria-hidden="true">{ICONS[icon]}</span>
@@ -64,7 +72,7 @@ export default function AdminSidebar({ open = false, orgCount = null, onNavigate
             {count === 'orgs' && orgCount != null && (
               <span className="adm__count">{orgCount}</span>
             )}
-          </button>
+          </Link>
         ))}
       </nav>
 
