@@ -72,17 +72,29 @@ set to 7200 (Chrome's cap).
 Every destination was a `<button onClick>` with no href. Nothing *blocked* a new
 tab; the app never produced a link. Now real anchors, with a source ratchet.
 
+
+### ✅ CLOSED SINCE THIS SECTION WAS WRITTEN
+
+Both were listed above as open and both were already done — recorded here
+because re-deriving state from memory instead of reading the code is the habit
+this file exists to stop.
+
+- **A task has a URL.** Shipped in `7362995d`. `TasksListPage.jsx:128` reads
+  `?task=<id>` and *mutates* the params rather than replacing them, so a link
+  carries the filters, sort and page as well as the record. The drawer is an
+  overlay on the list, which is why it is a query param and not `/tasks/:id`.
+- **A tab holds its own organisation.** Fixed in `ab129107`. The selection moved
+  to `sessionStorage`, pinned on first read; `localStorage` keeps only the
+  default a brand-new tab starts from. Previously tab A's *next request* carried
+  the org tab B had switched to — no error, no log line, the other company's
+  rows under tab A's heading. 10 tests, 5 of which fail against the shipped
+  implementation.
+
 ### 🔴 STILL OPEN
 
-- **A task has no URL.** `App.jsx:265` is `path="tasks"` and nothing more;
-  `TasksListPage` reads no param. Deals and orders are the only records that can
-  be opened in a second tab. `DashboardPage.jsx:354` admits it.
-- **Two browser tabs share one org.** `orgContext.js` keys localStorage and
-  `api.js` reads it per request, so switching org in tab B silently changes what
-  tab A fetches.
-- **iOS has never been compiled.** Xcode project scaffolded and the Info.plist
-  permission strings written; needs a Mac with Xcode and an Apple Developer
-  account.
+- **iOS has never been compiled.** Xcode project scaffolded (`frontend/ios`,
+  Capacitor — not `mobile/`) and the Info.plist permission strings written;
+  needs a Mac with Xcode and an Apple Developer account.
 - **PIN directory refresh blocked** — no source URL was ever recorded and
   data.gov.in 404s without a key. An unverified mirror is not an acceptable
   substitute for data that decides customer districts.

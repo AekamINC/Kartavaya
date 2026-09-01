@@ -8888,3 +8888,37 @@ fault into "you already have one".
 
 **Both 500s today were found by RE-RUNNING a seed, not by any test.** A
 once-only script exercises only the empty-database path.
+
+## 2026-09-01 — a tab holds its own organisation (`ab129107`)
+
+`orgContext` kept the active org in `localStorage`, shared by every tab of the
+origin, so `setActiveOrg`'s reload protected only the tab doing the switching.
+Tab A's next request carried tab B's org — no error, no log line, the other
+company's rows drawn under a heading, filters and totals that still said A's.
+The new-tab work is what made it reachable: until the shell's destinations were
+real links there was little reason to hold two tabs open.
+
+The selection is now per-tab in `sessionStorage`, pinned on first read and
+immovable for the tab's lifetime; `localStorage` is demoted to the default a
+cold tab starts from. A tab opened from a link inherits the opener's org (the
+browser clones sessionStorage); a browser that declines to clone falls back to
+that same default, so both branches are correct. `''` distinguishes "pinned to
+the server's default" from an absent key meaning "not yet pinned".
+`clearActiveOrg` clears both — the session half outlives a sign-out inside the
+tab, which is where the next person on a shared machine is.
+
+10 tests; 5 fail against the shipped implementation. One of those five only
+failed after the test was fixed: the sign-out case passed over the defect it
+names, because the old code never wrote to sessionStorage, so "the pin is gone"
+was true over nothing. Same fault class as the seven on 08-31 and the three
+earlier today.
+
+`sessionStorage` is now cleared between tests in `setup.js` rather than in the
+one file that broke — 24 files clear `localStorage` for a clean slate, and a
+per-tab store quietly makes that half a slate.
+
+Also corrected the STATUS.md 🔴 list, which carried "a task has no URL" as open
+after it shipped in `7362995d`. Re-deriving state from memory instead of reading
+the code is the habit that file exists to stop.
+
+3,410 frontend tests, 20 gates, build clean.
