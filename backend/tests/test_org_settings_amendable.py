@@ -127,7 +127,23 @@ def wired(mock_pool):
         return None
 
     async def execute(query, *args):
-        if query.strip().upper().startswith("UPDATE STAGING.ORGANISATIONS"):
+        # SCHEMA-AGNOSTIC ON PURPOSE, and this is the second time this fixture
+        # has been the thing that broke rather than the endpoint.
+        #
+        # It matched "UPDATE STAGING.ORGANISATIONS" until migration 241 moved
+        # all 258 tables into `public` and `DROP SCHEMA staging` ran the same
+        # evening. After that it matched NOTHING: `updates` stayed empty, the
+        # endpoint kept returning 200, and four tests failed on
+        # `IndexError: list index out of range` — a message about this list,
+        # saying nothing about the handler it was meant to be testing.
+        #
+        # That is precisely the failure the comment twenty lines above warns
+        # about — "a fixture that has stopped matching the query it models tests
+        # nothing" — arriving by the one route that comment did not anticipate:
+        # not a column added to the SELECT, but the schema underneath moving.
+        # Matching on the table and not the schema is what survives the next one.
+        normalised = " ".join(query.split()).upper()
+        if normalised.startswith("UPDATE ") and ".ORGANISATIONS " in normalised:
             state["updates"].append((query, args))
         return "UPDATE 1"
 
@@ -141,6 +157,26 @@ def wired(mock_pool):
 
 async def _patch(api_client, body):
     return await api_client.patch(f"/api/v1/admin/orgs/{ORG}/settings", json=body)
+
+
+def _the_update(wired):
+    """The one UPDATE this endpoint built, or a failure that says what went wrong.
+
+    `wired["updates"][0]` raises `IndexError: list index out of range`, which is
+    a true statement about a list and tells a reader nothing about the endpoint.
+    When the fixture's matcher drifted off the schema in August, four tests
+    failed with exactly that and the cause took a schema archaeology dig to
+    find. This names the two possibilities instead.
+    """
+    updates = wired["updates"]
+    assert updates, (
+        "the endpoint returned without issuing an UPDATE this fixture could "
+        "see. Either it genuinely stopped writing — the defect these tests "
+        "exist to catch — or `execute` above has stopped matching the SQL it "
+        "builds. Check the statement in `update_org_settings` before assuming "
+        "the first."
+    )
+    return updates[0]
 
 
 # ── 1. A cleared field is not a 500 ──────────────────────────────────────────
@@ -168,7 +204,7 @@ async def test_a_null_on_a_not_null_column_leaves_it_alone(api_client, as_platfo
     resp = await _patch(api_client, {"markup_pct": 0.4, "monthly_price": None})
     assert resp.status_code == 200, resp.text
 
-    query, _args = wired["updates"][0]
+    query, _args = _the_update(wired)
     assert "markup_pct=" in query
     assert "monthly_price=" not in query, \
         "a null monthly_price was written to a NOT NULL column"
@@ -181,7 +217,7 @@ async def test_a_null_max_users_clears_it_back_to_the_plan(api_client, as_platfo
     resp = await _patch(api_client, {"max_users": None})
     assert resp.status_code == 200, resp.text
 
-    query, args = wired["updates"][0]
+    query, args = _the_update(wired)
     assert "max_users=" in query, "a cleared seat count was ignored"
     assert None in args, "max_users was not written as NULL"
 
@@ -194,7 +230,7 @@ async def test_max_users_can_be_raised(api_client, as_platform, wired):
     resp = await _patch(api_client, {"max_users": 12})
     assert resp.status_code == 200, resp.text
 
-    query, args = wired["updates"][0]
+    query, args = _the_update(wired)
     assert "max_users=" in query
     assert 12 in args
 
@@ -354,7 +390,7 @@ async def test_god_mode_can_flag_an_org_as_platform(api_client, as_platform, wir
     wired["role"] = GOD
     resp = await _patch(api_client, {"is_platform_org": True})
     assert resp.status_code == 200, resp.text
-    query, args = wired["updates"][0]
+    query, args = _the_update(wired)
     assert "is_platform_org=" in query
     assert True in args
 

@@ -9327,3 +9327,41 @@ all until their month**, which is correct and will look like nothing happening.
 
 Verified after applying: 42 armed, 0 priced among them, 0 unreachable hours,
 126 grants, 11 interval-based.
+
+---
+
+## 2026-09-02 · The four failing org-settings tests were a stale fixture
+
+Four tests in `test_org_settings_amendable.py` had been failing with
+`IndexError: list index out of range` — a true statement about a list that says
+nothing about the endpoint. The endpoint was fine.
+
+The fixture recorded the UPDATE by matching
+`query.startswith("UPDATE STAGING.ORGANISATIONS")`. **Migration 241 moved all
+258 tables into `public` and `DROP SCHEMA staging` ran the same evening**, so
+the handler has issued `UPDATE public.organisations` ever since and the matcher
+has matched nothing. `updates` stayed empty; the endpoint kept returning 200.
+
+This is the failure the fixture's own comment warns about twenty lines further
+up — *"a fixture that has stopped matching the query it models tests nothing"* —
+arriving by the one route that comment did not anticipate. It was written about
+a column being added to the SELECT; what actually happened was the schema
+underneath moving.
+
+Two changes:
+
+- **The matcher is schema-agnostic**, on the table rather than the schema, so it
+  survives the next move.
+- **`_the_update(wired)` replaces `wired["updates"][0]`**, and names the two
+  possibilities: the endpoint genuinely stopped writing (the defect these tests
+  exist to catch) or the matcher has drifted. An `IndexError` distinguishes
+  neither, and distinguishing them took a schema archaeology dig.
+
+Mutation-tested: disabling the `max_users` writer in `update_org_settings` turns
+three of them red, so the suite guards the behaviour rather than merely passing.
+20 passed.
+
+Swept the other test files for the same bug class. The remaining ~179 mentions
+of `staging.` in tests are assertions about **migration file text**, where the
+name is historically correct — `test_blocked_actors`, `test_channel_colour` and
+`test_delta_sync` all green.
