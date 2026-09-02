@@ -9264,3 +9264,66 @@ rate-moved test red.
 
 986 ack-related tests green. One pre-existing unrelated failure in
 `test_org_settings_amendable.py`, untouched by this work and flagged separately.
+
+---
+
+## 2026-09-02 · The period-scoped free checks — and a bar that moves for them
+
+Migration **264** arms 21 more: the shelf is now **42 scheduled templates and
+126 active org grants**, out of 59 free ones. Seventeen are deliberately left
+off and each has a reason recorded.
+
+### The rule that changed
+
+262 and 263 required every armed skill to be in `ACK_WIRING`. That was right for
+findings that **persist** — an overdue bill sits there until somebody pays it,
+and without a dismiss path it is read again for ever. It was wrong as a
+universal, and applying it universally is what produced the claim that 37 skills
+were "blocked on ack wiring".
+
+A GSTR-9 working paper, a month's professional tax, a service window that shuts
+on the clock: none of those is a row somebody closes. **The period closes it.**
+
+So the bar becomes *in `ACK_WIRING`, or carrying a recorded reason it need not
+be*, and GUARD 3 enforces the disjunction. The reason is stored in the row
+beside the schedule rather than argued in a comment elsewhere, because a
+judgement kept next to the thing it licenses is the one that gets re-read when
+somebody changes that thing. The guard cannot check a reason is *true* — no
+predicate can — but it refuses an arming that never made one, which is the
+failure worth preventing: arming by momentum.
+
+### What is still not armed, and why
+
+Seventeen, and not one of them is "we ran out of time":
+
+- **Reports nothing yet** (no screen writes the input): Bank narration rule
+  candidates, Learned categorisation, Client obligations register, Quotation
+  expiry chase, Document chase — can the WhatsApp leg run?
+  ⚠ **Client filing calendar joins them.** `public.client_obligations` holds
+  **zero rows**, so a schedule would return an empty calendar every month. It is
+  the highest-value conversion on the shelf and it is waiting on a *screen*, not
+  a schedule — which is the same finding as the plan's Phase 5, arrived at from
+  the other direction.
+- **Event-driven**, needing a subject a timer cannot choose: Mismatch schedule
+  for a notice, Working paper figures, New lead first touch, Event follow-up
+  split, Reply grounding.
+- **One-off decisions**: Can we watch ticket SLAs at all?, Inbound triage and
+  what a model would cost, Vernacular template pack, Engagement letter.
+- **A momentary guard**: Regional send guard. Unlike the two guards 263 armed,
+  it has no accumulating state — "would a send land on a holiday today" is true
+  or false at the instant of sending and says nothing a month later. List
+  hygiene and the consent register both *drift*; this one does not.
+- **Drafts nobody can send**: Collection message pack. Until the send verb
+  exists a schedule would regenerate drafts into a screen nobody acts from, and
+  overdue invoices persist, so it would repeat. Armable the day either changes.
+
+### Cadences follow the statute, not convenience
+
+Annual returns in November (GSTR-9 is due 31 December), ITC lapse in October
+(ahead of the s.16(4) bar), LUT in February and March (cover lapses 1 April),
+advance tax in the four instalment months, deductee packs in the month after
+each quarter, the salary certificate in June. Several of these **will not run at
+all until their month**, which is correct and will look like nothing happening.
+
+Verified after applying: 42 armed, 0 priced among them, 0 unreachable hours,
+126 grants, 11 interval-based.
