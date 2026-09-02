@@ -310,7 +310,19 @@ export default function ObligationsSection({ clientId }) {
               <span className="obl__lbl">In force from</span>
               <DateInput value={form.effective_from}
                 onChange={e => setForm({ ...form, effective_from: e.target.value })} />
-              <span className="obl__hint">Blank means today.</span>
+              {/* "Blank means today" is true and is not the whole truth, and
+                  the difference cost a confused re-run the first time this
+                  screen was used for real. The filing calendar reads
+                  obligations AS AT the period it is dating, so one recorded
+                  today is not in force for the month already under way and the
+                  calendar returns nothing for it — which reads exactly like the
+                  screen not having worked. Backdating to when the registration
+                  actually began is both more accurate and what makes this
+                  month's calendar appear. */}
+              <span className="obl__hint">
+                Blank means today — but backdate it to when the registration
+                really began, or this month’s filing calendar will not count it.
+              </span>
             </label>
             <label className="obl__f">
               <span className="obl__lbl">Until (optional)</span>

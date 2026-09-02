@@ -9443,3 +9443,55 @@ at zero rows — the screen exists, nobody has used it yet, and arming a calenda
 that returns an empty month is the wallpaper this work was avoiding. It becomes
 armable the moment the first obligation is recorded, and that is a one-line
 change to 264's pattern.
+
+---
+
+## 2026-09-02 · The loop closed: screen → row → skill → dated filings
+
+The first row ever written to `public.client_obligations`, recorded **through
+the deployed endpoint** rather than by an INSERT — otherwise this would be data
+without evidence the screen's path works.
+
+    POST /api/v1/graha/clients/{id}/obligations   ->  201
+    gst.regular · state 24 · GSTIN 24AAACM1234F1Z5 · Sundaram Textiles Pvt Ltd
+
+Both guards were exercised against production and both refused correctly: a
+second open `gst.regular` came back **409** with "End the existing one with a
+date before starting another", and an invented key came back **400** naming the
+sixteen that are legal.
+
+### What the two skills did
+
+**Client obligations register** lit up immediately — `could_not_check: false`,
+coverage *"1 of 1 active clients have any obligation recorded"*, and one row on
+the board where the whole point had been that there were none.
+
+**The filing calendar did not**, and its own output said why: it reads
+obligations **as at the period it is dating** — 2026-09-01 — and the row was
+effective from 09-02. Correct behaviour, and a real trap: the form's
+`effective_from` defaults to today, so an obligation recorded today is invisible
+to the month already under way, which reads exactly like the screen not having
+worked.
+
+Amended through the PATCH path to 2026-04-01 (a GST registration predates today
+anyway), and the calendar produced dates:
+
+| Filing | Period | Statutory due | Work by |
+|---|---|---|---|
+| GSTR-1 (s.37) | August 2026 | 11 Sep | 11 Sep |
+| GSTR-3B (s.39) | August 2026 | 20 Sep | **18 Sep** |
+
+GSTR-3B is pulled two days earlier because **20 September 2026 is a Sunday** —
+the working-day shift, backwards only, exactly as the handler documents.
+`filings_with_no_named_owner: 2`, honestly, because no owner was set.
+
+The form now says to backdate to when the registration really began, rather than
+only "Blank means today" — true, and not the whole truth.
+
+### Armed
+
+Migration **265** puts both on the 1st of the month: **44 templates, 132 active
+grants, 0 priced.** Its guard refuses outright if `client_obligations` is empty
+— the condition that kept them off in 264, checked rather than remembered.
+
+Fifteen free templates remain unarmed, all for the reasons 264 recorded.
