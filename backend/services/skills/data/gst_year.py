@@ -53,7 +53,7 @@ a caveat a language model never sees is a caveat the reader never sees.
 import logging
 from datetime import date, timedelta
 
-from services.statute import obligation, obligation_for_fy, fy_bounds
+from services.statute import obligation, obligation_for_fy, fy_bounds, due_date_from
 from services.skills.timeutil import as_date, utc_now
 
 log = logging.getLogger(__name__)
@@ -106,54 +106,13 @@ def _period_bounds(period: str) -> tuple[date, date]:
     return start, end
 
 
-def _due_date_from(row: dict | None, period_end: date) -> date | None:
-    """The statutory due date for a period, from a calendar row, or None.
-
-    THE CALENDAR EXPRESSES A DUE DATE TWO DIFFERENT WAYS and reading only one of
-    them silently produces a plausible wrong date — which it did: GSTR-9 for FY
-    2025-26 came out as 31 March 2026, nine months early, because the offset
-    branch ran and `due_month` was never looked at.
-
-      `due_month_offset`  months AFTER the period end. This is how the MONTHLY
-                          returns are held: GSTR-1 is due_day 11, offset 1, so
-                          August's is 11 September.
-      `due_month`         an absolute month, for an obligation whose date is
-                          fixed in the calendar rather than relative to a
-                          period: GSTR-9 is due_day 31, due_month 12.
-
-    When `due_month` is absolute, the YEAR is the one in which that month next
-    falls on or after the period end. For a financial year ending 31 March 2026
-    a due_month of 12 resolves to December 2026 and of 11 to November 2026 —
-    both correct, and both "following the year", which is what s.44 and s.16(4)
-    actually say.
-
-    Returns None — never a guess — when the catalogue carries no day at all,
-    which is the case for every quarterly TDS statement and is why each caller
-    has a "the catalogue records no due date" branch.
-    """
-    if not row or not row.get("due_day"):
-        return None
-    day = int(row["due_day"])
-    offset = row.get("due_month_offset")
-    due_month = row.get("due_month")
-
-    if offset is not None:
-        month = period_end.month + int(offset)
-        year = period_end.year + (month - 1) // 12
-        month = (month - 1) % 12 + 1
-    elif due_month is not None:
-        month = int(due_month)
-        year = period_end.year if month >= period_end.month else period_end.year + 1
-    else:
-        month, year = period_end.month, period_end.year
-    # Clamp rather than raise: a due_day of 31 in a 30-day month is the
-    # catalogue saying "the last day", not a data error.
-    for candidate in range(day, 27, -1):
-        try:
-            return date(year, month, candidate)
-        except ValueError:
-            continue
-    return date(year, month, day)
+#: THE RESOLVER LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: It read `due_month_offset` and never `due_month` once, and printed GSTR-9 for
+#: FY 2025-26 as 31 March 2026 — nine months early, beside a statute citation.
+#: There were two copies of it when that was fixed and the fix had to be made
+#: twice; a third rule (`due_overrides`, for the quarterly TDS statements) is
+#: what finally collapsed them. Do not restate it here.
+_due_date_from = due_date_from
 
 
 def _statute_note(row: dict | None, what: str) -> str:

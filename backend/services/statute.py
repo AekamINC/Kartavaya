@@ -51,6 +51,7 @@ with the newer of two overlapping facts.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import date, datetime
 from typing import Any, Iterable, Sequence
@@ -62,7 +63,7 @@ _COLS: tuple[str, ...] = (
     "section_ref", "periodicity", "due_day", "due_month", "due_month_offset",
     "window_days", "rate_percent", "threshold_amount", "state_code",
     "effective_from", "effective_to", "effective_from_exact",
-    "source_ref", "notes", "verified_on",
+    "source_ref", "notes", "verified_on", "due_overrides",
 )
 
 #: Schema-qualified, always. `search_path` on this database is
@@ -152,6 +153,139 @@ def _resolve(rows: Iterable[dict], as_of: date) -> dict | None:
 
 def _rows(records: Sequence[Any]) -> list[dict]:
     return [dict(r) for r in records]
+
+
+# ── the due date ─────────────────────────────────────────────────────────────
+#
+# THE ONE IMPLEMENTATION. It lived in two places until 2026-09-02 —
+# `gst_year._due_date_from` and a byte-identical restatement in
+# `client_register` — and `delta_and_provenance` imports the first with a note
+# saying a third copy would be a third chance to make a bug that already
+# happened live. Both are now three-line delegates to this, so the note is true
+# by construction rather than by discipline.
+
+
+def _apply_override(row: dict, period_end: date) -> dict:
+    """The row as it applies to a period ending in `period_end`'s month.
+
+    A statutory due date is not always one rule. The quarterly TDS statement is
+    a month after the quarter for Q1–Q3 and TWO months after it for Q4, and the
+    monthly TDS deposit is the 7th of the next month for eleven months and the
+    30th of April for March. One `due_month_offset` and one `due_day` cannot say
+    either of those things, which is why migration 266 refused to give the
+    statements a date at all and left the deposit a month early for March.
+
+    `due_overrides` says what differs, keyed by the PERIOD-END MONTH:
+
+        {"3": {"month_offset": 2}}   a quarter ending in March is due +2 months
+        {"3": {"day": 30}}           March's deduction is deposited by 30 April
+
+    Keyed on the period end because that is what this function already holds,
+    and because the same column then serves a monthly rule and a quarterly one
+    without either knowing the other exists.
+
+    A malformed override is IGNORED, not raised on. This runs inside an
+    unattended cron sweep behind a `_statute_note` that prints the citation; a
+    skill that dies mid-report is worse than one that falls back to the row's
+    own rule, and the values here are seeded by migration rather than by users.
+    """
+    raw = row.get("due_overrides")
+    if not raw:
+        return row
+    if isinstance(raw, (str, bytes)):
+        # `db.py` registers a jsonb codec, so this is normally a dict already —
+        # but that registration is allowed to fail under PgBouncer and logs a
+        # warning when it does, and a date is not worth losing to that.
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return row
+    if not isinstance(raw, dict):
+        return row
+    rule = raw.get(str(period_end.month))
+    if not isinstance(rule, dict):
+        return row
+
+    merged = dict(row)
+    for src, dst in (("day", "due_day"),
+                     ("month", "due_month"),
+                     ("month_offset", "due_month_offset")):
+        if src in rule:
+            merged[dst] = rule[src]
+    # An override naming an absolute month means THAT MONTH, not that month and
+    # whatever offset the row already carried — so it clears the offset. This is
+    # not symmetric and deliberately so: the offset branch below is tried first
+    # and wins, so an override naming a month would otherwise be read, merged,
+    # and then never reached.
+    #
+    # There is no mirror-image line clearing `due_month` when the override names
+    # an offset, because the offset already wins and clearing it would change no
+    # date anyone can observe. One was written, and mutation testing found the
+    # test covering it green with the line deleted — an assertion satisfied by
+    # its own shape. Unobservable code with a test that cannot fail is worse
+    # than neither.
+    if "month" in rule and "month_offset" not in rule:
+        merged["due_month_offset"] = None
+    return merged
+
+
+def due_date_from(row: dict | None, period_end: date) -> date | None:
+    """The statutory due date for a period, from a calendar row, or None.
+
+    THE CALENDAR EXPRESSES A DUE DATE THREE DIFFERENT WAYS and reading only one
+    of them silently produces a plausible wrong date — which it did, live:
+    GSTR-9 for FY 2025-26 came out as 31 March 2026, nine months early, because
+    the offset branch ran and `due_month` was never looked at.
+
+      `due_month_offset`  months AFTER the period end. This is how the monthly
+                          returns are held: GSTR-1 is due_day 11, offset 1, so
+                          August's is 11 September.
+      `due_month`         an absolute month, for an obligation whose date is
+                          fixed in the calendar rather than relative to a
+                          period: GSTR-9 is due_day 31, due_month 12.
+      `due_overrides`     what differs for one period — see `_apply_override`.
+                          The quarterly TDS statements and the monthly deposit
+                          are the rules that need it.
+
+    When `due_month` is absolute, the YEAR is the one in which that month next
+    falls on or after the period end. For a financial year ending 31 March 2026
+    a due_month of 12 resolves to December 2026 and of 11 to November 2026 —
+    both correct, and both "following the year", which is what s.44 and s.16(4)
+    actually say.
+
+    Returns None — never a guess — when the catalogue carries no day at all.
+    Callers have a "the catalogue records no due date" branch for exactly that,
+    and it is the honest answer for an obligation nobody has dated yet.
+    """
+    if not row or not row.get("due_day"):
+        return None
+    row = _apply_override(row, period_end)
+    if not row.get("due_day"):
+        # An override may only refine a dated rule, never erase one. Reaching
+        # here means it set the day to null, and the row's own day is the
+        # sourced value; fall back rather than print nothing.
+        return None
+    day = int(row["due_day"])
+    offset = row.get("due_month_offset")
+    due_month = row.get("due_month")
+
+    if offset is not None:
+        month = period_end.month + int(offset)
+        year = period_end.year + (month - 1) // 12
+        month = (month - 1) % 12 + 1
+    elif due_month is not None:
+        month = int(due_month)
+        year = period_end.year if month >= period_end.month else period_end.year + 1
+    else:
+        month, year = period_end.month, period_end.year
+    # Clamp rather than raise: a due_day of 31 in a 30-day month is the
+    # calendar saying "the last day", not a data error.
+    for candidate in range(day, 27, -1):
+        try:
+            return date(year, month, candidate)
+        except ValueError:
+            continue
+    return date(year, month, day)
 
 
 # ── the read API ─────────────────────────────────────────────────────────────

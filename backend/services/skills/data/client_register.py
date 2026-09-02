@@ -122,7 +122,7 @@ silently get no match.
 import logging
 from datetime import date, timedelta
 
-from services.statute import obligation
+from services.statute import obligation, due_date_from
 from services.skills.timeutil import as_date, days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -356,47 +356,12 @@ def _quarter_end_on_or_before(day: date) -> date:
     return _month_end(day.year - 1, 3)
 
 
-def _due_date_from(row: dict | None, period_end: date) -> date | None:
-    """The statutory due date for a period, from a calendar row, or None.
-
-    THE CALENDAR EXPRESSES A DUE DATE TWO DIFFERENT WAYS and reading only one of
-    them produces a plausible wrong date — which it did once, live: GSTR-9 came
-    out nine months early because the offset branch ran and `due_month` was
-    never looked at (found in `gst_year._due_date_from`, and this restatement
-    carries the same fix).
-
-      `due_month_offset`  months AFTER the period end — GSTR-1 is day 11,
-                          offset 1, so August's is 11 September.
-      `due_month`         an absolute month, for a date fixed in the calendar
-                          rather than relative to a period.
-
-    Returns None, never a guess, when the row carries no day at all. Every
-    quarterly TDS and TCS statement in this calendar is in exactly that state,
-    and each caller has a branch that says so.
-    """
-    if not row or not row.get("due_day"):
-        return None
-    day = int(row["due_day"])
-    offset = row.get("due_month_offset")
-    due_month = row.get("due_month")
-
-    if offset is not None:
-        month = period_end.month + int(offset)
-        year = period_end.year + (month - 1) // 12
-        month = (month - 1) % 12 + 1
-    elif due_month is not None:
-        month = int(due_month)
-        year = period_end.year if month >= period_end.month else period_end.year + 1
-    else:
-        month, year = period_end.month, period_end.year
-    # Clamp rather than raise: a due_day of 31 in a 30-day month is the
-    # calendar saying "the last day", not a data error.
-    for candidate in range(day, 27, -1):
-        try:
-            return date(year, month, candidate)
-        except ValueError:
-            continue
-    return date(year, month, day)
+#: THE RESOLVER LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file carried a byte-identical copy of it until 2026-09-02, which meant
+#: the GSTR-9-nine-months-early fix had to be made in two places and the
+#: quarterly-TDS fix would have had to be made in two more. One implementation,
+#: in the module that owns the table it reads.
+_due_date_from = due_date_from
 
 
 def _statute_note(row: dict | None, what: str) -> str:

@@ -9627,3 +9627,103 @@ row.
 **Sources:** [caclubindia — TDS returns under the Income-tax Act 2025](https://www.caclubindia.com/articles/tds-returns-under-the-income-tax-act-2025-forms-due-dates-and-filing-procedure-55948.asp) ·
 [caclubindia — TDS return due date FY 2026-27](https://www.caclubindia.com/articles/tds-return-due-date-55742.asp) ·
 [India Briefing — advance tax calendar 2026-27](https://www.india-briefing.com/news/indias-advance-tax-due-dates-tax-year-2026-27-45178.html/)
+
+---
+
+## 2026-09-02 · The resolver now dates the quarterly statements — migration 267
+
+**The section directly above says the fix "needs a resolver change… That is a
+schema decision, not a row." This is that change.** Everything 266 refused to
+seed is now seeded, and the guard it shipped has been replaced rather than
+removed.
+
+### What a customer sees
+
+The filing calendar for the two clients that carry an `incometax.tds`
+obligation, run live against production:
+
+| period | filing | before | now |
+|---|---|---|---|
+| quarter ended 31 Mar 2027 | Form 140 statement | form named, **no date** | **due 31 May 2027** |
+| quarter ended 30 Sep 2026 | Form 140 statement | form named, **no date** | due 31 Oct 2026, **work_by 30 Oct** (the 31st is a Sunday) |
+| March 2027 | TDS deposit | **7 April** — a month early | **30 April** |
+| April 2027 | TDS deposit | 7 May | 7 May, unchanged |
+
+`filings_with_no_statutory_date` for those clients goes to **0**. The four
+statement rows that printed a form number and an explanation now print a date.
+
+### The mechanism — one nullable jsonb column
+
+`due_overrides`, keyed by the **period-end month**, carrying only what differs:
+
+    {"3": {"month_offset": 2}}   a quarter ending in March is due +2 months
+    {"3": {"day": 30}}           March's deduction is deposited by 30 April
+
+Keyed on the period end rather than on a quarter number because that is what the
+resolver already holds, so the same column serves a monthly rule and a quarterly
+one. `due_year_offset` — the option this document floated — would have fixed
+neither case: the existing arithmetic already carries the year correctly, and Q3
+(31 Dec → 31 Jan) proves it.
+
+### The March deposit was ALSO fixed, and it was the older bug
+
+Listed above under "two other things left alone" and inherited from the 1961 row:
+TDS deducted in March is payable by **30 April**, not 7 April. It has been three
+weeks early for every March since that row was seeded. The same column expresses
+it, so it is no longer left alone.
+
+### ⚠ ONE RESOLVER NOW, WHERE THERE WERE TWO
+
+`_due_date_from` existed **twice** — `gst_year` and a byte-identical restatement
+in `client_register` — and `delta_and_provenance` imports the first with a note
+saying a third copy would be a third chance to make the GSTR-9 bug that already
+happened live (nine months early, beside a statute citation). Adding a third rule
+to two copies is what finally collapsed them: the canonical
+`services.statute.due_date_from` now sits in the module that owns the table, and
+both former copies are one-line delegates. `test_there_is_exactly_one_resolver`
+asserts every caller is the same object, so the note is true by construction
+rather than by discipline.
+
+### 266's guard is replaced, not deleted
+
+266 refused any quarterly 2025-Act row carrying a due day. That was right when
+one offset had to serve four quarters. 267 replaces it with the rule that
+matters now: **a quarterly row may carry a due day ONLY if it also carries the
+period-end-March exception.** Seeding the wrong-by-a-month date is still refused.
+
+### What is still deliberately not done
+
+- **The 1961 rows are untouched.** Their quarterly statements carry no due day
+  and still will — this work researched the 2025 Act, not the repealed one, and
+  backfilling a date into a repealed statute from an unresearched source is
+  exactly what 266 refused. A period ending before 1 April 2026 stays undated
+  and says so.
+- **The two certificate rows (130, 131) keep a NULL section.** Unchanged.
+
+### Tests — 32, and every mutant caught
+
+`backend/tests/test_due_date_exceptions.py`. Six mutations were applied to the
+resolver and **all six turned the suite red**; a seventh assertion did not.
+
+⚠ **`test_an_offset_override_clears_an_absolute_month` was green with the line it
+named deleted** — the offset branch is tried first and wins regardless, so the
+clearing was unobservable and the test was satisfied by its own shape. That is
+the failure mode this repo keeps finding. The dead line was **removed** rather
+than covered, and the test rewritten to assert what is actually load-bearing.
+
+The live half resolves **17 real dates** from the production calendar through the
+real read API — because a resolver that handles overrides perfectly and a table
+with no overrides in it are indistinguishable offline, and the visible result
+would be the four undated filings all over again. Run it with:
+
+    railway run -e production -s Kartavaya -- env REDIS_URL= python -m pytest \
+      tests/test_due_date_exceptions.py -q
+
+(`REDIS_URL=` because `redis.railway.internal` does not resolve from outside
+Railway's network and the limiter fixture falls back to in-memory without it.)
+
+**Sources:** unchanged from 266 — [caclubindia — TDS returns under the Income-tax
+Act 2025](https://www.caclubindia.com/articles/tds-returns-under-the-income-tax-act-2025-forms-due-dates-and-filing-procedure-55948.asp)
+and [caclubindia — TDS return due date FY 2026-27](https://www.caclubindia.com/articles/tds-return-due-date-55742.asp),
+which agree on Q1 31 July, Q2 31 October, Q3 31 January, Q4 31 May (s.397(3)(b)
+with rule 219) and on the deposit under rule 218.
