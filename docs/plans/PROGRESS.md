@@ -9559,3 +9559,71 @@ It named form **140** — the renumbered 26Q — from the dated table rather tha
 from memory, and refused to print a day it does not hold. Seeding the
 Income-tax Act 2025 rows is a statute-research job with a source reference per
 row, not something to fill in from recollection.
+
+---
+
+## 2026-09-02 · Income-tax Act 2025 statute rows — seeded from research, not memory
+
+Migration **266**. The filing calendar could date GST and nothing else; it can
+now date monthly TDS deposits and advance tax as well.
+
+Every value was **researched on the day**, and two independent sources agreed
+with each other *and* with the form numbers somebody else had already seeded in
+August — 138 (was 24Q), 140 (was 26Q), 143 (was 27EQ), 144 (was 27Q). That
+agreement is what made the rest of the table trustworthy enough to extend.
+
+**Seeded, with a `source_ref` and `verified_on` per row:**
+
+- `tds.deposit.monthly` — day 7, one month after the period. Had **no 2025
+  successor at all**; the 1961 row was end-dated at the repeal and nothing
+  replaced it.
+- `incometax.advance_tax.q1`–`q4` — 15 June / 15 September / 15 December /
+  15 March, `ss.403-410`. Unchanged by the 2025 Act; only the section moved.
+- `s.397(3)(b)` added to the four statement rows that carried a form and no
+  section.
+
+**Proof.** Aekam Inc's calendar went from four filings and zero dates to:
+
+    tds.deposit.monthly · August 2026 · due 2026-09-07 · work by 2026-09-07   ×2
+    140 (was 26Q)       · quarter ended 2026-06-30 · no date, form named       ×2
+
+`filings_with_no_statutory_date` fell from 4 to 2.
+
+### ⚠ What was deliberately NOT seeded, and this is the important part
+
+**The quarterly TDS/TCS statements still have no due day, on purpose.** The
+statutory dates are Q1 31 July, Q2 31 October, Q3 31 January and **Q4 31 MAY** —
+the first three one month after the quarter end, the fourth two.
+`_due_date_from` applies a **single** `due_month_offset` to the period end, so
+one row cannot express both:
+
+    due_day 31, due_month_offset 1   ->   Q4 resolves to 30 April
+
+The law says 31 May. A statutory date a month early, printed beside a section
+citation on a compliance screen, is worse than the blank the skill currently
+prints *and explains*. The `due_month` branch cannot rescue it either — it takes
+an absolute month, so all four quarters collapse onto one — and the `instalment`
+pattern advance tax uses works only because all four of **its** dates fall inside
+the year they belong to, which 31 May does not.
+
+Migration 266 carries a **guard that refuses** if any quarterly 2025-Act row ever
+acquires a due day, so the wrong-by-a-month date cannot be seeded later by
+someone who does not know this.
+
+Fixing it properly needs a resolver change — a `due_year_offset` column, or a
+per-quarter key the way advance tax has four. That is a schema decision, not a
+row.
+
+### Two other things left alone, deliberately
+
+- **The March deposit exception is not expressed.** TDS deducted in March is
+  payable by 30 April, not 7 April, so `day 7, offset 1` is right for eleven
+  months and a month early for March. That is **inherited, not introduced** — it
+  is exactly the shape the 1961 row had. It needs the same per-period capability
+  the quarterly statements need.
+- **The two certificate rows (130, 131) keep a NULL section.** No source
+  consulted gave one, and a guessed citation is worse than none.
+
+**Sources:** [caclubindia — TDS returns under the Income-tax Act 2025](https://www.caclubindia.com/articles/tds-returns-under-the-income-tax-act-2025-forms-due-dates-and-filing-procedure-55948.asp) ·
+[caclubindia — TDS return due date FY 2026-27](https://www.caclubindia.com/articles/tds-return-due-date-55742.asp) ·
+[India Briefing — advance tax calendar 2026-27](https://www.india-briefing.com/news/indias-advance-tax-due-dates-tax-year-2026-27-45178.html/)
