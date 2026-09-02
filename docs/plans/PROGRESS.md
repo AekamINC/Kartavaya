@@ -9129,3 +9129,64 @@ which is the most valuable answer a check can give and is rendered as a finding
 rather than a blank.
 
 Green: 2,512 backend tests across the schedule, skill and cron selections.
+
+---
+
+## 2026-09-02 · The rest of the free checks — and what actually blocks the shelf
+
+Migration **263** arms eleven more, taking the shelf to **21 scheduled templates
+and 63 active org grants**. Daily: Orders that cannot be filled. Weekly: Before
+you send to a list · Payment proof claims. Monthly: Consent ledger and STOP (1st)
+· Impossible stock figures (1st) · TDS threshold tripwire (2nd) · What has moved
+since the return went (15th) · ESI ceiling crossings (20th). Quarterly: Stale
+retainer rates · UPI reference threading. Twice a year: Invoice series gaps and
+splits (April and September — the FY closes 31 March, and September is when an
+audit wants the series clean).
+
+### The finding: ack wiring is the binding constraint, not anything else
+
+49 free templates were unarmed. They divide almost perfectly:
+
+| | |
+|---|---|
+| clear every condition | **12** |
+| fail exactly one — **not in `ACK_WIRING`** | **37** |
+
+Not credits, not writes, not scheduling, not subject-binding. **Only 32 of the
+78 skills can have a finding dismissed**, and arming one that cannot repeats the
+same rows for ever — the precise mechanism by which an automation catalogue
+becomes wallpaper. Finishing that wiring is now the single highest-value piece
+of work on the shelf: it is what unlocks the remaining 37, and it is a long tail
+of small individually-verifiable commits, one skill per commit, because which of
+a skill's fields are identity and which are material is a judgement per skill
+and getting it wrong is silent.
+
+Of the 12, eleven are armed. **Quotation expiry chase is not**: its own card says
+"Once quotations exist", because nothing in the product creates a quotation. A
+schedule would emit an empty finding every month for ever, which is the wallpaper
+this is trying not to make.
+
+### Three guards are now predicates, not prose
+
+262 asserted its six conditions in a comment and checked them by hand. 263 makes
+three of them refusals the file cannot get past: **every** data step must be in
+`ACK_WIRING` (not "any" — a skill whose second step is unwired still repeats that
+step's findings), nothing priced may acquire a schedule, and no `hour_utc` may
+exceed the sweep hour.
+
+⚠ And regenerating the ACK list surfaced a counting error: `ACK_WIRING` holds
+**32**, not 31. `grep -oE '^\s{4}"[a-z_]+":'` silently drops
+`check_194q_approaching` because of the digit. The pattern needs `[a-z_0-9]+`.
+Both this file and the memory note said 31.
+
+### A position from 262 that changed
+
+262 excluded "Before you send to a list" and "Consent ledger and STOP" as guards
+— things worth nothing except at the moment of sending. That argument was about
+where they should *also* be called from, and it stands: both should become
+pre-flight calls on the send path, and neither is. It was wrong to read it as
+"therefore never schedule them". A weekly list-hygiene sweep and a monthly
+consent register are real compliance artefacts under the DPDP Act, and both are
+free and dismissible. The consent ledger keeps its other constraint untouched —
+no contact, no outbound, because a register of people who have *not* consented
+must never acquire a second channel.
