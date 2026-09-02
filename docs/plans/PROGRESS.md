@@ -9107,10 +9107,25 @@ without moving it — both pre-existing and both intentional. Third time that fi
 has paid this cost, and its own comments argue it is the case *for* an exact
 count rather than a lower bound, so it moves to 21.
 
-**Proof owed.** These lines have never been true, and the next sweep is the
-first chance for them to be:
+**PROOF IN, 2026-09-02 01:16:10 UTC — the shelf ran itself for the first time.**
+15 runs (the five interval templates across three orgs), all `completed`, 0
+credits, every one carrying outputs. `hub_org_skills.last_run_at` went 0 → 15.
 
-    SELECT count(*) FROM public.hub_skill_runs;                              -- was 1
-    SELECT count(*) FROM public.hub_org_skills WHERE last_run_at IS NOT NULL; -- was 0
+    SELECT count(*) FROM public.hub_org_skill_runs;                            -- 532, +15
+    SELECT count(*) FROM public.hub_org_skills WHERE last_run_at IS NOT NULL;  -- 0 → 15
+
+⚠ **And the verification query in the first draft named the wrong table.**
+`hub_skill_runs` is keyed on `client_skill_id`; an ORG grant's runs live in
+`hub_org_skill_runs`, keyed on `org_skill_id` — two tables deliberately, because
+the Skills screen reads one and the client Skill Packs screen reads the other.
+Watching the wrong one shows a flat 1 while fifteen runs land beside it, which
+is exactly the false negative that would have been read as "the arming failed".
+
+The findings were real rather than empty: Unicode Group had two documents at
+chase rung 1 — a GST-advisory statement of work and a banking-authority board
+resolution — and the three approval ladders returned 9 rows with 15 escalation
+targets. Duplicate vendor bills and Money in / invoice unpaid came back clean,
+which is the most valuable answer a check can give and is rendered as a finding
+rather than a blank.
 
 Green: 2,512 backend tests across the schedule, skill and cron selections.

@@ -97,9 +97,23 @@
 -- Then, after the next 01:15 UTC sweep - this is the line that has never been
 -- true in the product's history:
 --
---   SELECT count(*) FROM public.hub_skill_runs;              -- was 1
+--   -- ⚠ hub_skill_runs is the CLIENT-skill table, keyed on client_skill_id.
+--   -- An ORG grant's runs live in hub_org_skill_runs, keyed on org_skill_id —
+--   -- two tables on purpose, because the Skills screen reads one and the
+--   -- client Skill Packs screen reads the other. Watching the wrong one shows
+--   -- a flat 1 while fifteen runs land beside it.
+--   SELECT count(*) FROM public.hub_org_skill_runs;          -- was 532
 --   SELECT count(*) FROM public.hub_org_skills
 --    WHERE last_run_at IS NOT NULL;                          -- was 0
+--
+-- RESULT, 2026-09-02 01:16:10 UTC — the first unattended runs in the product's
+-- history: 15 runs (5 interval templates x 3 orgs), ALL completed, 0 credits,
+-- every one carrying outputs. `last_run_at` 0 -> 15. Findings were real, not
+-- empty: Unicode Group had two documents at chase rung 1 ("Statement of work —
+-- GST advisory", "Board resolution — banking authority"), and the three orgs'
+-- approval ladders returned 9 rows with 15 escalation targets. Duplicate vendor
+-- bills and Money in / invoice unpaid returned clean — which is the most
+-- valuable answer a check can give and is rendered as a finding, not a blank.
 --
 -- -- Rollback ---------------------------------------------------------------
 --
