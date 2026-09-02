@@ -9495,3 +9495,67 @@ grants, 0 priced.** Its guard refuses outright if `client_obligations` is empty
 — the condition that kept them off in 264, checked rather than remembered.
 
 Fifteen free templates remain unarmed, all for the reasons 264 recorded.
+
+---
+
+## 2026-09-02 · Obligations for the other orgs — and a hole in the statute calendar
+
+**4 obligation rows across 3 clients in 2 orgs.** Every one written through the
+deployed endpoint.
+
+| Org | Clients covered | Rows | Keys |
+|---|---|---|---|
+| Unicode Group | 1 of 1 | 1 | `gst.regular` |
+| Aekam Inc | 2 of 2 | 3 | `incometax.tds`, `roc.annual` |
+
+Both orgs' register and calendar now report `could_not_check: false`.
+
+### Two things I did not do, and why
+
+**UK AekamINC has zero clients.** `client_obligations` has a foreign key to
+`graha_clients`, so there is nothing to attach an obligation to. That org needs
+clients before it needs a register — it is not a data-entry job.
+
+**No GST obligation was recorded for Aekam Inc's two clients.** Neither carries
+a GSTIN, a registration number or a single invoice, and both were created on
+2026-09-01. Ticking `gst.regular` would assert a GST registration the data does
+not support — inventing exactly the statutory fact this register exists to
+record. What was recorded instead is defensible: `roc.annual` for the one named
+"Pvt Ltd" (true of every private limited company) and `incometax.tds` for both,
+each carrying a note saying the registration is unconfirmed. If these are real
+clients, the GST rows should be added by somebody who knows their filing status.
+
+### ⚠ The finding: income tax cannot be dated after 1 April 2026
+
+Aekam's calendar produced four filings and **not one carried a date**. Nothing is
+wrong with the screen or the skill — the skill gave two different, correct
+refusals, and the reason is in `public.statute_calendar`:
+
+| key | versions | with a due day | in force to |
+|---|---|---|---|
+| `tds.deposit.monthly` | 1 | 1 | **2026-04-01** |
+| `tds.statement.nonsalary` | 2 | **0** | current |
+| `tds.statement.salary` | 2 | **0** | current |
+| `tds.certificate.nonsalary` | 2 | **0** | current |
+| `incometax.advance_tax.q1`–`q4` | 1 each | 1 | **2026-04-01** |
+
+The Income-tax Act 1961 rows were end-dated at the repeal on 1 April 2026 and
+**no Income-tax Act 2025 successors were ever seeded**. The statement rows have
+never carried a due day at all. So the calendar can currently date GST
+obligations and nothing else.
+
+The handler's two answers are worth quoting, because they are the behaviour this
+shelf is built on:
+
+> The statute calendar carries `tds.statement.nonsalary` but no due day for it
+> as of 2026-06-30, so no date is shown. **The FORM is named so a preparer can
+> see the filing exists.**
+
+> The statute calendar carries NO VERSION of `tds.deposit.monthly` in force on
+> 2026-09-30, so no date and no form are shown. **This is a gap in the calendar,
+> not a filing that does not exist.**
+
+It named form **140** — the renumbered 26Q — from the dated table rather than
+from memory, and refused to print a day it does not hold. Seeding the
+Income-tax Act 2025 rows is a statute-research job with a source reference per
+row, not something to fill in from recollection.
