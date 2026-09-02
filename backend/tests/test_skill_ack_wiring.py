@@ -249,6 +249,13 @@ WIRED = [
     "find_overdue_vendor_bills",
     "find_stalled_agreements",
     "propose_payment_run",
+    # 2026-09-02. The one genuine gap found when the 37 unwired free skills were
+    # measured against the exclusion categories rather than assumed to be a
+    # backlog. Almost all of them are period-scoped, narrative or work lists and
+    # were correctly left alone; a product on an abolished slab is none of those
+    # — it persists until somebody edits the master, so it is read again every
+    # run for ever with no period close to clear it.
+    "check_dead_gst_slabs",
 ]
 
 

@@ -9190,3 +9190,77 @@ consent register are real compliance artefacts under the DPDP Act, and both are
 free and dismissible. The consent ledger keeps its other constraint untouched —
 no contact, no outbound, because a register of people who have *not* consented
 must never acquire a second channel.
+
+---
+
+## 2026-09-02 · Ack wiring — and a correction to yesterday's conclusion
+
+### The correction
+
+Yesterday's entry said the 37 unwired free skills were "blocked on ack wiring"
+and that finishing it "unlocks 37 templates at once". **That was wrong**, and it
+was wrong in the way this repo keeps paying for: a count was read as a backlog
+without checking what the count meant.
+
+`services/skill_ack_wiring.py` says in its own header that the unwired skills
+were **measured and excluded**, and names the categories — write skills,
+aggregates and narratives, work lists, DETECT scorers whose output moves every
+run, and period-scoped statutory or calendar skills whose findings expire when
+the period closes. It even names `brief_unpaid_reimbursements` as "the one that
+looks like a candidate and is not".
+
+So the 37 were checked one at a time against those categories, using the shapes
+of their **actual output** from the 455 completed runs already in
+`hub_org_skill_runs` rather than from guesswork. The categories held for
+thirty-six of them. Annual return, filing calendars, statutory dues, e-invoice
+window, ITC lapse, PT, deductee packs: all period-scoped, all correctly out. The
+message packs and event splits are work lists. Where the AI spend went, What
+WhatsApp is costing you, Set aside for advance tax: aggregates.
+
+**The real conclusion is the opposite of yesterday's**: ack wiring is not the
+constraint on arming those skills, because most of them do not need an ack at
+all. What they need is a decision about whether a period-scoped finding is worth
+a schedule, which is a different and much smaller question.
+
+### The one genuine omission, now wired
+
+`check_dead_gst_slabs` fits none of the exclusion categories. It returns three
+persistent per-item lists — `product_master`, `document_lines` and
+`rate_disagrees_with_product_master` — and **no period ever closes over a
+product sitting on an abolished slab**. The handler says so itself: "it is wrong
+TODAY regardless of when it was right". A firm that has decided a historical
+invoice will not be reissued reads that line every quarter for ever.
+
+Wired as one commit, with `tests/test_skill_ack_wiring_dead_slabs.py` (17 tests):
+
+- **IDENTITY** is the product name for the master list (the handler's own key —
+  its CTE groups by name and the mismatch join is "product name, exact,
+  case-folded"; the output carries no product id at all), and
+  document + line for the two line lists.
+- **MATERIAL** is `rate`, `is_active`, `status` and the two mismatch rates. The
+  rate is the finding: "I know that product is on 12%" must not silently cover
+  its being moved to 28%.
+- **INCIDENTAL** is `hsn_or_sac`, `why`, `linked_by`, `which_side_is_stale` and
+  `rate_abolished_on`. Nothing time-derived exists on this handler at all, so
+  the usual midnight failure cannot arise here.
+- **recompute** rebuilds only the three list lengths, following
+  `_series_recompute`: `products_on_a_dead_slab` and `rate_mismatches` are
+  population totals measured with a window function *before* the row cap, and
+  `coverage` counts invoice lines in the database. None describes what is being
+  shown, so an acknowledgement must not move them.
+
+### A test that was green for the wrong reason
+
+`test_acknowledging_a_line_does_not_silence_its_mismatch` claimed it was proving
+the list-name folding. Mutating `lists_are_one_population=True` turned nothing
+red — the two lists name their columns differently (`where`/`description` versus
+`item`), so one `identity_of` serving both makes the keys disjoint before
+`_list` is folded in at all. The folding is belt-and-braces here, not
+load-bearing. Split into a second test that asserts the real reason, and fails
+loudly if the two lists ever stop distinguishing themselves by field name.
+
+Both judgements were mutation-tested: removing `rate` from MATERIAL turns the
+rate-moved test red.
+
+986 ack-related tests green. One pre-existing unrelated failure in
+`test_org_settings_amendable.py`, untouched by this work and flagged separately.

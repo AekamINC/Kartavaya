@@ -11,12 +11,23 @@ rather than a pile of decorators: each wiring is a one-entry diff that a reader
 can weigh on its own. A bulk wiring of sixty skills is sixty unreviewed
 judgements arriving as one green build.
 
-Wired: 32 skills — every one measured as needing an acknowledgement, out of the
-93 in `SKILL_REGISTRY`. The other 61 were measured and excluded: five WRITE
+Wired: 33 skills — every one measured as needing an acknowledgement, out of the
+93 in `SKILL_REGISTRY`. The other 60 were measured and excluded: five WRITE
 skills, ~14 that return a single aggregate or a narrative, ~8 that return a work
 list rather than findings, ~6 DETECT scorers whose output moves on every run,
 and ~15 period-scoped statutory or calendar skills whose findings expire when
-the period closes. `brief_unpaid_reimbursements` is the one that looks like a
+the period closes.
+
+RE-MEASURED 2026-09-02, when the 37 unwired FREE templates were checked against
+these categories one at a time instead of being treated as a backlog. The
+categories held for all but one: `check_dead_gst_slabs` returns three persistent
+per-item lists, and no period ever closes over a product sitting on an abolished
+slab — it was a genuine omission and is now wired. Everything else stayed out
+for the reason it was put out, which is worth recording because "37 skills are
+waiting to be wired" is an easy and wrong thing to conclude from the count
+alone.
+
+`brief_unpaid_reimbursements` is the one that looks like a
 candidate and is not: its only per-item value is `oldest`, a single exemplar
 dict, and the handler says what it is — "Money owed to employees, not a
 decision anybody still has to make".
@@ -2193,6 +2204,81 @@ def _series_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> Non
         heads["defect_count"] = len(surviving.get("tax_heads.defects") or ())
 
 
+# ── check_dead_gst_slabs ────────────────────────────────────────
+#
+# Products and document lines still carrying a GST rate the Council abolished.
+# Unlike almost everything else left unwired, THIS SKILL'S FINDINGS DO NOT
+# EXPIRE: a product sitting on a dead slab sits there until somebody edits the
+# master, and every document raised from it inherits the wrong rate meanwhile.
+# There is no period close that clears it, which is exactly why it needs an
+# acknowledgement — a firm that has decided a historical invoice will not be
+# reissued reads that same line every quarter for ever otherwise.
+#
+# THREE LISTS, THREE POPULATIONS. `product_master` is a product; the other two
+# are document lines. They are NOT one population, so the list name is folded
+# into the key (the default): a line can legitimately appear in both
+# `document_lines` (its rate is dead) and `rate_disagrees_with_product_master`
+# (it also disagrees with the master), and those are two different facts about
+# it that a person may want to answer separately.
+#
+# IDENTITY
+#   product_master     `product`, the name — and it is the handler's own key,
+#                      not a convenience: the master CTE groups by name with
+#                      `n_rates = 1`, and the mismatch join is `linked_by`
+#                      "product name (exact, case-folded)". The output carries
+#                      no product id at all, so a different choice would have
+#                      to invent one.
+#   document_lines     `where` + `document` + `description`. `where` because the
+#                      same document number can exist in two sources, and
+#                      `description` because a document has several lines.
+#   rate_disagrees…    `document` + `item`, the same fact in that list's naming.
+#
+#   NOT `document_date` anywhere. It is immutable, so it would be harmless in
+#   the key and adds nothing to it — but a corrected date would orphan the ack
+#   for no gain, and identity is meant to be the smallest stable handle.
+#
+# MATERIAL
+#   product_master     `rate` and `is_active`. The rate IS the finding: when it
+#                      moves, "I know that product is on 12%" must not cover its
+#                      being on 28%. A deactivated product is a different
+#                      situation too — the finding stops mattering, and the
+#                      reader should see that it changed rather than inherit an
+#                      ack made while it was live.
+#   document_lines     `rate` and `status`. Status because a dead rate on a
+#                      FINAL invoice is a worse situation than the same rate on
+#                      a draft, and draft→final is the moment it becomes real.
+#   rate_disagrees…    both rates. Either side moving is a new disagreement.
+#
+# INCIDENTAL — `hsn_or_sac` (correcting an HSN must not void an ack about the
+#   RATE), `why` and `which_side_is_stale` (prose the handler derives from the
+#   fields already hashed, so including them would void an ack on a rewording),
+#   `linked_by` (a constant), and `rate_abolished_on` (a fact about the statute,
+#   not about this finding's state).
+#
+# NOTHING TIME-DERIVED IS PRESENT AT ALL, which is worth saying: this handler
+# carries no `days_past` or `ageing`, so `_DRIFT_FIELDS` has nothing to catch
+# here and the usual midnight failure cannot arise.
+def _dead_slabs_recompute(out: dict, surviving: Mapping[str, Sequence[dict]]) -> None:
+    """Rebuild the three list lengths. Every census stays as the handler left it.
+
+    Same rule as `_series_recompute`: only a number that IS the length of a
+    filtered list is rebuilt. `products_on_a_dead_slab` and `rate_mismatches`
+    are population totals the handler measured with a window function BEFORE its
+    own row cap, and `coverage` counts invoice lines in the database — none of
+    them describes what is being shown, so suppressing a finding must not move
+    them. `document_lines_correct_when_issued` is a separate census of lines
+    that were right on their day and are deliberately not findings at all.
+    """
+    counts = out.get("counts")
+    if not isinstance(counts, dict):
+        return
+    counts["products_listed"] = len(surviving.get("findings.product_master") or ())
+    counts["document_lines_on_a_dead_slab"] = len(
+        surviving.get("findings.document_lines") or ())
+    counts["rate_mismatches_listed"] = len(
+        surviving.get("findings.rate_disagrees_with_product_master") or ())
+
+
 ACK_WIRING: dict[str, AckWiring] = {
     # ── find_overdue_invoices ───────────────────────────────────────────────
     #
@@ -2751,6 +2837,30 @@ ACK_WIRING: dict[str, AckWiring] = {
         },
         recompute=_payables_recompute,
         label_of=lambda f: f"{f.get('bill')} — {f.get('vendor')}",
+    ),
+    "check_dead_gst_slabs": AckWiring(
+        findings_at=("findings.product_master",
+                     "findings.document_lines",
+                     "findings.rate_disagrees_with_product_master"),
+        identity_of=lambda f: {
+            "product": f.get("product"),
+            "where": f.get("where"),
+            "document": f.get("document"),
+            "description": f.get("description"),
+            "item": f.get("item"),
+        },
+        material_of=lambda f: {
+            "rate": f.get("rate"),
+            "is_active": f.get("is_active"),
+            "status": f.get("status"),
+            "invoice_line_rate": f.get("invoice_line_rate"),
+            "product_master_rate": f.get("product_master_rate"),
+        },
+        recompute=_dead_slabs_recompute,
+        label_of=lambda f: (
+            f"{f.get('product')} @ {f.get('rate')}%"
+            if f.get("product") else
+            f"{f.get('document')} — {f.get('description') or f.get('item')}"),
     ),
 }
 
