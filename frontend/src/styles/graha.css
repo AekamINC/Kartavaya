@@ -628,3 +628,55 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
    characters (-100 to 100) and a full-width input beside a rule name reads as
    the more important of the two, which it is not. */
 .gr__pts { width: 84px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── Statutory obligations, in the client detail aside ──────────────────────
+   The register migration 175 created and nothing wrote for thirteen days. It
+   is the only editable block in an aside of summaries, so it carries a rule
+   above it and its own spacing rather than borrowing `.gr__lrow`'s — a row
+   with three buttons in it is not the same object as a contact line. */
+/* The section itself. A rule rather than a bare hook: `check-classes` refuses
+   a class with no rule, and it is right to — an unstyled wrapper is invisible
+   until the day somebody relies on it for spacing. Separated from the two
+   read-only blocks above it because it is the one that can be written to. */
+.obl { margin-top: var(--sp-4); }
+.obl__add { margin-left: auto; }
+.obl__denied { margin-left: auto; font-style: italic; }
+.obl__empty { margin: var(--sp-2) 0; }
+
+.obl__row {
+  display: flex; align-items: flex-start; gap: var(--sp-2);
+  padding: var(--sp-2) 0; border-bottom: 1px solid var(--outline-variant);
+}
+.obl__row:last-child { border-bottom: none; }
+/* An ended obligation is history, not a task. Dimmed rather than hidden,
+   because "what was this client in 2024" is a question the register is asked. */
+.obl__row--ended { opacity: .62; }
+.obl__main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.obl__meta { color: var(--on-surface-3); }
+.obl__note { color: var(--on-surface-2); text-wrap: pretty; }
+.obl__past {
+  margin: var(--sp-3) 0 0; padding-top: var(--sp-2);
+  border-top: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm); letter-spacing: .08em; text-transform: uppercase;
+}
+.obl__acts { display: flex; gap: 4px; flex: 0 0 auto; flex-wrap: wrap; }
+.obl__acts--form { margin-top: var(--sp-2); }
+
+.obl__form {
+  margin-top: var(--sp-2); padding: var(--sp-3);
+  background: var(--s-container); border-radius: var(--r-sm);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.obl__f { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.obl__lbl {
+  font-size: var(--t-label-sm); font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3);
+}
+.obl__hint { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); text-wrap: pretty; }
+/* Two columns where there is room, one where there is not. `minmax(0,1fr)` and
+   not `1fr`: a select with a long member name in it otherwise refuses to
+   shrink and pushes the aside wider than the page. */
+.obl__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: var(--sp-2); }
+/* The sentence this screen exists to say — that nine of the sixteen produce no
+   dates. Given room to be read rather than clamped. */
+.obl__gap { text-wrap: pretty; }

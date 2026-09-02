@@ -9365,3 +9365,81 @@ Swept the other test files for the same bug class. The remaining ~179 mentions
 of `staging.` in tests are assertions about **migration file text**, where the
 name is historically correct — `test_blocked_actors`, `test_channel_colour` and
 `test_delta_sync` all green.
+
+---
+
+## 2026-09-02 · The client obligations screen
+
+`public.client_obligations` was created by migration 175 on 2026-08-20 and held
+**zero rows in every org for thirteen days**. Nothing wrote it: no screen, no
+import, no seed. Two shipped skills read it and both refused, correctly, to call
+an empty register a clean one — the register reported 91 active clients against
+nothing recorded, and the filing calendar produced an empty month.
+
+Neither was blocked on the calendar. Both were blocked on somebody being able to
+say *"this client is a regular GST filer and Priya owns it"*.
+
+**Five endpoints** on `routers/graha.py` — list, create, amend, delete, and
+`GET /v1/graha/obligation-keys` — plus `ObligationsSection.jsx` in the client
+detail aside.
+
+### What the screen says that a CRUD form would not
+
+**Nine of the sixteen obligations cannot be dated**, and QRMP is the sharpest —
+the case the register mainly exists for. The statute calendar holds the monthly
+GSTR-1 and GSTR-3B rows only, so a firm can tick QRMP, save it, and get a filing
+calendar with no dates on it. The form says so **at the moment the box is
+ticked**, which turns a bug report into a known gap.
+
+It is not hardcoded. `obligation_catalogue()` derives `can_be_dated` from the
+same `_NO_CALENDAR_RULE` the skill reads, so the day the calendar gains a CMP-08
+row the warning disappears by itself. The endpoint serves the list for the same
+reason the step editor is served rather than hard-coded: a second copy of a
+codelist drifts, and this one would drift from a database CHECK that refuses the
+difference.
+
+**Ending is not deleting**, and both are offered. A client who left the
+composition scheme *was* under it and the register is asked historical
+questions, so ending writes `effective_to` and the row stays. Deleting is for a
+row typed against the wrong client.
+
+### The trap the live planner caught
+
+The first draft built each statement with an f-string at the call site
+(`RETURNING {_OBLIGATION_COLS}`). Offline every test was green. Against the real
+schema two failed with `syntax error at end of input`, because **an AST
+collector recovers only an f-string's literal fragments** — the statement it
+handed the planner ended at `RETURNING`. The two that were going unchecked were
+the INSERT and the UPDATE: the only two that write.
+
+The SQL is now resolved at import into module constants, so `vars(graha)` yields
+exactly what asyncpg will send and the planner sees what the database sees.
+There is still one column list.
+
+### Guards
+
+Every statement carries an org filter, asserted against the resolved SQL —
+`client_id` in the path looks like it scopes the row and does not, because a
+caller supplies both ids. The UPDATE and DELETE carry both in their own WHERE
+rather than checking first and writing after; this repo has already paid for the
+other shape once. Three refusals turn a constraint violation into a sentence:
+an unknown key (with the list), an end on or before the start, and a second
+*open* window for one key — which no index enforces, because an obligation
+genuinely recurs and only two open ones are impossible.
+
+Two `npm run check` gates caught real defects on the way: a `.obl` class with no
+rule, and a component reading a `canWrite` it had not declared. The second is the
+better catch — taking the gate as a prop works only until a caller forgets, and
+then the component white-screens.
+
+25 tests, including a live half run with `railway run` that plans all four
+statements against the real catalogue and compares the picker's sixteen keys
+against `client_obligations_key_ck`. 440 graha tests green, build and check clean.
+
+### Still not armed, and why
+
+**Client filing calendar stays off its schedule.** `client_obligations` is still
+at zero rows — the screen exists, nobody has used it yet, and arming a calendar
+that returns an empty month is the wallpaper this work was avoiding. It becomes
+armable the moment the first obligation is recorded, and that is a one-line
+change to 264's pattern.

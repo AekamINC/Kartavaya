@@ -209,6 +209,67 @@ _NO_CALENDAR_RULE: dict[str, str] = {
         "the note on the row.",
 }
 
+#: What a person calls each obligation, for a picker. Held beside the keys and
+#: the reasons rather than in the router, for the reason the note below this one
+#: records at length: a second copy of a codelist in another module is a copy
+#: that drifts, and the drift is silent.
+#:
+#: Deliberately plain. These are read by whoever ticks the box for a client, not
+#: by a compliance specialist, and a label that repeats the key ("gst.regular")
+#: teaches nothing.
+OBLIGATION_LABELS: dict[str, str] = {
+    "gst.regular":       "GST — regular filer",
+    "gst.qrmp":          "GST — QRMP (quarterly)",
+    "gst.composition":   "GST — composition",
+    "gst.tds":           "GST TDS (GSTR-7)",
+    "gst.tcs":           "GST TCS (GSTR-8)",
+    "incometax.tds":     "Income-tax TDS",
+    "incometax.tcs":     "Income-tax TCS",
+    "incometax.advance": "Advance tax",
+    "epf":               "EPF",
+    "esi":               "ESI",
+    "professional_tax":  "Professional tax",
+    "audit.statutory":   "Statutory audit",
+    "audit.tax":         "Tax audit",
+    "audit.gst":         "GST audit (GSTR-9C)",
+    "roc.annual":        "ROC annual filing",
+    "other":             "Other",
+}
+
+
+def obligation_catalogue() -> list[dict]:
+    """The sixteen obligations a client can be marked with, for a picker.
+
+    Public because the obligations SCREEN needs exactly this list and must not
+    carry its own copy. Three separate things would otherwise be duplicated into
+    the frontend and drift apart from the database that enforces them: the keys
+    (which `client_obligations_key_ck` refuses if wrong), the labels, and — the
+    one that actually matters to a person filling the form — WHETHER A DATE CAN
+    BE PRODUCED FROM THE OBLIGATION AT ALL.
+
+    That last field is why this is a function and not a constant. Eight of the
+    sixteen map to nothing the statute calendar carries, and QRMP is the
+    sharpest: a firm can tick it, save it, and get a filing calendar with no
+    dates on it. Saying so ON THE FORM turns that from a bug report into a
+    known gap — and the day the calendar gains a CMP-08 row, this answer
+    changes by itself because it is derived from `_NO_CALENDAR_RULE` rather
+    than from a hand-kept list of what works.
+
+    `sort_order` is the migration's own order, which groups GST, then income
+    tax, then payroll, then audits. Alphabetical would interleave them.
+    """
+    return [
+        {
+            "key": key,
+            "label": OBLIGATION_LABELS.get(key, key),
+            "can_be_dated": key not in _NO_CALENDAR_RULE,
+            "why_no_date": _NO_CALENDAR_RULE.get(key),
+            "sort_order": i,
+        }
+        for i, key in enumerate(OBLIGATION_KEYS)
+    ]
+
+
 #: The GST codelist now lives in `services/gst_states.py`, public and owned.
 #: It moved out of here on 2026-08-26 because FOUR production modules outside
 #: this package had come to import `_GST_STATES`/`_norm_state` — routers/vetana,

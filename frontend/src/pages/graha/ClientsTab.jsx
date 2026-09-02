@@ -14,6 +14,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import AddressBlock from '../../components/ui/AddressBlock';
 import ClientLocations, { placeOf } from '../../components/ClientLocations';
+import ObligationsSection from './ObligationsSection';
 import PinAreaPopover from '../../components/PinAreaPopover';
 import CoordinateCapture from '../../components/CoordinateCapture';
 import { inr } from '../../lib/inr';
@@ -276,6 +277,17 @@ export default function ClientsTab() {
                 </div>
               ))}
               {!detail.deals?.length && <p className="gr__mute">No deals linked</p>}
+
+              {/* The statutory register. Last in the aside because it is the
+                  only section here that is WRITTEN from this screen — contacts
+                  and deals are summaries of their own tabs, and putting an
+                  editable block above two read-only ones reads as if they were
+                  editable too.
+
+                  It is also the block that unblocks two skills: the filing
+                  calendar returns an empty month for every client until
+                  something here has a row. */}
+              <ObligationsSection clientId={detail.id} />
             </div>
           </div>
         )}

@@ -39,6 +39,10 @@ from services import territory_routing
 from services import pin_boundaries
 from services import recycle_bin as bin_svc
 from services import digipin
+# The obligation codelist lives with the skill that reads it, and is
+# imported rather than copied: `client_obligations_key_ck` refuses a key
+# this list does not know, so a second copy here would drift into 500s.
+from services.skills.data.client_register import obligation_catalogue
 from utils import assert_file_url
 
 log = logging.getLogger(__name__)
@@ -1679,6 +1683,350 @@ async def clear_contact_coordinate(
     """
     return await _clear_coordinate(
         _COORD_TABLES["contacts"], contact_id, user, org_id)
+
+
+# ── Client obligations ───────────────────────────────────────
+#
+# THE SCREEN THAT DID NOT EXIST. `public.client_obligations` was created by
+# migration 175 on 2026-08-20 and held ZERO rows in every org for thirteen days,
+# because nothing in the product wrote it: no screen, no import, no seed. Two
+# shipped skills read it and both correctly refused to describe an empty
+# register as a clean one —
+#
+#   brief_client_obligations_register  "the register is empty, and here is the
+#                                       denominator": 91 active clients, zero
+#                                       obligations recorded
+#   pack_client_filing_calendar        each client's obligations resolved to
+#                                       dates, which with no obligations is an
+#                                       empty calendar every month
+#
+# So the calendar is not blocked on the calendar. It is blocked on somebody
+# being able to say "this client is a regular GST filer and Priya owns it", and
+# these five endpoints are that.
+#
+# ── Three things they refuse, and why each one is here ──────────────────────
+#
+#   AN UNKNOWN KEY, with the list. `client_obligations_key_ck` already refuses
+#   one, but a CHECK violation surfaces as asyncpg raising inside the handler
+#   and the caller gets a 500 with no idea which sixteen values are legal. The
+#   allowlist is `obligation_catalogue()` — the same one the picker renders —
+#   so the message and the form cannot disagree.
+#
+#   A SECOND OPEN WINDOW for the same client and key. There is deliberately no
+#   unique index: an obligation genuinely recurs, and a client who left the
+#   composition scheme in 2024 and rejoined in 2026 has two true rows. What is
+#   never true is TWO OPEN ones — the register would then answer "is this
+#   client a regular filer" with two rows and no way to choose. The closed
+#   history is untouched.
+#
+#   AN END BEFORE A START. `client_obligations_window_ck` enforces it; this
+#   turns the 500 into a sentence.
+#
+# ── The org filter is on every statement, including the ones reached by id ──
+#
+# An obligation is addressed as /clients/{client_id}/obligations/{id}, so the
+# client id in the path looks like it does the scoping. It does not — a caller
+# can pass any obligation id they like. Every statement below carries
+# `org_id=$n` AND `client_id=$n`, and the UPDATE and DELETE carry them in the
+# WHERE rather than checking first and writing after. This repo has already paid
+# for the other shape: a DELETE by name with no org filter removed the wrong
+# firm's client ten minutes after a migration was written to avoid exactly that.
+
+
+class ObligationWrite(BaseModel):
+    """One statutory obligation a client carries.
+
+    `effective_from` defaults to CURRENT_DATE in the column, so it is optional
+    here — "this client is a regular filer, as of now" is the common case and
+    should not require a date. `effective_to` is how an obligation ENDS, and it
+    is a real value rather than a delete: a client who left the composition
+    scheme was under it, and the register is asked historical questions.
+    """
+    obligation_key: str
+    state_code: Optional[str] = None
+    owner_user_id: Optional[str] = None
+    registration_no: Optional[str] = None
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    notes: Optional[str] = None
+
+
+def _blank_to_none(v):
+    """An empty box is "not recorded", not the empty string.
+
+    Every one of these columns is nullable and NULL is the honest value for a
+    field nobody filled in. An empty string would satisfy `IS NOT NULL`, count
+    as recorded in the register's own denominators, and read on the screen as a
+    confident nothing — the same distinction 261 drew for `used_by`.
+    """
+    if v is None:
+        return None
+    v = v.strip()
+    return v or None
+
+
+_OBLIGATION_COLS = (
+    "id, org_id, client_id, obligation_key, state_code, owner_user_id, "
+    "registration_no, effective_from, effective_to, notes, "
+    "created_by, created_at, updated_at, updated_by"
+)
+
+# ── The four statements, RESOLVED AT IMPORT ─────────────────────────────────
+#
+# Built here rather than with an f-string at the call site, and the reason is
+# that an f-string cannot be checked. `tests/test_client_obligations_screen.py`
+# plans every one of these against the real catalogue — Parse and Describe, no
+# execution — and an AST collector reading an f-string recovers only its literal
+# fragments, so the statement it hands the planner ends at `RETURNING` and fails
+# to parse. The first draft did exactly that, and the INSERT and the UPDATE, the
+# two that actually write, were the ones going unverified.
+#
+# Resolved at import, `vars(routers.graha)` yields the finished statement and the
+# planner sees what the database will see. One column list, still.
+
+_OBLIGATION_SELECT = (
+    "SELECT " + ", ".join("co." + c for c in _OBLIGATION_COLS.split(", ")) + ", "
+    "COALESCE(NULLIF(btrim(u.name), ''), NULLIF(btrim(u.full_name), '')) AS owner_name "
+    "FROM public.client_obligations co "
+    "LEFT JOIN public.user_roles ur "
+    "  ON ur.user_id = co.owner_user_id AND ur.org_id = co.org_id "
+    "LEFT JOIN public.users u ON u.user_id = ur.user_id "
+    "WHERE co.client_id=$1::uuid AND co.org_id=$2::uuid "
+    "ORDER BY (co.effective_to IS NOT NULL), co.obligation_key, co.effective_from DESC"
+)
+
+_OBLIGATION_INSERT = (
+    "INSERT INTO public.client_obligations "
+    "(org_id, client_id, obligation_key, state_code, owner_user_id, "
+    " registration_no, effective_from, effective_to, notes, created_by) "
+    "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, "
+    "        COALESCE($7::date, CURRENT_DATE), $8::date, $9, $10) "
+    "RETURNING " + _OBLIGATION_COLS
+)
+
+_OBLIGATION_UPDATE = (
+    "UPDATE public.client_obligations "
+    "   SET obligation_key = $4, "
+    "       state_code      = $5, "
+    "       owner_user_id   = $6, "
+    "       registration_no = $7, "
+    "       effective_from  = COALESCE($8::date, effective_from), "
+    "       effective_to    = $9::date, "
+    "       notes           = $10, "
+    "       updated_by      = $11, "
+    "       updated_at      = NOW() "
+    " WHERE id=$1::uuid AND client_id=$2::uuid AND org_id=$3::uuid "
+    "RETURNING " + _OBLIGATION_COLS
+)
+
+_OBLIGATION_DELETE = (
+    "DELETE FROM public.client_obligations "
+    "WHERE id=$1::uuid AND client_id=$2::uuid AND org_id=$3::uuid "
+    "RETURNING id"
+)
+
+
+def _obligation_keys() -> set[str]:
+    return {o["key"] for o in obligation_catalogue()}
+
+
+def _check_obligation(body: ObligationWrite) -> None:
+    """Everything the database would refuse, refused with a sentence instead."""
+    allowed = _obligation_keys()
+    if body.obligation_key not in allowed:
+        raise HTTPException(
+            400,
+            f"'{body.obligation_key}' is not an obligation this register knows. "
+            f"Choose one of: {', '.join(sorted(allowed))}.",
+        )
+    if (body.effective_to is not None and body.effective_from is not None
+            and body.effective_to <= body.effective_from):
+        raise HTTPException(
+            400,
+            "An obligation cannot end on or before the day it started. Leave "
+            "the end date empty if it is still in force.",
+        )
+    if body.state_code is not None and body.state_code.strip():
+        code = body.state_code.strip()
+        if not (re.fullmatch(r"[A-Z]{2,3}", code) or re.fullmatch(r"[0-9]{1,2}", code)):
+            raise HTTPException(
+                400,
+                "A state code is either the GST numeric code ('27') or the "
+                "two-or-three letter code ('MH'). Both conventions are stored "
+                "as typed and normalised when they are compared.",
+            )
+
+
+async def _assert_client(pool, client_id: str, org_id: str) -> None:
+    """This client belongs to this firm. 404, never 403.
+
+    A 403 on an id the caller guessed confirms the id exists in somebody else's
+    org, which is the cross-tenant leak this product tests for by comparing ID
+    SETS rather than bytes.
+    """
+    found = await pool.fetchval(
+        "SELECT 1 FROM public.graha_clients "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        client_id, org_id,
+    )
+    if not found:
+        raise HTTPException(404, "Client not found")
+
+
+async def _obligation_rows(pool, client_id: str, org_id: str) -> list[dict]:
+    """Every obligation for one client, open ones first, with a resolved owner.
+
+    THE OWNER IS RETURNED AS A NAME. `owner_user_id` goes back too because the
+    form needs it to prefill a select, but nothing renders it — `users.role` is
+    a per-org fact and the id is not a thing to put on a screen. The join is
+    through `user_roles` so an owner who has LEFT the firm resolves to nothing
+    and reads as unassigned, which is a finding rather than a broken row.
+    """
+    rows = await pool.fetch(_OBLIGATION_SELECT, client_id, org_id)
+    return [dict(r) for r in rows]
+
+
+@router.get("/obligation-keys")
+async def list_obligation_keys(
+    user=Depends(require_user),
+    _g=Depends(_crm_entity_gate),
+):
+    """The sixteen obligations, and which of them can actually be dated.
+
+    Served rather than hard-coded in the picker, for the reason the step editor
+    is served rather than hard-coded: a second copy of a codelist drifts, and
+    here it would drift from a database CHECK that refuses the difference.
+
+    `can_be_dated` is the field worth having. Nine of the sixteen map to nothing
+    the statute calendar carries — QRMP most painfully, since dating a QRMP
+    client is the register's whole reason for existing — and a firm that ticks
+    one and gets a calendar with no dates should have been told on the form, not
+    left to file a bug.
+    """
+    return {"data": obligation_catalogue()}
+
+
+@router.get("/clients/{client_id}/obligations")
+async def list_client_obligations(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    pool = await get_pool()
+    await _assert_client(pool, str(client_id), org_id)
+    return {"data": await _obligation_rows(pool, str(client_id), org_id)}
+
+
+@router.post("/clients/{client_id}/obligations", status_code=201)
+async def create_client_obligation(
+    client_id: UUID,
+    body: ObligationWrite,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Record an obligation. The first write this table has ever had."""
+    pool = await get_pool()
+    await _assert_client(pool, str(client_id), org_id)
+    _check_obligation(body)
+
+    # A second OPEN window for one key is the one duplicate that cannot be true.
+    if body.effective_to is None:
+        clash = await pool.fetchval(
+            "SELECT 1 FROM public.client_obligations "
+            "WHERE org_id=$1::uuid AND client_id=$2::uuid "
+            "AND obligation_key=$3 AND effective_to IS NULL",
+            org_id, str(client_id), body.obligation_key,
+        )
+        if clash:
+            raise HTTPException(
+                409,
+                f"This client already carries an open '{body.obligation_key}'. "
+                "End the existing one with a date before starting another, or "
+                "edit it instead.",
+            )
+
+    row = await pool.fetchrow(
+        _OBLIGATION_INSERT,
+        org_id, str(client_id), body.obligation_key,
+        _blank_to_none(body.state_code), _blank_to_none(body.owner_user_id),
+        _blank_to_none(body.registration_no),
+        body.effective_from, body.effective_to,
+        _blank_to_none(body.notes), user["user_id"],
+    )
+    return dict(row)
+
+
+@router.patch("/clients/{client_id}/obligations/{obligation_id}")
+async def update_client_obligation(
+    client_id: UUID,
+    obligation_id: UUID,
+    body: ObligationWrite,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Amend one, or end it by setting `effective_to`.
+
+    A full replace rather than a merge: the form renders every field, so a
+    partial update would make "I cleared the registration number" and "I did not
+    touch it" the same request — the defect `update_org_settings` shipped and
+    had to be corrected for.
+    """
+    pool = await get_pool()
+    await _assert_client(pool, str(client_id), org_id)
+    _check_obligation(body)
+
+    if body.effective_to is None:
+        clash = await pool.fetchval(
+            "SELECT 1 FROM public.client_obligations "
+            "WHERE org_id=$1::uuid AND client_id=$2::uuid AND obligation_key=$3 "
+            "AND effective_to IS NULL AND id <> $4::uuid",
+            org_id, str(client_id), body.obligation_key, str(obligation_id),
+        )
+        if clash:
+            raise HTTPException(
+                409,
+                f"Another open '{body.obligation_key}' already exists for this "
+                "client. End one of them before leaving both open.",
+            )
+
+    row = await pool.fetchrow(
+        _OBLIGATION_UPDATE,
+        str(obligation_id), str(client_id), org_id,
+        body.obligation_key, _blank_to_none(body.state_code),
+        _blank_to_none(body.owner_user_id), _blank_to_none(body.registration_no),
+        body.effective_from, body.effective_to,
+        _blank_to_none(body.notes), user["user_id"],
+    )
+    if not row:
+        raise HTTPException(404, "Obligation not found")
+    return dict(row)
+
+
+@router.delete("/clients/{client_id}/obligations/{obligation_id}")
+async def delete_client_obligation(
+    client_id: UUID,
+    obligation_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_crm_entity_gate),
+):
+    """Remove a row entered in error.
+
+    ENDING an obligation and DELETING it are different, and the screen offers
+    both: a client who stopped being a composition dealer keeps that history and
+    gets an `effective_to`, while a row somebody typed against the wrong client
+    should leave no trace. Only the second is this.
+    """
+    pool = await get_pool()
+    await _assert_client(pool, str(client_id), org_id)
+    deleted = await pool.fetchval(
+        _OBLIGATION_DELETE, str(obligation_id), str(client_id), org_id)
+    if not deleted:
+        raise HTTPException(404, "Obligation not found")
+    return {"deleted": True}
 
 
 # ── Pipelines ────────────────────────────────────────────────
