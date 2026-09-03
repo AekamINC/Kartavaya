@@ -124,7 +124,7 @@ import re
 from datetime import date, timedelta
 from urllib.parse import quote
 
-from services.statute import obligations, obligation
+from services.statute import obligations, obligation, due_date_from
 from services.skills.timeutil import as_date, days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -208,53 +208,21 @@ def _previous_month(month: str) -> str:
     return f"{year - 1}-12" if mon == 1 else f"{year}-{mon - 1:02d}"
 
 
-def _due_date_from(row: dict | None, period_end: date) -> date | None:
-    """The statutory due date for a period, from a calendar row, or None.
-
-    THE CALENDAR EXPRESSES A DUE DATE TWO WAYS and reading only one of them
-    produces a plausible wrong date. The same trap is documented at
-    `gst_year._due_date_from`, where it once put GSTR-9 nine months early; the
-    logic is restated here rather than imported because a private helper in
-    another handler's module is not an interface, and a calendar that silently
-    changed shape when that file was refactored is exactly the failure this
-    product keeps having.
-
-      `due_month_offset`  months AFTER the period end — how the MONTHLY returns
-                          are held. GSTR-1 is due_day 11, offset 1, so the July
-                          return is due 11 August.
-      `due_month`         an absolute month, for an obligation whose date is
-                          fixed in the calendar rather than relative to a
-                          period. GSTR-9 is due_day 31, due_month 12.
-
-    Returns None — never a guess — when the row carries no `due_day` at all.
-    Every quarterly TDS and TCS statement in the live calendar is in exactly
-    that state, which is why they appear in `named_but_undated` below and not
-    on a date somebody could act on.
-    """
-    if not row or not row.get("due_day"):
-        return None
-    day = int(row["due_day"])
-    offset = row.get("due_month_offset")
-    due_month = row.get("due_month")
-
-    if offset is not None:
-        month = period_end.month + int(offset)
-        year = period_end.year + (month - 1) // 12
-        month = (month - 1) % 12 + 1
-    elif due_month is not None:
-        month = int(due_month)
-        year = period_end.year if month >= period_end.month else period_end.year + 1
-    else:
-        month, year = period_end.month, period_end.year
-
-    # Clamp rather than raise: a due_day of 31 in a 30-day month is the
-    # catalogue saying "the last day of that month", not a data error.
-    for candidate in range(day, 27, -1):
-        try:
-            return date(year, month, candidate)
-        except ValueError:
-            continue
-    return date(year, month, day)
+#: THE RESOLVER LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#:
+#: This file carried a third copy until 2026-09-03, and its reason for doing so
+#: was a GOOD one: "a private helper in another handler's module is not an
+#: interface, and a calendar that silently changed shape when that file was
+#: refactored is exactly the failure this product keeps having." That objection
+#: is answered rather than overridden — the rule now lives in the module that
+#: OWNS `statute_calendar`, next to the reads, and is public.
+#:
+#: The copy had already gone wrong by the time it was found. Migration 267 gave
+#: `tds.deposit.monthly` a March exception (deducted in March, payable 30 April,
+#: not 7 April) expressed in `due_overrides`, which this copy did not read — so
+#: this skill and the client filing calendar printed DIFFERENT dates for the
+#: same obligation in the same month.
+_due_date_from = due_date_from
 
 
 def _shift_back(due: date, blocking: dict[date, str]) -> tuple[date, str | None]:

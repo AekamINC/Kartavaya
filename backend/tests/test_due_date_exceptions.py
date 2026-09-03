@@ -243,14 +243,64 @@ def test_a_day_of_31_clamps_to_the_last_day_of_a_short_month():
     assert due_date_from(row, date(2027, 1, 31)) == date(2027, 2, 28)
 
 
-def test_there_is_exactly_one_resolver():
-    """It lived in two places until 2026-09-02 and the GSTR-9 fix had to be made
-    twice. Every caller must be the same object, or this whole file tests one
-    copy of it while production runs another."""
-    from services.skills.data import client_register, delta_and_provenance, gst_year
-    for mod in (gst_year, client_register, delta_and_provenance):
+def test_no_module_defines_its_own_due_date_resolver():
+    """THE TEST THAT HAS TO SEARCH, BECAUSE THE ENUMERATING VERSION MISSED ONE.
+
+    Written first as `test_there_is_exactly_one_resolver`, naming gst_year,
+    client_register and delta_and_provenance and asserting each was the same
+    object. It passed. It could not have failed: those were the three modules
+    already known and already fixed, so the assertion only restated the work
+    rather than checking it. `firm_flow` held a fourth copy the whole time, and
+    it was found by grepping the tree a day later, not by this suite.
+
+    That copy was already wrong when it was found. Migration 267 gave
+    `tds.deposit.monthly` a March exception in `due_overrides`, which the copy
+    did not read — so the firm flow and the client filing calendar printed
+    different dates for the same obligation in the same month.
+
+    So this walks `services/` and reads the SOURCE. A module may import the
+    resolver or alias it; a module may not define its own `def _due_date_from`.
+    A fifth copy fails here without anybody having to remember it exists.
+    """
+    import pathlib
+    import re
+
+    root = pathlib.Path(__file__).resolve().parent.parent / "services"
+    assert root.is_dir(), f"{root} is not a directory — the search would be vacuous"
+
+    canonical = root / "statute.py"          # where it is SUPPOSED to be defined
+    assert canonical.is_file(), "services/statute.py is gone — check this test"
+
+    scanned, offenders = 0, []
+    for path in root.rglob("*.py"):
+        if path == canonical:
+            continue
+        scanned += 1
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^def\s+_?due_date_from\s*\(", text, re.M):
+            offenders.append(str(path.relative_to(root.parent)))
+
+    # Anti-vacuity: if the walk finds no files, every assertion below is empty.
+    assert scanned > 50, f"only {scanned} python files under {root} — walk is broken"
+
+    assert not offenders, (
+        "these modules define their own due-date resolver instead of importing "
+        "`services.statute.due_date_from`:\n  " + "\n  ".join(offenders) +
+        "\n\nThe rule read `due_month_offset` and never `due_month` once, and "
+        "printed GSTR-9 nine months early beside a statute citation. Every extra "
+        "copy is another chance to make that bug, and one of them silently "
+        "missed the `due_overrides` March exception."
+    )
+
+
+def test_every_caller_shares_the_one_resolver():
+    """The other half: importing it is not enough if the name is then rebound."""
+    from services.skills.data import (
+        client_register, delta_and_provenance, firm_flow, gst_year,
+    )
+    for mod in (gst_year, client_register, delta_and_provenance, firm_flow):
         assert mod._due_date_from is due_date_from, (
-            f"{mod.__name__} has its own copy of the due-date resolver again"
+            f"{mod.__name__}._due_date_from is not services.statute.due_date_from"
         )
 
 

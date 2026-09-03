@@ -9727,3 +9727,121 @@ Act 2025](https://www.caclubindia.com/articles/tds-returns-under-the-income-tax-
 and [caclubindia — TDS return due date FY 2026-27](https://www.caclubindia.com/articles/tds-return-due-date-55742.asp),
 which agree on Q1 31 July, Q2 31 October, Q3 31 January, Q4 31 May (s.397(3)(b)
 with rule 219) and on the deposit under rule 218.
+
+---
+
+## 2026-09-03 · The 1961 statements get their dates — migration 268
+
+267 said it deliberately left these alone: "this file researched the 2025 Act,
+not the repealed one." That research is now done, and the gap it left had a
+**current** example — the Q4 statement for FY 2025-26 covers the quarter ended
+31 March 2026, which is before the repeal, so it resolved against a 1961-Act row
+and came back blank. It was due 31 May 2026.
+
+### ⚠ TCS IS NOT TDS, AND A SOURCE SUMMARY SAID IT WAS
+
+Under the 1961 Act the two statements fall on different days:
+
+| | form | rule | Q1 | Q2 | Q3 | Q4 |
+|---|---|---|---|---|---|---|
+| TDS | 24Q / 26Q / 27Q | 31A | 31 Jul | 31 Oct | 31 Jan | 31 May |
+| TCS | 27EQ | 31AA | **15** Jul | **15** Oct | **15** Jan | **15** May |
+
+**The first search returned a summary asserting the 31st dates "apply to Form
+24Q, 26Q, 27Q, and 27EQ equally".** Seeding that would have put every TCS
+statement sixteen days late beside a rule citation. Rule 31AA was then checked on
+its own and three sources agree on the 15th.
+
+The structural reason: CBDT Notification 30/2016 moved the TDS dates to the 31st
+and amended rules 30, 31A and 37CA — it did **not** touch rule 31AA. TCS only
+joined the TDS calendar under the 2025 Act, which is why the Form 143 row 267
+seeded *is* on the 31st. So "TCS is the 15th" and "TCS is the 31st" are both
+true, of different decades, and deciding which is the entire job of this table.
+
+A fourth candidate — "30 April" for TCS Q4 — was discarded: it traces to rule
+37CA, the *deposit* where the collection relates to March, conflated by a
+summariser.
+
+### Two versions per key, not one updated row
+
+The existing rows run from 1962-04-01 and already carry
+`effective_from_exact = FALSE`, which 158 defines as "a conservative floor, not a
+researched commencement". Writing a due day onto them would assert the 31st
+applied in 1962 — it did not, and immediately before June 2016 the dates differed
+**by deductor type**, which one row cannot express either. A quarter ending in
+2010 would have resolved to a plausible, cited, wrong date.
+
+    1962-04-01 → 2016-06-01   undated. The window this file did not research.
+    2016-06-01 → 2026-04-01   dated. Notification 30/2016, in force 1 June 2016.
+
+Boundary cross-check: the source's own headline example is "last date for filing
+TDS returns for Q1 FY 2016-17 — 31st July". Q1 FY 2016-17 ends 30 June 2016,
+falls in the new window, and resolves to 31 July 2016.
+
+⚠ For TCS that boundary is a **floor, not a commencement** — 31AA was not amended
+then, so the 15th dates were already in force earlier and this file did not
+research how far back. That row carries `effective_from_exact = FALSE`; the three
+TDS rows carry TRUE.
+
+### What a customer sees
+
+    tds.statement.nonsalary  form 26Q  quarter ended 2026-03-31
+      due 2026-05-31   work_by 2026-05-29   (the 31st is a Sunday, the 30th a Saturday)
+
+Two clients, live. A quarter ending before 1 June 2016 still returns no date and
+explains itself, which is asserted rather than assumed.
+
+### ⚠⚠ THERE WERE THREE COPIES OF THE RESOLVER, NOT TWO — YESTERDAY'S CLAIM WAS WRONG
+
+267 said "one resolver now, where there were two" and shipped
+`test_there_is_exactly_one_resolver`. Both were wrong. `firm_flow.py` held a
+**third** copy, found by grepping the tree while starting this work.
+
+**The test could not have caught it.** It named gst_year, client_register and
+delta_and_provenance — the three modules already known and already fixed — and
+asserted each was the same object. It only restated the work. That is an
+assertion satisfied by its own shape, in the test written to prevent exactly
+this, one day after a mutation run found the same fault in a sibling test.
+
+**And the copy was already wrong.** 267 gave `tds.deposit.monthly` a March
+exception in `due_overrides`; firm_flow's copy did not read it, so the firm flow
+and the client filing calendar printed **different dates for the same obligation
+in the same month** (7 April vs 30 April). Not yet surfaced — it is September —
+but live.
+
+The replacement, `test_no_module_defines_its_own_due_date_resolver`, **walks
+`services/` and reads the source**, exempting only `statute.py`, with an
+anti-vacuity floor on the file count. A fifth copy fails without anyone
+remembering it exists. Confirmed by watching it go red on firm_flow before the
+fix.
+
+The third copy's own reason for existing was a good one — "a private helper in
+another handler's module is not an interface" — and it is now *answered* rather
+than overridden: the rule lives in the module that owns `statute_calendar`, and
+is public.
+
+### One more trap, recorded
+
+`IF overlaps > 0 THEN` is a **syntax error**, and the error names the `>`.
+`OVERLAPS` is a reserved SQL operator (`(a,b) OVERLAPS (c,d)`), so the parser has
+already consumed the variable name as an operator by the time it reaches the
+comparison. Cost one failed apply and a bisect that suspected the jsonb `?`
+operator, `<>`, and the MCP client in turn. The variable is `dup_pairs`, with a
+comment saying why.
+
+### Tests — 14 offline + a live half
+
+`backend/tests/test_1961_quarterly_statements.py`. The assertion that matters is
+stated as a **difference** — `tcs != tds` for the same quarter — so it fails if
+somebody harmonises the two rules, which is what the bad summary said to do and
+what the 2025 Act genuinely did later. The live half checks version SELECTION,
+which offline tests structurally cannot: 2015 → undated, 2025 → dated, 2026-06 →
+the 2025-Act row, and the form moving 27EQ → 143 across the repeal, because a
+right date on the wrong form is still a rejected return.
+
+**Sources:** abcaus, "TDS TCS rules major amendments — CBDT Notification
+30/2016" (quoting the substituted rule 31A(2) table) · tdsman, "New dates for
+filing TDS returns w.e.f. 1st June 2016" · quicko, "Form 27EQ: TCS return" ·
+kanakkupillai, "Form 27EQ TCS return filing: due dates". incometaxindia.gov.in's
+own rule 31AA page returned 403 to automated fetch; the two TCS sources both
+cite rule 31AA by name.
