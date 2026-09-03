@@ -34,7 +34,7 @@
 // this bug available. `useResource` keeps loading / error / data apart and
 // cannot collapse them.
 import React, { useState, useEffect, useCallback } from 'react';
-import { Announced } from '../../components/ui/Skeleton';
+import { Shim } from '../../components/ui/Skeleton';
 import { api, rows as unwrapRows } from '../../lib/api';
 import { apiErrorText } from '../../lib/apiError';
 
@@ -289,22 +289,12 @@ export function ErrorNote({ what, error, onRetry }) {
 }
 
 /** Loading skeleton, shared so no tab invents its own. */
-export function Shim({ count = 4, label = 'Loading…' }) {
-  // ANNOUNCES ITSELF. Suite 20.06 (2026-08-31) found 7 of 10 sampled screens
-  // with `role=status 0, aria-busy 0` while loading, and `vetana#payslips` was
-  // the sharp one: a Shim IS drawn, so the screen looks busy to an eye and is
-  // silent to a screen reader.
-  //
-  // `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
-  // so the screens that were written correctly do not start saying it twice.
-  return (
-    <Announced label={label}>
-      <div className="k-shimmer" aria-hidden="true">
-        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
-      </div>
-    </Announced>
-  );
-}
+/* `Shim` is `components/ui/Skeleton.jsx`, beside the `Announced` it wraps
+   itself in. Three modules declared it identically until 2026-09-03, each
+   carrying the same accessibility fix in a comment — so the next such fix
+   would have had to be made three times, or two modules would stay silent
+   to a screen reader while looking busy to an eye. */
+export { Shim };
 
 /**
  * Loading → error → empty → content, in that order, in one place.
@@ -322,29 +312,9 @@ export function Resource({ state, what, skeleton, empty, onRetry, children }) {
 
 /* ── Formatting ──────────────────────────────────────────────────────────── */
 
-/** `12 Jul 2026, 4:05 pm` — one implementation, so the module reads uniformly. */
-export function stamp(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
-
-/** `12 Jul 26` — the compact form for a card footer. */
-export function shortStamp(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
-}
-
-/** `2026-07` for the calendar, which is the only month format the API speaks. */
-export function thisMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+/* Months and timestamps are `lib/dates.js` — see the note there. This module
+   held one of the copies, under a docstring claiming there was only one. */
+export { thisMonth, stamp, shortStamp } from '../../lib/dates';
 
 /** `social_media` → `social media`. */
 export const words = s => String(s ?? '').replace(/_/g, ' ');

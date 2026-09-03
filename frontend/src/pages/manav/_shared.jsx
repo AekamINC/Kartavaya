@@ -26,7 +26,7 @@
 // `items` is null whenever `error` is set, so a call site cannot accidentally
 // render "nobody is absent" over a 500.
 import React, { useState, useEffect, useCallback } from 'react';
-import { Announced } from '../../components/ui/Skeleton';
+import { Shim } from '../../components/ui/Skeleton';
 import { api, rows as unwrapRows } from '../../lib/api';
 import Tag from '../../components/ui/Tag';
 import { PRIORITY_COLORS as TASK_PRIORITY_COLORS } from '../../lib/statusColors';
@@ -125,6 +125,40 @@ export function errText(err, fallback = 'Retry, or check your connection.') {
 }
 
 /**
+ * The client list both custody registers pick from, loaded once the drawer that
+ * needs it is open.
+ *
+ * `/v1/custody/clients` RATHER THAN THE CRM's OWN ROUTE, which is gated on
+ * holding CRM, Finance or Sales — a practice that bought HR alone would
+ * otherwise be able to read this register and not the names in it.
+ *
+ * Loading, failure and emptiness are kept apart for the reason this file gives
+ * at length above: a caught error that leaves the list at `[]` renders as "no
+ * clients", which is a sentence a reader believes.
+ *
+ * DscTab and UdinTab each declared this identically until 2026-09-03. It is one
+ * hook now because the route choice above is a permissions decision, and a
+ * permissions decision written down twice is one that can be revised once.
+ */
+export function useClientOptions(enabled) {
+  const [state, setState] = useState({ loading: false, error: '', items: [] });
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    setState({ loading: true, error: '', items: [] });
+    api.get('/v1/custody/clients')
+      .then(r => {
+        if (alive) setState({ loading: false, error: '', items: r.data?.data || [] });
+      })
+      .catch(err => {
+        if (alive) setState({ loading: false, error: errText(err), items: [] });
+      });
+    return () => { alive = false; };
+  }, [enabled]);
+  return state;
+}
+
+/**
  * A GET with its three outcomes kept distinct: `loading`, `error`, `data`.
  *
  * `data` stays null while `error` is set. `reload` re-runs it. `deps` lets a
@@ -183,22 +217,12 @@ export function ErrorNote({ what, error, onRetry }) {
 }
 
 /** The skeleton. One import per tab for the loading state. */
-export function Shim({ count = 4, label = 'Loading…' }) {
-  // ANNOUNCES ITSELF. Suite 20.06 (2026-08-31) found 7 of 10 sampled screens
-  // with `role=status 0, aria-busy 0` while loading, and `vetana#payslips` was
-  // the sharp one: a Shim IS drawn, so the screen looks busy to an eye and is
-  // silent to a screen reader.
-  //
-  // `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
-  // so the screens that were written correctly do not start saying it twice.
-  return (
-    <Announced label={label}>
-      <div className="k-shimmer" aria-hidden="true">
-        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
-      </div>
-    </Announced>
-  );
-}
+/* `Shim` is `components/ui/Skeleton.jsx`, beside the `Announced` it wraps
+   itself in. Three modules declared it identically until 2026-09-03, each
+   carrying the same accessibility fix in a comment — so the next such fix
+   would have had to be made three times, or two modules would stay silent
+   to a screen reader while looking busy to an eye. */
+export { Shim };
 
 /**
  * Loading, then failure, then empty — in that order, in one place, so no tab
@@ -221,11 +245,9 @@ export function clockTime(ts) {
   return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 }
 
-/** The month just now, as `YYYY-MM` — what every month filter here speaks. */
-export function thisMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+/* Months are `lib/dates.js` — see the note there. Vetana held the same two
+   functions, and both built their bounds from the UNRESOLVED argument. */
+export { thisMonth, monthRange } from '../../lib/dates';
 
 /** Today as `YYYY-MM-DD`, local — `toISOString()` is UTC and rolls the date
  *  over for every user east of Greenwich after 05:30 IST. */
@@ -234,12 +256,6 @@ export function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** First and last day of a `YYYY-MM`. */
-export function monthRange(month) {
-  const [y, m] = (month || thisMonth()).split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
-  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` };
-}
 
 /** The default shift colour.
  *

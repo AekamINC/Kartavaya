@@ -9845,3 +9845,169 @@ filing TDS returns w.e.f. 1st June 2016" · quicko, "Form 27EQ: TCS return" ·
 kanakkupillai, "Form 27EQ TCS return filing: due dates". incometaxindia.gov.in's
 own rule 31AA page returned 403 to automated fetch; the two TCS sources both
 cite rule 31AA by name.
+
+
+## 2026-09-03 · The duplicated-helper sweep — and `_statute_note` was the same bug again
+
+268 ended with "there were THREE copies, and the test could not have caught it,
+because it named the modules already fixed." This is the sweep that answer asked
+for, run properly rather than as a grep.
+
+### The method, because a grep was what missed the third resolver
+
+Every function body in the tree normalised to an **AST** — docstrings and
+comments stripped, the function's own name excluded from the key, the argument
+list included — then hashed and grouped. A copy that was renamed still collides;
+a copy that was reformatted still collides; a copy whose comment was rewritten
+still collides. Scope: **331 production `.py` files** (tests, scripts and
+migrations excluded) and **893 shipped JS/TS files** (e2e specs, `__tests__`,
+`design-reference/` and `dist/` excluded).
+
+    35 identical-body groups across files (Python, production only)
+    32 identical-body groups (shipped JS/TS)
+   141 same-name-different-body groups — the drift candidates
+
+⚠ The JS scan skips bodies under 120 normalised characters, so it is a FLOOR.
+`thisMonth` — four copies, one of them on a different clock — is below that line
+and was found by following `monthRange`, not by the scan.
+
+### `_statute_note` — `_due_date_from` again, one function down, in the same files
+
+FIVE copies: `client_register`, `gst_year`, `payroll_statutory`,
+`vendor_compliance`, `firm_flow`. It renders the parenthetical that follows every
+statutory date the product prints — "Monthly TDS deposit (r.218)".
+
+**`grep -rl _statute_note tests/` returned nothing.** Five copies, no test.
+
+Four were byte-identical. `firm_flow`'s had drifted: `or row.get("authority")`
+appended to the fallback chain. `authority` is a **routing slug** — the only four
+values in the table are `income_tax`, `gst`, `epfo`, `esic` — so that copy prints
+`Monthly TDS deposit (income_tax)` where a section reference belongs.
+
+The drift is **latent, not live**, and that is the finding rather than a footnote:
+
+    SELECT count(*) FILTER (WHERE form_number IS NULL AND section_ref IS NULL
+                              AND statute IS NULL AND authority IS NOT NULL)
+    FROM public.statute_calendar;   -- 0 of 70
+
+Every row carries an Act name today, so nothing could distinguish the two
+implementations. The day a row is seeded without one, four screens print no
+citation and one prints a slug, and neither is that row's own citation.
+
+**The drift resolved toward the four, not toward the one.** Canonical
+`services.statute.statute_note`, in the module that owns the table; all five are
+delegates.
+
+### `_fy_of` — three copies, with the canonical's inverse already imported
+
+`gst_year`, `payroll_statutory`, `vendor_compliance`, all agreeing.
+`statute.fy_bounds` is its documented inverse and two of the three already
+imported it. `delta_and_provenance` was reaching into `gst_year` for the private
+copy and now imports `services.statute.fy_of`. Tested **against the inverse in
+both directions** rather than against restated expectations — every day of every
+year 2020-2035 lands inside the year `fy_of` names for it — because an
+off-by-one here raises nothing and reports one year's turnover against another
+year's threshold.
+
+### Tests: 25, one live, three mutations watched going red
+
+`backend/tests/test_the_citation_has_one_implementation.py`.
+
+  · re-add the `authority` fallback  → `test_the_routing_slug_is_never_printed…`
+  · `fy_of` turns on 1 March         → `test_the_year_turns_on_the_first_of_april`
+  · a sixth copy of the citation     → `test_no_module_defines_its_own_copy`
+
+Each turned the suite red before the fix went in. The ratchet **walks
+`services/` and reads the source**, with an anti-vacuity floor on the file count
+and an assertion that `statute.py` actually defines the canonical — without that
+second one the test passes by finding no copies of a function nobody has. Live
+half run against production: 25 passed, `railway run -s Kartavaya -- env
+REDIS_URL= python -m pytest`.
+
+### STILL OPEN — and it is a decision, not a patch
+
+**`_month_bounds` / `_period_bounds`: ten copies, ONE NAME OVER TWO CONTRACTS.**
+
+    inclusive last day   client_register, firm_flow, payroll_statutory,
+                         ganit_ops, people_checks, gst_year
+    exclusive next-first varta_consent, recon_rules, gst_cliffs, gst_readiness
+
+`_period_bounds` alone is three files split two-to-one. Pairing `<= end` with a
+half-open bound drops the last day of the month; `ganit_ops`' own docstring warns
+about exactly that and names the sibling it disagrees with. `recon_rules` adds a
+third contract (returns `None` rather than raising) and `client_register` a
+fourth (splits `[:2]`, so `'2026-08-01'` is accepted and answered about August).
+
+⚠ **And measuring corrected the reason three of them give for existing.** All ten
+were EXECUTED against the same inputs rather than read. The `'2026-00'` guard
+that `ganit_ops`, `people_checks` and `gst_cliffs` document at length — "would
+otherwise sail through and be answered about the wrong YEAR" — is **dead in every
+copy**: `date(y, 0, 1)` raises before the end-of-month arithmetic is reached, guard
+or no guard. Same species as the dead line 267 removed.
+
+Not collapsed here because the right shape is a product decision: one helper with
+an explicit `inclusive=` argument, or two differently-named ones.
+
+### Frontend — the same sweep, the same shape
+
+  · **`formatINR`** — `lib/inr.js` opens with "Indian rupee formatting — one
+    implementation" and `lib/utils.js` held a byte-identical twin of its
+    `inrShort` under a second name. 8 consumers against 1. Deleted.
+  · **`DataTable` + `Td`** — Dristi and Prachar each declared the adapter,
+    cross-referenced in BOTH directions with a note explaining that neither
+    package could import the other's page code. That reason was sound and neither
+    note considered the third home both already imported from. Now
+    `components/ui/moduleTable.jsx`; both re-export; `moduleTables.test.jsx`
+    rewritten to fail on a re-declaration.
+  · **`thisMonth` ×4** — and one of them is **UTC**. `admin/InvoiceBuilder.jsx`
+    names the PREVIOUS month for an IST user between midnight and 05:30 on the
+    first. Left in place and **renamed `thisMonthUtc`**, because which of the two
+    an invoice defaults to is a product decision, not a de-duplication. The name
+    is the fix for now: the difference used to be three lines down and identical
+    from the call site.
+  · **`monthRange` ×2** — both resolved `month || thisMonth()` for the day count
+    and then interpolated the RAW `month` into the bounds, so a no-argument call
+    returned `{from: 'undefined-01'}`. Fixed in the canonical.
+  · **`stamp` / `shortStamp` ×2** — hub's carrying the docstring "one
+    implementation, so the module reads uniformly", with sahayak holding the
+    second. Both now `lib/dates.js`.
+  · **`Shim` ×3** — hub, manav, vetana, each copy carrying the same accessibility
+    fix in a comment (suite 20.06: 7 of 10 screens loading with `role=status 0`).
+    The next such fix would have needed three edits. Now beside the `Announced`
+    it wraps itself in.
+  · **`refusalMessage` ×4** — and this one was a defect, not just duplication.
+    All four read only the string and `{message}` shapes. `detail` also arrives
+    as an **ARRAY for a 422**, which is an object without a `.message`, so all
+    four fell through to the generic fallback and threw the field names away —
+    the exact failure `lib/apiError.js` was written for and documents at length
+    ("Failed to save" over a 422 nobody can read). All four now go through
+    `apiErrorText`. `BillingLineRow`'s own note asked for this move.
+  · **`ringsOf` / `boundsOf`** — the GeoJSON `[lng, lat]` → SDK `{lat, lng}` swap,
+    written out twice. Getting it backwards puts every Indian PIN in the Indian
+    Ocean and draws a polygon anyway. Now `lib/geoRings.js`.
+  · **`text` ×3 / `stateOf` ×2** — "what counts as a value" for an address field,
+    where a stored `0` is a number, is falsy, and is a real house number. Now
+    `lib/addressText.js`.
+  · **`useClientOptions` ×2** — DscTab and UdinTab. The route it picks
+    (`/v1/custody/clients`, not the CRM's) is a permissions decision, and one
+    written down twice is one that can be revised once.
+
+**Not touched, and listed so the next pass has them:** `F` ×3 (org tabs, one a
+superset), `Row` ×3, `fmtWhen` ×2, `formatValue` ×2, `lastMonth`/`previousMonth`
+×2, `hhmm`/`timeOf` ×2, the mobile `relTime`/`friendly`/`sheetKit` sets, and the
+frontend↔mobile pairs (`hash32`, `guardOk`) which cannot share a module at all.
+`frontend/api/og.js` duplicates `inr`/`attr` with `functions/i/[token].js` and is
+worth a liveness check first — Pages serves `functions/`, not `api/`.
+
+**Deliberate twins, left alone:** `_customer_sql`, `_is_unique_violation`,
+`_parse_as_of`. Each is duplicated AND each docstring names its twin and says
+why. That cross-reference is the thing `_due_date_from` never had.
+
+### Verification
+
+    backend  413 passed, 2 skipped   (statute, gst_year, payroll_statutory,
+                                      vendor_compliance, client_register,
+                                      firm_flow, delta_and_provenance)
+    backend   25 passed              live, against the production calendar
+    frontend 3,431 passed / 220 files
+    frontend 20 gates green + `npm run build`

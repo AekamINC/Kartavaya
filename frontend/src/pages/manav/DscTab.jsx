@@ -65,7 +65,7 @@ import {
 } from '../../components/ui/CreatedColumn';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
-import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
+import { Badge, ErrorNote, Shim, errText, useClientOptions, useResource, today } from './_shared';
 
 // The five verdicts `dsc.status_of` can return, in the order of how dead a
 // thing is. Tokens only — a literal here would be the light-mode colour in dark
@@ -212,23 +212,6 @@ function pathFor(view, stamp, days) {
  * gives at length: a caught error that leaves the list at `[]` renders as "no
  * clients", which is a sentence a reader believes.
  */
-function useClientOptions(enabled) {
-  const [state, setState] = useState({ loading: false, error: '', items: [] });
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let alive = true;
-    setState({ loading: true, error: '', items: [] });
-    api.get('/v1/custody/clients')
-      .then(r => {
-        if (alive) setState({ loading: false, error: '', items: r.data?.data || [] });
-      })
-      .catch(err => {
-        if (alive) setState({ loading: false, error: errText(err), items: [] });
-      });
-    return () => { alive = false; };
-  }, [enabled]);
-  return state;
-}
 
 export default function DscTab() {
   const { canWrite, reason: denial } = useModuleWrite({

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Button, Field, Input, Modal } from '../../components/ui';
 import { api } from '../../lib/api';
 import { grouped } from '../../lib/inr';
+import { apiErrorText } from '../../lib/apiError';
 
 /**
  * MemberCeilingModal — raise, lower or remove one person's ceiling.
@@ -23,17 +24,6 @@ import { grouped } from '../../lib/inr';
  * would throw away the half the reader needs.
  */
 
-/**
- * The server's own words, whatever shape it wrapped them in. `detail` is a dict
- * for a structured refusal and a bare string for a plain HTTPException; both are
- * the server speaking, and neither is parsed.
- */
-function refusalMessage(err, fallback) {
-  const detail = err?.response?.data?.detail;
-  if (detail && typeof detail === 'object' && detail.message) return detail.message;
-  if (typeof detail === 'string' && detail) return detail;
-  return fallback;
-}
 
 export default function MemberCeilingModal({ open, person, cap, basePath, onClose, onSaved }) {
   const current = cap?.cap === null || cap?.cap === undefined ? '' : String(cap.cap);
@@ -64,7 +54,7 @@ export default function MemberCeilingModal({ open, person, cap, basePath, onClos
       onSaved?.(res?.data || null);
       onClose?.();
     } catch (e) {
-      setError(refusalMessage(e, 'The ceiling was not changed.'));
+      setError(apiErrorText(e, 'The ceiling was not changed.'));
     } finally {
       setBusy('');
     }

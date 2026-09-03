@@ -185,7 +185,8 @@ def _apply_override(row: dict, period_end: date) -> dict:
     without either knowing the other exists.
 
     A malformed override is IGNORED, not raised on. This runs inside an
-    unattended cron sweep behind a `_statute_note` that prints the citation; a
+    unattended cron sweep behind the `statute_note` below, which prints the
+    citation beside whatever this resolves; a
     skill that dies mid-report is worse than one that falls back to the row's
     own rule, and the values here are seeded by migration rather than by users.
     """
@@ -288,6 +289,35 @@ def due_date_from(row: dict | None, period_end: date) -> date | None:
     return date(year, month, day)
 
 
+def statute_note(row: dict | None, what: str) -> str:
+    """One sentence naming the authority for a printed date or figure.
+
+    Every date and every figure these skills print is attributable, or it is
+    not printed. An unattributed date in front of a CA is a date they have to
+    go and verify, which costs more than not showing it.
+
+    THE CITATION IS `form_number · section_ref`, FALLING BACK TO `statute`, AND
+    NOTHING ELSE. `authority` is deliberately not in that chain: it is a routing
+    slug — the four values in the table today are `income_tax`, `gst`, `epfo`
+    and `esic` — so a row that fell through to it would print
+    "Monthly TDS deposit (income_tax)" beside a statutory date. A lowercase slug
+    where a section reference belongs reads as a rendering fault, and it is
+    worse than the honest empty string this returns instead.
+
+    That fallback existed. `firm_flow` carried a fifth copy of this function
+    with `or row.get("authority")` on the end while the other four did not, so
+    two screens could cite the same row differently. It was unobservable —
+    `statute` is non-null on all 70 rows, measured 2026-09-03 — which is exactly
+    why it survived: the day a row is seeded without one, one screen prints a
+    slug and four print nothing, and neither is the row's own citation.
+    """
+    if not row:
+        return f"The statute calendar records no {what}, so none is shown."
+    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
+    cite = " · ".join(bits) if bits else (row.get("statute") or "")
+    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+
+
 # ── the read API ─────────────────────────────────────────────────────────────
 
 async def obligation(
@@ -368,6 +398,18 @@ def fy_bounds(fy: str) -> tuple[date, date]:
             f"({start_year} to {end_year}); an Indian FY runs 1 April to 31 March."
         )
     return date(start_year, 4, 1), date(end_year, 3, 31)
+
+
+def fy_of(day: date) -> str:
+    """The Indian financial year containing *day*, as '2025-26'. April to March.
+
+    `fy_bounds` is the inverse, sits directly above, and the two are tested
+    against each other in both directions — because an off-by-one here does not
+    raise, it silently reports one year's turnover against another year's
+    threshold, and both numbers look plausible.
+    """
+    start_year = day.year if day.month >= 4 else day.year - 1
+    return f"{start_year}-{str(start_year + 1)[-2:]}"
 
 
 async def obligation_for_fy(

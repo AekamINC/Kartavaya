@@ -19,7 +19,7 @@
 // three states apart and cannot collapse them, and every original
 // `catch {}` in this module has been removed.
 import React, { useState, useEffect, useCallback } from 'react';
-import { Announced } from '../../components/ui/Skeleton';
+import { Shim } from '../../components/ui/Skeleton';
 import { api } from '../../lib/api';
 import { inr } from '../../lib/inr';
 
@@ -133,22 +133,12 @@ export function Resource({ state, what, skeleton, empty, onRetry, children }) {
 }
 
 /** Local re-export so tabs need one import for the skeleton. */
-export function Shim({ count = 4, label = 'Loading…' }) {
-  // ANNOUNCES ITSELF. Suite 20.06 (2026-08-31) found 7 of 10 sampled screens
-  // with `role=status 0, aria-busy 0` while loading, and `vetana#payslips` was
-  // the sharp one: a Shim IS drawn, so the screen looks busy to an eye and is
-  // silent to a screen reader.
-  //
-  // `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
-  // so the screens that were written correctly do not start saying it twice.
-  return (
-    <Announced label={label}>
-      <div className="k-shimmer" aria-hidden="true">
-        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
-      </div>
-    </Announced>
-  );
-}
+/* `Shim` is `components/ui/Skeleton.jsx`, beside the `Announced` it wraps
+   itself in. Three modules declared it identically until 2026-09-03, each
+   carrying the same accessibility fix in a comment — so the next such fix
+   would have had to be made three times, or two modules would stay silent
+   to a screen reader while looking busy to an eye. */
+export { Shim };
 
 /** `2026-07` → `July 2026`. Payroll months are stored as `YYYY-MM` strings. */
 export function monthName(month) {
@@ -158,11 +148,9 @@ export function monthName(month) {
     'August', 'September', 'October', 'November', 'December'][m - 1]} ${y}`;
 }
 
-/** The current month as `YYYY-MM`, which is what every filter here speaks. */
-export function thisMonth() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
+/* Months are `lib/dates.js` — see the note there. Manav held the same two
+   functions, and both built their bounds from the UNRESOLVED argument. */
+export { thisMonth, monthRange } from '../../lib/dates';
 
 /** `2026-08-15` → `15 Aug 2026`, for a due date that has to be read at a glance. */
 export function shortDate(iso) {
@@ -173,13 +161,6 @@ export function shortDate(iso) {
     'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()]} ${d.getFullYear()}`;
 }
 
-/** The first day of the month, and the last — the window every attendance and
- *  statutory query in this module is bounded by. */
-export function monthRange(month) {
-  const [y, m] = (month || thisMonth()).split('-').map(Number);
-  const last = new Date(y, m, 0).getDate();
-  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, '0')}` };
-}
 
 export const money = v => FMT(v);
 

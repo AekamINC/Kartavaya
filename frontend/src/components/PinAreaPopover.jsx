@@ -91,6 +91,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api, body } from '../lib/api';
 import { loadMappls, MAP_OFF } from '../lib/mapplsSdk';
 import Popover from './ui/Popover';
+import { ringsOf, boundsOf } from '../lib/geoRings';
 
 /**
  * "Is this a PIN" — mirroring `services/territory_routing.normalise_pin`
@@ -142,31 +143,6 @@ export function pincodeOf(address, depth = 0) {
  * better answer than no outline. It does mean the area below is the outer
  * ring's, which is why the sentence says "about".
  */
-function ringsOf(geometry) {
-  if (!geometry) return [];
-  const toPath = (ring) => ring
-    .filter(pt => Array.isArray(pt) && pt.length >= 2)
-    .map(([lng, lat]) => ({ lat, lng }));
-
-  if (geometry.type === 'Polygon') {
-    return (geometry.coordinates || []).slice(0, 1).map(toPath);
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return (geometry.coordinates || []).map(poly => toPath(poly?.[0] || []));
-  }
-  return [];
-}
-
-function boundsOf(paths) {
-  let n = -90, s = 90, e = -180, w = 180, seen = false;
-  paths.forEach(path => path.forEach(({ lat, lng }) => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    seen = true;
-    if (lat > n) n = lat; if (lat < s) s = lat;
-    if (lng > e) e = lng; if (lng < w) w = lng;
-  }));
-  return seen ? { n, s, e, w } : null;
-}
 
 /** Kilometres per degree of latitude. Longitude shrinks by cos(latitude). */
 const KM_PER_DEG = 111.32;

@@ -151,21 +151,10 @@ export function imageBriefOf(source) {
   return typeof inner === 'string' ? inner : '';
 }
 
-export function stamp(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
-  });
-}
+/* Timestamps are `lib/dates.js` — see the note there. Hub held the same two
+   functions under a docstring saying there was one implementation. */
+export { stamp, shortStamp } from '../../lib/dates';
 
-export function shortStamp(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
-}
 
 /**
  * Markdown, rendered as React elements.

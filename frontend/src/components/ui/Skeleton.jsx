@@ -256,6 +256,30 @@ export function SkeletonRegion({ label = 'Loading…', children, className = '',
   );
 }
 
+/**
+ * The module-page shimmer: `count` tiles, announced.
+ *
+ * Hub, Manav and Vetana each declared this identically in their own
+ * `_shared.jsx` until 2026-09-03, and each copy carried the same accessibility
+ * note in a comment — which is the argument for it being here. Suite 20.06
+ * (2026-08-31) found 7 of 10 sampled screens loading with `role=status 0,
+ * aria-busy 0`, and `vetana#payslips` was the sharp one: a Shim IS drawn, so
+ * the screen looks busy to an eye and is silent to a screen reader. A fix made
+ * in one of three copies leaves the other two exactly as they were.
+ *
+ * `Announced` is a no-op when an explicit `SkeletonRegion` already wraps this,
+ * so the screens that were written correctly do not start saying it twice.
+ */
+export function Shim({ count = 4, label = 'Loading…' }) {
+  return (
+    <Announced label={label}>
+      <div className="k-shimmer" aria-hidden="true">
+        {Array.from({ length: count }, (_, i) => <div key={i} className="k-shimmer__tile" />)}
+      </div>
+    </Announced>
+  );
+}
+
 export default {
   SkeletonText,
   SkeletonAvatar,

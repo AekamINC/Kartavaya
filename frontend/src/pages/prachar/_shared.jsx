@@ -24,8 +24,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer, Empty } from '../../components/editorial';
-import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
-import ArrangedDataTable from '../../components/ui/arrangeDataTable';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /* ── Response unwrapping ──────────────────────────────────────────────────
@@ -351,73 +349,15 @@ export function Panel({ loading, error, onRetry, empty, emptyProps, count = 4, c
 
 /* ── The table ────────────────────────────────────────────────────────────
  *
- * `DataTable` and `Td` keep the names and the exact prop shape that
- * `components/editorial/ModuleUI.jsx` exports, and render the UNIFIED table
- * instead: `.tbl__wrap > table.tbl`, which is what `components/ui/Table.jsx`
- * emits and what `components.css` §10 calls the one table system. Every Prachar
- * tab therefore changed by one line — its import — and not one of the nineteen
- * call sites moved.
- *
- * Why not simply keep `<DataTable>` from the barrel: `.k-modtable` is not the
- * reference's table and never was. Its head is 11px at .08em tracking on `--bg`
- * against the reference's 10px at .14em on `--s-low` (app.css:182); its cells
- * are a flat 12px against 16px outer / 7px between; and its wrapper is a
- * classless `style={{ overflowX: 'auto' }}` div, so all nineteen Prachar tables
- * floated on the page ground with no edge at all. Those are the three things
- * the unify phase could not fix from the stylesheet, because they are decided
- * in a shared component that six other modules also use.
- *
- * Why an adapter here rather than an edit to that shared component: changing
- * `ModuleUI.DataTable` moves Manav, Vetana, Pahchan, Hub and Ganit in the same
- * commit, and those are not this package's to move. When they follow, these two
- * functions are deleted and the import goes back to the barrel.
+ * `DataTable` and `Td` are the shared module-table adapter, re-exported so the
+ * Prachar tabs keep importing them from `./_shared` and none of the nineteen
+ * call sites moves. The long note on WHY an adapter exists at all — `.k-modtable`
+ * is not the reference's table, and fixing `ModuleUI.DataTable` would move
+ * Manav, Vetana, Pahchan, Hub and Ganit in the same commit — now lives with the
+ * code, in `components/ui/moduleTable.jsx`, along with the reason it is there
+ * rather than in either page package.
  */
-export function DataTable({ columns, children, arrange }) {
-  /* ARRANGEABLE — see `components/ui/arrangeDataTable.jsx`. `arrange` is
-     the table key and is the entire opt-in; every other prop is unchanged.
-     This adapter delegates rather than re-implementing, which is the one
-     place it deliberately does NOT copy the barrel: three copies of a
-     head/body permutation is three chances for a body to end up under the
-     wrong heading. */
-  if (arrange) return <ArrangedDataTable arrange={arrange} columns={columns}>{children}</ArrangedDataTable>;
-  return (
-    <Table>
-      <TableHead>
-        {columns.map((c, i) => {
-          const col = c && typeof c === 'object' ? c : { label: c };
-          const key = col.label || `col-${i}`;
-          /* `.tbl__num` carries the right edge AND the mono/tabular figures, so
-             the header sits over its column rather than beside it. `align` is
-             the only value ModuleUI accepted and the only one used. */
-          return (
-            <HeadCell key={key} num={col.align === 'right'} className={col.className || ''}>
-              {col.label}
-            </HeadCell>
-          );
-        })}
-      </TableHead>
-      <TableBody>{children}</TableBody>
-    </Table>
-  );
-}
-
-/**
- * A cell. `align="right"` and `mono` both mean the same thing in this build —
- * every one of the 46 call sites passes them together, because a right-aligned
- * column of figures that is not tabular drifts by digit width — so both map to
- * `.tbl__num`, which states them once.
- *
- * `bold` was `style={{ fontWeight: 600 }}` written into the markup. It is
- * `.tbl__b` now (components.css §10).
- */
-export function Td({ align, mono, bold, className, children, ...rest }) {
-  const cls = [bold ? 'tbl__b' : '', className || ''].filter(Boolean).join(' ');
-  return (
-    <Cell num={align === 'right' || Boolean(mono)} className={cls} {...rest}>
-      {children}
-    </Cell>
-  );
-}
+export { DataTable, Td } from '../../components/ui/moduleTable';
 
 /**
  * A section heading with its Devanagari, and controls at the trailing edge.

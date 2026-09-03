@@ -61,7 +61,9 @@ Form 16 issued for FY 2026-27 is a form that does not exist.
 import logging
 from datetime import date, timedelta
 
-from services.statute import obligation, obligation_for_fy, fy_bounds
+from services.statute import (
+    obligation, obligation_for_fy, fy_bounds, statute_note, fy_of,
+)
 from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, utc_now
 # The one canonical Indian state codelist in this backend. #27 joins the
@@ -108,9 +110,11 @@ def _month_bounds(month: str) -> tuple[date, date]:
     return start, end
 
 
-def _fy_of(day: date) -> str:
-    start = day.year if day.month >= 4 else day.year - 1
-    return f"{start}-{str(start + 1)[-2:]}"
+#: THE FINANCIAL YEAR IS `services.statute.fy_of`, THE INVERSE OF `fy_bounds`,
+#: WHICH THIS FILE ALREADY IMPORTS. Three modules restated it; an off-by-one in
+#: any one of them reports the wrong year's turnover against a threshold and
+#: raises nothing.
+_fy_of = fy_of
 
 
 def _quarter_of(day: date) -> tuple[int, date, date]:
@@ -174,12 +178,12 @@ def _state_label(value) -> tuple[str | None, str | None]:
     return (code, state_view(code)["state_name"]) if code else (None, text)
 
 
-def _statute_note(row: dict | None, what: str) -> str:
-    if not row:
-        return f"The statute calendar records no {what}, so none is shown."
-    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
-    cite = " · ".join(bits) if bits else (row.get("statute") or "")
-    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+#: THE CITATION LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file held one of FIVE copies of it until 2026-09-03, and they had
+#: already drifted: `firm_flow`'s appended `or row.get("authority")`, which
+#: prints the routing slug `income_tax` where a section reference belongs. The
+#: module that owns the table owns how a row from it is cited.
+_statute_note = statute_note
 
 
 async def _latest_approved_run(pool, org_id: str, month: str | None):

@@ -55,7 +55,7 @@ import useTableView from '../../hooks/useTableView';
 import TableToolbar, { ArrangedTableSection } from '../../components/ui/TableToolbar';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { useToast } from '../../components/ui/toast';
-import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
+import { Badge, ErrorNote, Shim, errText, useClientOptions, useResource, today } from './_shared';
 // The product's one date renderer and its one person renderer. `CreatedCell`
 // and `ByCell` render `ui/Table`'s `<Cell>`, which IS a `<td>` — the same
 // element `Td` renders — so they drop into this table unchanged and it keeps
@@ -160,23 +160,6 @@ function countdown(seconds) {
  * holding CRM, Finance or Sales — a practice that bought HR alone would
  * otherwise be able to read this register and not the names in it.
  */
-function useClientOptions(enabled) {
-  const [state, setState] = useState({ loading: false, error: '', items: [] });
-  useEffect(() => {
-    if (!enabled) return undefined;
-    let alive = true;
-    setState({ loading: true, error: '', items: [] });
-    api.get('/v1/custody/clients')
-      .then(r => {
-        if (alive) setState({ loading: false, error: '', items: r.data?.data || [] });
-      })
-      .catch(err => {
-        if (alive) setState({ loading: false, error: errText(err), items: [] });
-      });
-    return () => { alive = false; };
-  }, [enabled]);
-  return state;
-}
 
 export default function UdinTab() {
   const { canWrite, reason: denial } = useModuleWrite({

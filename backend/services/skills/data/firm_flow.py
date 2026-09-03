@@ -124,7 +124,7 @@ import re
 from datetime import date, timedelta
 from urllib.parse import quote
 
-from services.statute import obligations, obligation, due_date_from
+from services.statute import obligations, obligation, due_date_from, statute_note
 from services.skills.timeutil import as_date, days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -256,18 +256,12 @@ def _shift_back(due: date, blocking: dict[date, str]) -> tuple[date, str | None]
                  f"the statutory date is shown unshifted")
 
 
-def _statute_note(row: dict | None, what: str) -> str:
-    """One sentence naming the authority for a printed date.
-
-    Every figure these handlers print is attributable or it is not printed. An
-    unattributed date in front of a CA is a date they have to go and verify,
-    which costs more than not showing it.
-    """
-    if not row:
-        return f"The statute calendar records no {what}, so none is shown."
-    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
-    cite = " · ".join(bits) if bits else (row.get("statute") or row.get("authority") or "")
-    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+#: THE CITATION LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file held one of FIVE copies of it until 2026-09-03, and they had
+#: already drifted: `firm_flow`'s appended `or row.get("authority")`, which
+#: prints the routing slug `income_tax` where a section reference belongs. The
+#: module that owns the table owns how a row from it is cited.
+_statute_note = statute_note
 
 
 async def brief_firm_filing_calendar(

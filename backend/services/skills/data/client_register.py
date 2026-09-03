@@ -122,7 +122,7 @@ silently get no match.
 import logging
 from datetime import date, timedelta
 
-from services.statute import obligation, due_date_from
+from services.statute import obligation, due_date_from, statute_note
 from services.skills.timeutil import as_date, days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -364,15 +364,12 @@ def _quarter_end_on_or_before(day: date) -> date:
 _due_date_from = due_date_from
 
 
-def _statute_note(row: dict | None, what: str) -> str:
-    """One sentence naming the authority for a printed date, or naming its
-    absence. Every date these handlers print is attributable, or it is not
-    printed."""
-    if not row:
-        return f"The statute calendar records no {what}, so none is shown."
-    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
-    cite = " · ".join(bits) if bits else (row.get("statute") or "")
-    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+#: THE CITATION LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file held one of FIVE copies of it until 2026-09-03, and they had
+#: already drifted: `firm_flow`'s appended `or row.get("authority")`, which
+#: prints the routing slug `income_tax` where a section reference belongs. The
+#: module that owns the table owns how a row from it is cited.
+_statute_note = statute_note
 
 
 # ── state codes: see `services/gst_states.py`, imported at the top ──

@@ -136,7 +136,7 @@ describe('every table these modules render is the unified one', () => {
   });
 });
 
-describe('Dristi and Prachar reach the unified table through their own adapter', () => {
+describe('Dristi and Prachar reach the unified table through the shared adapter', () => {
   const adapters = MODULES.filter((m) => m !== 'graha').map((m) => ({
     module: m,
     file: `pages/${m}/_shared.jsx`,
@@ -144,14 +144,34 @@ describe('Dristi and Prachar reach the unified table through their own adapter',
   }));
 
   it.each(adapters.map((a) => a.module))(
-    '%s/_shared.jsx declares DataTable and Td over components/ui/Table',
+    '%s/_shared.jsx re-exports DataTable and Td and declares neither',
     (module) => {
       const a = adapters.find((x) => x.module === module);
-      expect(a.text).toMatch(/from '\.\.\/\.\.\/components\/ui\/Table'/);
-      expect(a.text).toMatch(/export function DataTable\(/);
-      expect(a.text).toMatch(/export function Td\(/);
+      expect(a.text).toMatch(
+        /export\s*\{[^}]*\bDataTable\b[^}]*\}\s*from\s*'\.\.\/\.\.\/components\/ui\/moduleTable'/,
+      );
+      expect(a.text).toMatch(
+        /export\s*\{[^}]*\bTd\b[^}]*\}\s*from\s*'\.\.\/\.\.\/components\/ui\/moduleTable'/,
+      );
+      /* THE HALF THAT MATTERS. Both files held their own copy of these two
+         functions until 2026-09-03, byte-identical, each with a note saying the
+         other package's page code could not be imported — which was true, and
+         is why neither considered the third home both already imported from.
+         A re-declaration here puts the copies back. */
+      expect(a.text).not.toMatch(/export function DataTable\(/);
+      expect(a.text).not.toMatch(/export function Td\(/);
     },
   );
+
+  it('the shared adapter is the one that renders the unified table', () => {
+    // Anti-vacuity for the two assertions above: they check where these modules
+    // get `DataTable` from, and would both stay green if that module rendered
+    // anything at all. This is the assertion about what it actually renders.
+    const shared = readFileSync(join(SRC, 'components', 'ui', 'moduleTable.jsx'), 'utf8');
+    expect(shared).toMatch(/from '\.\/Table'/);
+    expect(shared).toMatch(/export function DataTable\(/);
+    expect(shared).toMatch(/export function Td\(/);
+  });
 
   it('leaves no tab importing DataTable or Td from the editorial barrel', () => {
     // This is the whole migration, in one assertion: the barrel's `DataTable`

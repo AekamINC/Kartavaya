@@ -19,7 +19,7 @@ import { StatTile } from '../../components/editorial';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { formatINR } from '../../lib/utils';
+import { inrShort } from '../../lib/inr';
 import { Badge, stageColor, SOURCE_COLORS } from './_shared';
 import { useDocumentDownload } from '../../lib/documents';
 import { HeadCell } from '../../components/ui/Table';
@@ -109,7 +109,7 @@ export default function ReportsTab() {
 
   useEffect(() => { load(); }, [load]);
 
-  const fmt = v => (v != null ? formatINR(v) : '—');
+  const fmt = v => (v != null ? inrShort(v) : '—');
 
   const grab = (format) => download(format, {
     url: '/v1/graha/reports/download',

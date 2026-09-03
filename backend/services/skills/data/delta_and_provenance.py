@@ -183,7 +183,7 @@ reported as "0 of N checked", never as "no cancellations".
 import logging
 from datetime import date
 
-from services.statute import obligation, obligation_for_fy, fy_bounds
+from services.statute import obligation, obligation_for_fy, fy_bounds, fy_of
 from services.skills.timeutil import as_date, utc_now
 
 #: The calendar helpers #18 and #20 already got right, imported rather than
@@ -192,7 +192,7 @@ from services.skills.timeutil import as_date, utc_now
 #: as 31 March 2026, nine months early, next to a statute citation. A second
 #: implementation of that rule in this file would be a second chance to make it.
 from services.skills.data.gst_year import (
-    _due_date_from, _fy_of, _period_bounds, _return_period,
+    _due_date_from, _period_bounds, _return_period,
 )
 
 log = logging.getLogger(__name__)
@@ -682,7 +682,7 @@ async def brief_gstr9c_books_side(
     """
     today = utc_now().date()
     if not financial_year:
-        this_fy = _fy_of(today)
+        this_fy = fy_of(today)
         start_year = int(this_fy.split("-")[0])
         financial_year = f"{start_year - 1}-{str(start_year)[-2:]}"
     fy_start, fy_end = fy_bounds(financial_year)

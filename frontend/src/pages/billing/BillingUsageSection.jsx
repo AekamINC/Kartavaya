@@ -7,6 +7,7 @@ import {
 import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import { grouped, inr } from '../../lib/inr';
+import { apiErrorText } from '../../lib/apiError';
 import { formatDate } from '../../lib/timeFormat';
 import { canManageBilling } from '../admin/platformRoles';
 import MemberCeilingModal from './MemberCeilingModal';
@@ -139,13 +140,6 @@ function resetDate(periodStartIso) {
   return `1 ${LONG_MONTHS[month - 1]} ${year}`;
 }
 
-/** The server's own words. Never parsed, never re-written. */
-function refusalMessage(err, fallback) {
-  const detail = err?.response?.data?.detail;
-  if (detail && typeof detail === 'object' && detail.message) return detail.message;
-  if (typeof detail === 'string' && detail) return detail;
-  return fallback;
-}
 
 export default function BillingUsageSection({ basePath, upiOnInvoices = null }) {
   const [period, setPeriod] = useState(currentPeriod);
@@ -243,7 +237,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
       setPeople(res.data || null);
     } catch (e) {
       setPeople(null);
-      setPeopleErr(refusalMessage(e, 'Couldn’t load who spent what. The figures above are unaffected.'));
+      setPeopleErr(apiErrorText(e, 'Couldn’t load who spent what. The figures above are unaffected.'));
     }
   }, [basePath, period, shownSource, scopedToSource, sourcesLoaded]);
 
@@ -287,7 +281,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
         grant={isTenantView
           ? 'org owner or org admin on this organisation'
           : 'platform owner or account/finance access'}
-        detail={refusalMessage(err, undefined)}
+        detail={apiErrorText(err, null)}
         onRetry={() => { setLoading(true); load().catch(setErr).finally(() => setLoading(false)); }}
       />
     );
@@ -642,7 +636,7 @@ function TransactionDrill({ drill, basePath, period, source, sourceLabelText, on
       params: { period, source: source || undefined, user_id: userId, limit: 200 },
     })
       .then(r => { if (!live) return; setRows(r.data?.data || []); setTruncated(Boolean(r.data?.truncated)); })
-      .catch(e => { if (live) setFailed(refusalMessage(e, 'Couldn’t load these transactions.')); });
+      .catch(e => { if (live) setFailed(apiErrorText(e, 'Couldn’t load these transactions.')); });
     return () => { live = false; };
   }, [basePath, period, source, userId]);
 

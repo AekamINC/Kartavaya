@@ -1,6 +1,7 @@
 import React from 'react';
 import { Button, Checkbox, Field, Input, Tag } from '../../components/ui';
 import { inr } from '../../lib/inr';
+import { apiErrorText } from '../../lib/apiError';
 import { formatPeriod } from '../../lib/timeFormat';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 
@@ -95,15 +96,19 @@ export const monthLabel = iso => (iso ? formatPeriod(iso, iso) : '—');
  * a toast title throws "Objects are not valid as a React child" — a refusal
  * that white-screens the console is worse than the refusal it was reporting.
  *
- * It lives in this file because it is the leaf every billing surface in this
- * batch already imports, and the batch's file ownership gives A7 no shared
- * module of its own. Move it to `lib/` the next time `lib/` is opened.
+ * IT IS NOW A THIN WRAPPER OVER `lib/apiError.apiErrorText`, which is where the
+ * note above asked for it to go. Four copies of this function existed — here
+ * and in three `pages/billing/` screens — and every one of them read only the
+ * string and `{message}` shapes. `detail` also arrives as an ARRAY for a 422,
+ * which is an object without a `.message`, so all four fell through to the
+ * generic fallback and threw away the field names: the exact defect
+ * `lib/apiError.js` was written for and documents at length.
+ *
+ * The name stays because three admin screens import it and it reads better at
+ * their call sites than `apiErrorText` does; the behaviour is the shared one.
  */
 export function refusalMessage(err, fallback = 'That did not go through') {
-  const detail = err?.response?.data?.detail;
-  if (typeof detail === 'string' && detail) return detail;
-  if (detail?.message) return detail.message;
-  return fallback;
+  return apiErrorText(err, fallback);
 }
 
 export default function BillingLineRow(props) {

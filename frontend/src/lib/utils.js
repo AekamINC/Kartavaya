@@ -95,17 +95,8 @@ export function avatarColor(name) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-/**
- * Indian-numbering compact currency format — ₹99,999 below 1 lakh, ₹1L–₹99.9L
- * in lakhs, ₹1Cr+ in crores. Keeps stat tiles from overflowing on 6+ digit
- * amounts while staying in the units Indian users actually think in.
- */
-export function formatINR(value) {
-  const n = Number(value) || 0;
-  const sign = n < 0 ? '-' : '';
-  const abs = Math.abs(n);
-  const trim = s => s.replace(/\.0$/, '');
-  if (abs >= 1_00_00_000) return `${sign}₹${trim((abs / 1_00_00_000).toFixed(1))}Cr`;
-  if (abs >= 1_00_000)    return `${sign}₹${trim((abs / 1_00_000).toFixed(1))}L`;
-  return `${sign}₹${abs.toLocaleString('en-IN')}`;
-}
+// THERE IS NO `formatINR` HERE. Indian rupee formatting lives in `lib/inr.js`,
+// which says so in its first line and which 8 modules already use. This file
+// carried a byte-identical copy of its `inrShort` under a second name, with
+// one consumer, so a change to the lakh/crore rule had to be made twice or
+// two screens would abbreviate the same amount differently.

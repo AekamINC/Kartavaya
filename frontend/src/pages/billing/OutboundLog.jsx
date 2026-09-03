@@ -5,6 +5,7 @@ import {
 } from '../../components/ui';
 import { api } from '../../lib/api';
 import { grouped } from '../../lib/inr';
+import { apiErrorText } from '../../lib/apiError';
 import { formatDate, formatTime } from '../../lib/timeFormat';
 import '../../styles/outbound.css';
 import useColumnPrefs from '../../hooks/useColumnPrefs';
@@ -103,12 +104,6 @@ const SEND_COLUMNS = [
   { id: 'evidence', label: 'Evidence' },
 ];
 
-function refusal(err, fallback) {
-  const detail = err?.response?.data?.detail;
-  if (detail && typeof detail === 'object' && detail.message) return detail.message;
-  if (typeof detail === 'string' && detail) return detail;
-  return fallback;
-}
 
 /** "05 Aug 2026 · 4:32 PM". Absolute, never "2 days ago". */
 function stamp(iso) {
@@ -178,7 +173,7 @@ export default function OutboundLog({ basePath, period }) {
       setData(res.data || null);
     } catch (e) {
       setData(null);
-      setFailed(refusal(
+      setFailed(apiErrorText(
         e,
         'Couldn’t read what this organisation has been sent. Every figure above '
         + 'is unaffected — it comes from a different read.',
@@ -609,7 +604,7 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
       },
     })
       .then(r => { if (live) setBody(r.data || null); })
-      .catch(e => { if (live) setFailed(refusal(e, 'Couldn’t load these sends.')); });
+      .catch(e => { if (live) setFailed(apiErrorText(e, 'Couldn’t load these sends.')); });
     return () => { live = false; };
   }, [open, basePath, period, purpose, status, recipient]);
 

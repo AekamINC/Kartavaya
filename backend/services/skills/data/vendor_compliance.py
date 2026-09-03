@@ -120,7 +120,7 @@ import logging
 import re
 from datetime import date, datetime, timedelta
 
-from services.statute import obligation, fy_bounds
+from services.statute import obligation, fy_bounds, statute_note, fy_of
 from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, days_between, utc_now
 
@@ -242,19 +242,19 @@ def _as_of(value, fallback: date) -> date:
     return fallback
 
 
-def _fy_of(day: date) -> str:
-    """The Indian financial year containing *day*, as '2026-27'. April to March."""
-    start_year = day.year if day.month >= 4 else day.year - 1
-    return f"{start_year}-{str(start_year + 1)[-2:]}"
+#: THE FINANCIAL YEAR IS `services.statute.fy_of`, THE INVERSE OF `fy_bounds`,
+#: WHICH THIS FILE ALREADY IMPORTS. Three modules restated it; an off-by-one in
+#: any one of them reports the wrong year's turnover against a threshold and
+#: raises nothing.
+_fy_of = fy_of
 
 
-def _statute_note(row: dict | None, what: str) -> str:
-    """One sentence naming the authority for a figure, or naming its absence."""
-    if not row:
-        return f"The statute calendar records no {what}, so none is shown."
-    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
-    cite = " · ".join(bits) if bits else (row.get("statute") or "")
-    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+#: THE CITATION LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file held one of FIVE copies of it until 2026-09-03, and they had
+#: already drifted: `firm_flow`'s appended `or row.get("authority")`, which
+#: prints the routing slug `income_tax` where a section reference belongs. The
+#: module that owns the table owns how a row from it is cited.
+_statute_note = statute_note
 
 
 #: A leading section marker, dropped before the number. `s`, `sec` and `section`

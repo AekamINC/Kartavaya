@@ -44,6 +44,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { loadMappls, MAP_OFF } from '../lib/mapplsSdk';
+import { ringsOf, boundsOf } from '../lib/geoRings';
 
 /** Centre of India — the opening view when there is nothing to fit to. */
 const INDIA = { lat: 22.9734, lng: 78.6569 };
@@ -57,31 +58,6 @@ const INDIA = { lat: 22.9734, lng: 78.6569 };
  * enclosing another PIN, and an outline that ignores it is a better answer than
  * no outline at all.
  */
-function ringsOf(geometry) {
-  if (!geometry) return [];
-  const toPath = (ring) => ring
-    .filter(pt => Array.isArray(pt) && pt.length >= 2)
-    .map(([lng, lat]) => ({ lat, lng }));
-
-  if (geometry.type === 'Polygon') {
-    return (geometry.coordinates || []).slice(0, 1).map(toPath);
-  }
-  if (geometry.type === 'MultiPolygon') {
-    return (geometry.coordinates || []).map(poly => toPath(poly?.[0] || []));
-  }
-  return [];
-}
-
-function boundsOf(paths) {
-  let n = -90, s = 90, e = -180, w = 180, seen = false;
-  paths.forEach(path => path.forEach(({ lat, lng }) => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    seen = true;
-    if (lat > n) n = lat; if (lat < s) s = lat;
-    if (lng > e) e = lng; if (lng < w) w = lng;
-  }));
-  return seen ? { n, s, e, w } : null;
-}
 
 export default function TerritoryMap({ territoryId, pincodes = [], height = 240 }) {
   const holder = useRef(null);

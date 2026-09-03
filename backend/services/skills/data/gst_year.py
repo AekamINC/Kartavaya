@@ -53,7 +53,9 @@ a caveat a language model never sees is a caveat the reader never sees.
 import logging
 from datetime import date, timedelta
 
-from services.statute import obligation, obligation_for_fy, fy_bounds, due_date_from
+from services.statute import (
+    obligation, obligation_for_fy, fy_bounds, due_date_from, statute_note, fy_of,
+)
 from services.skills.timeutil import as_date, utc_now
 
 log = logging.getLogger(__name__)
@@ -75,15 +77,11 @@ def _f(value, default=0.0) -> float:
     return default if value is None else float(value)
 
 
-def _fy_of(day: date) -> str:
-    """The Indian financial year containing *day*, as '2026-27'.
-
-    April to March. `fy_bounds` is the inverse and the two are tested against
-    each other, because an off-by-one here silently reports the wrong year's
-    turnover against this year's threshold.
-    """
-    start_year = day.year if day.month >= 4 else day.year - 1
-    return f"{start_year}-{str(start_year + 1)[-2:]}"
+#: THE FINANCIAL YEAR IS `services.statute.fy_of`, THE INVERSE OF `fy_bounds`,
+#: WHICH THIS FILE ALREADY IMPORTS. Three modules restated it; an off-by-one in
+#: any one of them reports the wrong year's turnover against a threshold and
+#: raises nothing.
+_fy_of = fy_of
 
 
 def _return_period(day: date) -> str:
@@ -115,18 +113,12 @@ def _period_bounds(period: str) -> tuple[date, date]:
 _due_date_from = due_date_from
 
 
-def _statute_note(row: dict | None, what: str) -> str:
-    """One sentence naming the authority for a printed date or figure.
-
-    Every number these skills print is attributable, or it is not printed. A
-    figure with no provenance in front of a CA is a figure they have to go and
-    check, which costs more than not showing it.
-    """
-    if not row:
-        return f"The statute calendar records no {what}, so none is shown."
-    bits = [b for b in (row.get("form_number"), row.get("section_ref")) if b]
-    cite = " · ".join(bits) if bits else (row.get("statute") or "")
-    return f"{row.get('title') or what}{f' ({cite})' if cite else ''}"
+#: THE CITATION LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.
+#: This file held one of FIVE copies of it until 2026-09-03, and they had
+#: already drifted: `firm_flow`'s appended `or row.get("authority")`, which
+#: prints the routing slug `income_tax` where a section reference belongs. The
+#: module that owns the table owns how a row from it is cited.
+_statute_note = statute_note
 
 
 # ══════════════════════════════════════════════════════════════════════════

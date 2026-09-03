@@ -1,5 +1,5 @@
 import React from 'react';
-import { GST_STATES } from '../../lib/validators';
+import { text, stateOf } from '../../lib/addressText';
 
 /**
  * AddressBlock — a stored address, and the one way out to a map.
@@ -112,11 +112,6 @@ import { GST_STATES } from '../../lib/validators';
 const TOP = ['line1', 'line2'];
 
 /** A value is part of an address only if it is text with something in it. */
-function text(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
-  if (typeof v !== 'string') return '';
-  return v.trim();
-}
 
 /**
  * The state, as a NAME, or nothing.
@@ -136,13 +131,6 @@ function text(v) {
  * `state` wins when both are present. It is what a human typed, and Navrang is
  * the standing proof that two fields describing one place can disagree.
  */
-function stateOf(f) {
-  const named = text(f.state);
-  if (named) return named;
-  const code = text(f.state_code);
-  if (!code) return '';
-  return GST_STATES[code] || GST_STATES[code.padStart(2, '0')] || '';
-}
 
 /**
  * Whatever the column handed back → the address object, or null.

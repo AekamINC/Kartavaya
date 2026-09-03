@@ -92,18 +92,13 @@
  */
 import React, { useMemo } from 'react';
 import { addressLines, mapsHref } from './ui/AddressBlock';
-import { GST_STATES } from '../lib/validators';
 import '../styles/clientmap.css';
+import { text, stateOf } from '../lib/addressText';
 
 /** A six-digit Indian PIN. Nothing else is treated as one, ever. */
 const PIN = /^\d{6}$/;
 
 /** A value counts only if it is text with something in it. */
-function text(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
-  if (typeof v !== 'string') return '';
-  return v.trim();
-}
 
 /**
  * The stored column → a plain object of fields, or null.
@@ -139,13 +134,6 @@ function fieldsOf(raw, depth = 0) {
  * noise in a place name. `state` wins when both exist: Navrang is the standing
  * proof that two fields describing one place can disagree.
  */
-function stateOf(f) {
-  const named = text(f.state);
-  if (named) return named;
-  const code = text(f.state_code);
-  if (!code) return '';
-  return GST_STATES[code] || GST_STATES[code.padStart(2, '0')] || '';
-}
 
 /**
  * One company's stored address → what can be said about where it is.

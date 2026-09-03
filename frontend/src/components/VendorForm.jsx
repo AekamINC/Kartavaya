@@ -4,6 +4,7 @@ import AddressSuggest from './ui/AddressSuggest';
 import PincodeAutofill from './ui/PincodeAutofill';
 import { useToast } from './ui/toast';
 import { apiErrorText } from '../lib/apiError';
+import { text } from '../lib/addressText';
 
 /**
  * VendorForm — the ONE form that creates or edits a supplier.
@@ -121,11 +122,6 @@ export const BLANK_VENDOR = {
 /** A stored value is part of an address only if it is text with something in
  *  it. Mirrors `AddressBlock.text`, including the number leg — a pincode that
  *  was stored as `395002` rather than `'395002'` is still a pincode. */
-function text(v) {
-  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : '';
-  if (typeof v !== 'string') return '';
-  return v.trim();
-}
 
 /**
  * Whatever the column handed back → a plain object, or null.

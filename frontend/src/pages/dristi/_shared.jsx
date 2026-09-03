@@ -28,8 +28,6 @@
 import React, { useState, useEffect, useCallback, useContext, createContext, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
-import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
-import ArrangedDataTable from '../../components/ui/arrangeDataTable';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import { useSecondary, Secondary } from '../../components/Bilingual';
 import { inr, inrShort, grouped } from '../../lib/inr';
@@ -376,57 +374,23 @@ export function Panel({ title, hi, right, wide, half, children }) {
 
 /* ── The table ────────────────────────────────────────────────────────────
  *
- * Same two functions, same reasoning and same prop shape as
- * `pages/prachar/_shared.jsx` — read the long note there for why the adapter
- * exists rather than an edit to `editorial/ModuleUI.jsx`. In short: `DataTable`
- * and `Td` keep the names the tabs already import and render the unified
- * `.tbl__wrap > table.tbl` instead of `.k-modtable`, so the four Dristi tabs
- * changed by one import line each and none of their ten call sites moved.
+ * `DataTable` and `Td` are the shared module-table adapter, re-exported so the
+ * four Dristi tabs keep importing them from `./_shared` and no call site moves.
  *
- * Re-declared rather than imported from Prachar for the reason `CONTACT_TYPES`
- * gives above: a module that imports another module's page code acquires that
- * module's render-time dependencies with it. Thirty lines are cheaper than that
- * coupling.
+ * They were DECLARED here until 2026-09-03, byte-identical to the pair in
+ * `pages/prachar/_shared.jsx`, each with a note explaining that neither package
+ * could import the other's page code — true, and the reason the copy existed.
+ * Neither note considered a third home. `components/ui/moduleTable.jsx` is
+ * neutral — both packages were already importing `Table` and
+ * `arrangeDataTable` from that directory to build the copies — and the coupling
+ * both notes refused does not exist there.
  *
- * The one Dristi-specific consequence: `.dcard__b` — the body of `Panel` below
- * — now resets the frame, because the card IS the frame and a second box inside
- * it is the mistake `components.css` §10 exists to name. The reference agrees:
- * `ScreensThin.jsx:21` puts the pivot in `<Card flush>`, frameless.
+ * The one Dristi-specific consequence is unchanged: `.dcard__b` — the body of
+ * `Panel` above — resets the frame, because the card IS the frame and a second
+ * box inside it is the mistake `components.css` §10 exists to name. The
+ * reference agrees: `ScreensThin.jsx:21` puts the pivot in `<Card flush>`.
  */
-export function DataTable({ columns, children, arrange }) {
-  /* ARRANGEABLE — see `components/ui/arrangeDataTable.jsx`. `arrange` is
-     the table key and is the entire opt-in; every other prop is unchanged.
-     This adapter delegates rather than re-implementing, which is the one
-     place it deliberately does NOT copy the barrel: three copies of a
-     head/body permutation is three chances for a body to end up under the
-     wrong heading. */
-  if (arrange) return <ArrangedDataTable arrange={arrange} columns={columns}>{children}</ArrangedDataTable>;
-  return (
-    <Table>
-      <TableHead>
-        {columns.map((c, i) => {
-          const col = c && typeof c === 'object' ? c : { label: c };
-          const key = col.label || `col-${i}`;
-          return (
-            <HeadCell key={key} num={col.align === 'right'} className={col.className || ''}>
-              {col.label}
-            </HeadCell>
-          );
-        })}
-      </TableHead>
-      <TableBody>{children}</TableBody>
-    </Table>
-  );
-}
-
-export function Td({ align, mono, bold, className, children, ...rest }) {
-  const cls = [bold ? 'tbl__b' : '', className || ''].filter(Boolean).join(' ');
-  return (
-    <Cell num={align === 'right' || Boolean(mono)} className={cls} {...rest}>
-      {children}
-    </Cell>
-  );
-}
+export { DataTable, Td } from '../../components/ui/moduleTable';
 
 /** Turn rows of objects into a CSV file the browser downloads. */
 export function downloadCSV(filename, header, rows) {
