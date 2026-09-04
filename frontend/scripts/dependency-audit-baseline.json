@@ -1,24 +1,13 @@
 {
   "_comment": "Known advisories against production dependencies. SHRINK ONLY — see scripts/check-dependency-audit.mjs. Clearing these is an UPGRADE (axios >=1.18.0, react-router >=7.18.2) and must be done from a Linux checkout: a yarn.lock regenerated on Windows rewrites esbuild linux-x64 to win32-x64 and breaks the deploy.",
-  "_recorded": "2026-08-30",
+  "_recorded": "2026-09-04",
   "_summary": "4 high, 12 moderate, 1 low",
   "known": {
-    "1120743": "high · form-data · patched >=4.0.6 · form-data: CRLF injection in form-data via unescaped multipart field n",
     "1120807": "low · react-router · patched >=7.15.1 · React Router: Potential CSRF via PUT/PATCH/DELETE document requests",
-    "1123882": "moderate · axios · patched >=1.18.0 · Axios: Excessive recursion in formDataToJSON can cause denial of servi",
-    "1123885": "moderate · axios · patched >=1.18.0 · Axios: Deep formToJSON Key Recursion Can Cause Denial of Service",
-    "1123957": "moderate · axios · patched >=1.18.0 · Axios: Fetch adapter `ReadableStream` uploads bypass `maxBodyLength`",
-    "1123959": "moderate · axios · patched >=1.18.0 · Axios: Prototype pollution gadgets can alter axios request constructio",
-    "1123961": "moderate · axios · patched >=1.18.0 · Axios: NO_PROXY bypass for 0.0.0.0 local addresses in axios",
-    "1123967": "high · axios · patched >=1.18.0 · Axios Node HTTP adapter can use an inherited proxy after interceptor c",
-    "1123969": "moderate · axios · patched >=1.18.0 · Axios form serializer maxDepth bypass via {} metatoken",
-    "1123971": "moderate · axios · patched >=1.18.0 · Axios: Nested axios option objects can consume polluted prototype valu",
-    "1123973": "moderate · axios · patched >=1.18.0 · Axios: HTTP/2 streamed uploads bypass `maxBodyLength`",
     "1124268": "moderate · react-router · patched >=7.18.0 · React Router: Open redirect via backslash in <Link> and useNavigate (C",
     "1124271": "moderate · react-router · patched >=7.18.0 · React Router: RSCErrorHandler Missing Protocol Validation (XSS)",
     "1124272": "moderate · react-router · patched >=7.18.0 · React Router: Arbitrary Constructor Injection via deserializeErrors() ",
     "1124276": "high · react-router · patched >=7.18.0 · React Router: Unauthenticated Denial of Service via Inefficient Route ",
-    "1138749": "moderate · axios · patched >=1.18.0 · Axios: Prototype pollution auth subfields can inject Basic auth",
     "1138769": "high · react-router · patched >=7.18.2 · React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 "
   }
 }

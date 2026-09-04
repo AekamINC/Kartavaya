@@ -10968,3 +10968,105 @@ note that the LEFT figure matters as much as the right — a non-zero left means
 catching up is a merge, not a fast-forward:
 
     git rev-list --left-right --count origin/staging...origin/main
+
+
+## 2026-09-04 (later) · axios, and a truncated log that understated it by eight
+
+### The trigger
+
+The frontend audit gate went red on the staging run at 14:28. `main`'s last run
+at 13:54 was green — the advisories were published in between, so `main` was
+green only because nothing had been pushed since. Its next code push would have
+failed the same gate.
+
+### It was eleven, not three
+
+The CI log pane showed three moderate axios advisories. The gate run locally
+lists the whole set: **ten axios advisories plus `form-data` CRLF injection,
+two of them HIGH** —
+
+    high      form-data  CRLF injection via unescaped multipart field name
+    high      axios      Node HTTP adapter can use an inherited proxy after
+                         interceptor change
+    moderate  axios      x8 (formDataToJSON recursion, ReadableStream and HTTP/2
+                         maxBodyLength bypasses, NO_PROXY 0.0.0.0 bypass,
+                         prototype-pollution gadgets, Basic-auth subfield
+                         injection, maxDepth bypass via {} metatoken)
+
+⚠ **Reading a truncated log and reporting its tail as the finding is the error
+here**, and it understated a high-severity item.
+
+### ⚠ But the honest scope is narrower than that list looks
+
+Several are Node-adapter, proxy or form-serialiser issues. This frontend runs
+in a browser and its whole axios surface is:
+
+    axios.create({ baseURL, withCredentials: true })
+    api.interceptors.request.use(...)   // Authorization + X-Org-Id headers
+
+No form serialiser, no proxy config, no `maxBodyLength`. Worth fixing on the
+version floor alone; not worth calling a live exposure.
+
+### What changed
+
+  · Frontend `^1.15.0` → `^1.18.0`, resolving **1.16.0 → 1.20.0**.
+  · ⚠ Mobile's lock ALREADY held 1.19.0 — patched — but its declared floor was
+    `^1.8.4`, so a fresh install could still have resolved a vulnerable
+    version. Now `^1.18.0` in both `dependencies` and `resolutions`.
+  · ⚠ **Both frontend lockfiles are maintained** — `yarn.lock` and
+    `package-lock.json` were last written by the same commit — and CI installs
+    from yarn. Leaving the npm one at 1.16.0 would have handed a vulnerable
+    tree to anyone running `npm ci` in `frontend/`. Both updated.
+
+### Baseline 17 → 6, BY NAME
+
+The gate printed `✓ 11 baselined advisory(ies) are gone. Shrink the baseline
+(--write)`. **`--write` is the wrong flag and the gate offering it does not
+make it right**: it re-records whatever the audit finds NOW, so anything that
+appeared in the same window gets baselined silently — the one thing this gate
+exists to prevent. The eleven ids were removed by name. All six remaining are
+react-router.
+
+### ⚠ The lockfile churn was measured, not eyeballed
+
+`yarn upgrade axios@^1.18.0` first produced a **401-line** diff touching
+`@babel/core`, `@csstools/*` and adding 46 `@esbuild/*` platform packages. That
+reads like a dependency rewrite, and "it's probably just normalisation" is not
+a check.
+
+The check is parsing both lockfiles for RESOLVED versions and diffing those.
+Final state:
+
+    axios              1.16.0 -> 1.20.0
+    form-data          4.0.5  -> 4.0.6
+    es-object-atoms    1.1.1  -> 1.1.2
+    agent-base         7.1.4  -> 6.0.2, 7.1.4
+    https-proxy-agent  7.0.6  -> 5.0.1, 7.0.6
+    added 0   removed 0
+
+The two proxy-agent additions are **axios 1.20.0's own dependencies** — it
+declares `https-proxy-agent ^5.0.1`, which 1.16.0 did not. Traced rather than
+assumed.
+
+⚠ **And the lockfile changed shape BETWEEN two measurements** — the 46 added
+esbuild entries were present in the first reading and absent in the second,
+which is what shipped. Which command normalised it is not established. The
+lesson stands on its own: a lockfile reading taken three commands ago is not
+evidence about the diff you are committing.
+
+### Also worth recording: a stale run id reads as a real log
+
+The first attempt to read the CI failure pulled logs timestamped **2026-08-06**
+with artifact URLs under **`github.com/kevalvshah/Kartavya`** — the OLD repo
+name. That was a wrong run id, not a time-travelling build. If a CI log's
+timestamps do not match the run you asked for, you are reading someone else's
+run; get the id from `gh run list --json databaseId` filtered to the branch.
+
+### Verification
+
+    frontend build      clean (18.62s)
+    frontend gates      20/20, incl. check-ci-runs-every-gate
+    frontend tests      3,446 passed / 221 files
+    mobile tsc          clean
+    mobile tests        846 passed
+    audit gate          exit 0 — no new advisories; 6 held at baseline
