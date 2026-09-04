@@ -11228,3 +11228,52 @@ these four; nothing guarantees it stays closed.
     upload / attachment / storage /
       file / import / pahchan / esign      1,701 passed, 40 skipped
     baseline                               4 -> 1 (BY NAME)
+
+## 2026-09-04 (final) · The `/openapi.json` difference is retracted, and it was quoted for a week
+
+`CLAUDE.md` listed **two** differences that make the staging door worse than
+production, not safer: it runs a backend only as fresh as the last catch-up
+merge, **and** it serves `/docs` + `/openapi.json` unauthenticated where
+production 404s both.
+
+The second is not true. Measured on both doors rather than quoted:
+
+    kartavaya-staging.up.railway.app  /openapi.json      404
+                                      /docs              404
+                                      /redoc             404
+                                      /api/openapi.json  404
+                                      /api/docs          404
+
+    api.kartavaya.com                 /openapi.json      404
+                                      /docs              404
+                                      /redoc             404
+
+Identical. There is ONE difference now, not two, and `CLAUDE.md` says so.
+
+### The paragraph was kept, not deleted
+
+The claim appears in earlier audits. Deleting it silently would let the next
+reader meet it there, find nothing contradicting it, and put it back. The
+retraction sits where the claim was with the measurement attached — the same
+treatment the obsolete `vercel.json` rule already gets further down the file.
+
+### How it surfaced, which is the part worth keeping
+
+Not by reading the file. A security review of the last 20 commits cleared the
+CORS change on the code, then checked it on the live doors with forged `Origin`
+headers; the docs probe was part of establishing what the staging door actually
+exposes. **Nothing in this entry is quoted — every line is a measurement**, which
+is the whole reason the stale claim survived: it was true once and never re-run.
+
+The memory note carrying the same claim was retracted in the same pass, along
+with six other memory files still describing the dropped `staging` schema as
+live — two of which were giving instructions that could no longer be acted on.
+
+### Verification
+
+    forged Origin: kartavya.com, kartavya.vercel.app,
+      evil.example, kartavaya.com.evil.example   refused on BOTH doors
+    CORS_ORIGINS production                      6 origins, all kartavaya
+    CORS_ORIGINS staging                         2 origins, all kartavaya
+    /docs + /openapi.json                        404 on BOTH doors
+    schema count (live)                          15, no `staging` among them

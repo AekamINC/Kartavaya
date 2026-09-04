@@ -58,9 +58,18 @@ through it is a production object.
 The staging label buys exactly one thing: `OUTBOUND_MODE=dry`, which suppresses
 mail, push and social — **not data** — and it does not skip the business write,
 it changes the value written (`status='suppressed'`) into production tables.
-Two differences make staging *worse* than production, not safer: it runs a
-backend that is only as fresh as the last catch-up merge, and it serves `/docs` + `/openapi.json`
-unauthenticated where production 404s both.
+ONE difference makes staging *worse* than production, not safer: it runs a
+backend that is only as fresh as the last catch-up merge.
+
+(This said "two differences" until 2026-09-04, the second being that staging
+served `/docs` + `/openapi.json` **unauthenticated** where production 404s both.
+⚠ **THAT CLAIM IS RETRACTED — MEASURED, NOT ASSUMED.** On
+`kartavaya-staging.up.railway.app`, `/openapi.json`, `/docs`, `/redoc`,
+`/api/openapi.json` and `/api/docs` **all return 404**, exactly as production
+does. The difference no longer exists. Kept here rather than deleted so the next
+person who meets that claim in an older audit knows it was checked and withdrawn,
+not overlooked — and because this file has been wrong in this exact way before:
+re-measure the door, do not quote the doc.)
 
 Every migration and every write-path probe touches production data. **There is
 nowhere to be wrong.**
