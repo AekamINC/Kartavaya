@@ -11070,3 +11070,105 @@ run; get the id from `gh run list --json databaseId` filtered to the branch.
     mobile tsc          clean
     mobile tests        846 passed
     audit gate          exit 0 — no new advisories; 6 held at baseline
+
+
+## 2026-09-04 (last) · starlette and cryptography, and a version nobody had chosen
+
+Backend audit baseline **17 → 4**.
+
+### ⚠ Starlette was never pinned, which is the whole story
+
+`requirements.txt` named `fastapi` and not `starlette`. So nobody chose 0.46.2
+— it was whatever fastapi's cap resolved to, and **an unchosen version is
+nobody's to notice**. Seven advisories accumulated against it.
+
+    starlette==1.3.1
+
+1.3.1 is the exact version clearing all seven (the highest fix among them,
+PYSEC-2026-249). It is also the version whose CORS behaviour `server.py`
+depends on: `CORSMiddleware.is_allowed_origin` applies `allow_origin_regex`
+with `fullmatch`, not `match`. Under `match` the unanchored pattern there would
+allow `https://kartavaya.com.attacker.example` as a PREFIX. That is asserted by
+`test_the_origin_allowlist_names_only_our_hosts.py`, which drives the real app
+rather than reading the pattern — so a downgrade turns those tests red.
+
+### FastAPI moved only because it was the cap
+
+    fastapi 0.115.12 -> starlette<0.47.0,>=0.40.0     <- the thing holding it
+    fastapi 0.138.0  -> starlette>=0.46.0
+    fastapi 0.141.1  -> starlette>=0.46.0
+
+**No advisory names fastapi.** Took **0.138.0 rather than the latest 0.141.1**:
+both lift the cap identically, and 0.138.0 is what the desk already runs and
+tests against, so it is evidenced rather than assumed. The extra three minors
+buy nothing a security bump needs.
+
+⚠ **Checked, not hoped: `@app.on_event("startup")` still registers and fires**
+on 0.138.0 — deprecated, warns, works. That hook runs the schema migrations and
+the stranded scraper-run sweep. A future bump that removes it stops both with
+no error.
+
+### ⚠ cryptography 50.0.1, because 49 is not enough
+
+    46.0.5 · 46.0.6 · 48.0.1 · 49.0.0 · 49.0.0 · 50.0.0   <- the six fix versions
+
+The desk's own 49.0.0 would have looked like a clean bump while leaving
+**PYSEC-2026-3552** standing. Only 50.x clears all six. This is the Fernet key
+behind `services/encryption.py` — Aadhaar numbers and R2 secrets at rest.
+
+### The finding underneath all three
+
+`requirements.txt` had drifted behind the machine developing against it:
+
+    pinned                       desk actually running
+    fastapi      0.115.12        0.138.0
+    starlette    (unpinned)      1.3.1
+    cryptography 44.0.3          49.0.0
+
+Most of this bump is the file admitting what was already being exercised, which
+is why the risk was far lower than the version jumps look.
+
+### ⚠⚠ A claim from this morning is WITHDRAWN
+
+The pypdf entry above records that the local full audit cannot run because
+`cryptography==44.0.3` ships no wheel this Python can use. Bumping it was then
+announced as fixing that. **That was wrong, and it was asserted from wheel
+availability while the run was still in flight** — the run finished afterwards
+and failed:
+
+    pydantic-core -> maturin -> puccinialin -> rustup-init -> exit 1
+    ERROR:pip_audit._cli:Failed to install packages
+
+The blocker moved rather than cleared. `pydantic==2.11.1` needs a pydantic-core
+with no cp314 Windows wheel. Same shape, different package — and the desk again
+runs newer (pydantic-core **2.46.4**, which HAS that wheel).
+
+Bumping pydantic would buy the local audit back, but no advisory names it and
+it is the validation layer on every route, so that is a separate decision.
+Full-file verification stays with CI: Python 3.12 on Linux, where the wheels
+exist. Each new pin audits clean on its own:
+
+    cryptography==50.0.1   no known vulnerabilities found
+    starlette==1.3.1       no known vulnerabilities found
+    fastapi==0.138.0       no known vulnerabilities found
+
+### Baseline 17 -> 4, BY NAME
+
+Thirteen ids removed by name — never `--write`, which re-records whatever the
+audit finds now and would silently baseline anything that appeared in the same
+window. What is left: **python-multipart (3, fixes available)** and
+**weasyprint (1, still NO FIX)**.
+
+### Latent, noted not acted on
+
+The sweep surfaced `PydanticDeprecatedSince20` warnings for `.dict()` in
+`routers/graha.py` and `routers/org_profile.py`. Removed in Pydantic V3. Not
+urgent; worth knowing before anyone bumps that far.
+
+### Verification
+
+    encryption / Aadhaar / CORS / auth / health     451 passed,  5 skipped
+    router / service / invoice / payroll / GST /
+      client / task                               3,345 passed, 87 skipped, 2 xfailed
+    pip-audit, per pin                            clean x3
+    baseline                                      17 -> 4

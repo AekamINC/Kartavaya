@@ -1,4 +1,34 @@
-fastapi==0.115.12
+# ⚠ FASTAPI MOVED TO CLEAR STARLETTE, NOT FOR ITSELF. 0.115.12 capped
+# `starlette<0.47.0`, and starlette 0.46.2 carried SEVEN advisories whose
+# highest fix is 1.3.1 — so the cap was the thing holding them in place. No
+# advisory names fastapi.
+#
+# 0.138.0 rather than the latest 0.141.1, deliberately: 0.138.0 is what this
+# project's own desk environment has been running and testing against, so it is
+# evidenced rather than assumed. Both lift the cap identically
+# (`starlette>=0.46.0`, no upper bound), so the extra three minors buy nothing
+# a security bump needs.
+#
+# ⚠ `@app.on_event("startup")` STILL WORKS HERE and is checked, not hoped —
+# it is deprecated and warns, but registers and fires. That matters more than
+# usual: `server.py`'s startup hook is what runs the schema migrations and the
+# stranded scraper-run sweep. If a future bump removes it, those stop silently.
+fastapi==0.138.0
+# ⚠ PINNED ON PURPOSE, AND IT WAS NOT PINNED BEFORE. Starlette arrives through
+# fastapi, so nobody chose 0.46.2 — it was whatever the cap resolved to, and it
+# sat SEVEN advisories deep because an unchosen version is nobody's to notice.
+# 1.3.1 is the exact version that clears all seven (the highest fix among them,
+# PYSEC-2026-249) and the one the desk runs.
+#
+# It is also the version whose CORS behaviour `server.py` depends on:
+# `CORSMiddleware.is_allowed_origin` applies `allow_origin_regex` with
+# `fullmatch`, not `match`. Older starlette used `match`, under which the
+# unanchored pattern in `server.py` would allow
+# `https://kartavaya.com.attacker.example` as a PREFIX. That is asserted by
+# `tests/test_the_origin_allowlist_names_only_our_hosts.py`, which drives the
+# real app rather than reading the pattern — so a downgrade here turns those
+# tests red instead of turning the allowlist into a suggestion.
+starlette==1.3.1
 uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 pydantic==2.11.1
@@ -20,7 +50,20 @@ weasyprint==68.0
 pypdf==6.16.1
 openpyxl==3.1.5
 pywebpush==2.0.0
-cryptography==44.0.3
+# ⚠ 50.0.1 BECAUSE 49 IS NOT ENOUGH. Six advisories stood against 44.0.3 and
+# their fix versions spread across 46.0.5, 46.0.6, 48.0.1, 49.0.0 (x2) and
+# 50.0.0 — so anything below 50 leaves PYSEC-2026-3552 standing, and the desk's
+# own 49.0.0 would have looked like a clean bump while clearing five of six.
+#
+# This is the Fernet key for `services/encryption.py` — Aadhaar numbers and R2
+# secrets at rest. Fernet's API is unchanged across these majors; the tests that
+# matter are `test_encryption.py` and `test_aadhaar_encryption.py`.
+#
+# ⚠ AND IT MAKES THE AUDIT RUNNABLE ON THIS MACHINE AGAIN. 44.0.3 shipped no
+# wheel this Python could use, so `pip-audit` fell back to building from source
+# and fetching a Rust toolchain — which is why the local audit was documented as
+# impossible. 50.0.1 ships `cp311-abi3-win_amd64`, which covers 3.11 onward.
+cryptography==50.0.1
 slowapi==0.1.9
 limits==3.14.0
 # `limits` needs this to talk to a Redis rate-limit store. Without it, a set
