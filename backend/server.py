@@ -514,22 +514,53 @@ DEFAULT_ORIGINS = [
     # attached — that verification step is the whole point of the cutover plan,
     # and it cannot pass if the API refuses the origin it runs on.
     #
-    # HONESTY ABOUT WHAT THIS LIST IS WORTH: `_VERCEL_PREVIEW_RE` below is
+    # HONESTY ABOUT WHAT THIS LIST IS WORTH: `_ALLOWED_ORIGIN_RE` below is
     # passed as `allow_origin_regex` and already matches
     # `https://([a-z0-9-]+\.)?kartavaya\.com`, i.e. EVERY subdomain — so the
     # three kartavaya entries above are documentation, not enforcement. They
     # are worth keeping as documentation: this list is where a reader looks to
     # learn which hosts are expected, and a host that is expected but absent
-    # here reads as an accident. The regex is the thing that actually decides,
-    # and narrowing it is a separate decision with its own blast radius.
+    # here reads as an accident.
+    #
+    # ⚠ THE `*.pages.dev` ENTRY IS THE OPPOSITE — IT IS THE ONLY THING THAT
+    # GRANTS IT. The regex covers `kartavaya.com` and nothing else now, so
+    # deleting this line takes CORS away from the host the Pages build is
+    # verified on before any custom domain is attached.
     "https://kartavaya.pages.dev",
-    "https://kartavya.vercel.app",
-    "https://kartavya-aekam.vercel.app",
-    "https://kartavya-production.akeam.vercel.app",
-    "https://kartavya-kevalvshah03-6145s-projects.vercel.app",
-    "https://kartavya-git-main-kevalvshah03-6145s-projects.vercel.app",
-    "https://kartavya-git-v2-plan-kevalvshah03-6145s-projects.vercel.app",
-    "https://kartavya-git-staging-kevalvshah03-6145s-projects.vercel.app",
+    # ⚠ SEVEN `kartavya-*.vercel.app` ORIGINS SAT HERE UNTIL 2026-09-04, AND
+    # UNLIKE THE `kartavaya` ENTRIES ABOVE THEY WERE ENFORCEMENT — no regex
+    # covered them, so production really did return
+    # `access-control-allow-origin: https://kartavya.vercel.app`.
+    #
+    # They went for a reason that is not the misspelling they all carried.
+    # There was nothing to correct them TO: these are Vercel PROJECT names, not
+    # domains, and an identifier is spelled however it was created —
+    # `kartavaya.vercel.app` and both correctly-spelled siblings 404 (measured).
+    # They went because VERCEL NO LONGER SERVES THIS PRODUCT: the frontend is
+    # Cloudflare Pages, `vercel.json` and `.vercel-trigger` are deleted, and no
+    # workflow deploys there.
+    #
+    # ⚠ AND ONE OF THEM WAS A REAL EXPOSURE WAITING ON A ROUTINE CLEANUP.
+    # `kartavya.vercel.app` and `kartavya-aekam.vercel.app` are UNSCOPED
+    # project names — they carry no team suffix, so whoever holds the Vercel
+    # project holds the origin. On 2026-09-04 that was still this account (one
+    # hobby project, `kartavya`, linked to the OLD `kevalvshah/Kartavya` repo),
+    # and `kartavya.vercel.app` served a bare "Create Next App" scaffold. The
+    # day somebody tidies that project away, the name frees up and ANY Vercel
+    # account may claim it — and it would have inherited a credentialed CORS
+    # grant on this API. That is the `kartavya.com` shape, with a cheaper
+    # trigger than buying a domain, and it would have been triggered by an act
+    # that looks like housekeeping.
+    #
+    # The other five carried `-kevalvshah03-6145s-projects`, which is a team
+    # slug only that team can produce, so those were dead weight rather than
+    # exposure. `kartavya-production.akeam.vercel.app` was neither: `akeam` is
+    # a SECOND typo, a dotted subdomain is not a Vercel URL shape at all, and
+    # it has always returned 000. It never existed.
+    #
+    # ⚠ IF VERCEL PREVIEWS EVER COME BACK, ADD THE TEAM-SCOPED FORM ONLY —
+    # `https://<project>-<something>-<team-slug>.vercel.app`. Never the bare
+    # project name, for the reason above.
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8080",
@@ -552,18 +583,32 @@ ALLOWED_ORIGINS = list(dict.fromkeys(DEFAULT_ORIGINS + _extra))
 # company account always has full visibility, regardless of who created it.
 DEFAULT_OWNER_EMAIL = os.environ.get("DEFAULT_OWNER_EMAIL", "admin@aekaminc.com")
 
-# Regex covers PR preview deployments on both Vercel tenants (kevalvshah03 + akeam).
-_VERCEL_PREVIEW_RE = (
-    r"https://kartavya-[a-z0-9-]+-kevalvshah03-6145s-projects\.vercel\.app"
-    r"|https://kartavya-[a-z0-9-]+\.akeam\.vercel\.app"
-    r"|https://([a-z0-9-]+\.)?kartavaya\.com"
-    r"|https://[Kk]artavaya-git-[a-z0-9-]+-kevalvshah03-6145s-projects\.vercel\.app"
-)
+# Every subdomain of the one domain this company owns. THIS is what actually
+# grants `app.`, `www.`, `pay.` and the rest — the entries on the list above are
+# documentation of what is expected, and this line is the enforcement.
+#
+# Renamed from `_VERCEL_PREVIEW_RE` on 2026-09-04, when the three Vercel
+# alternatives it carried were removed with the seven list entries. The name had
+# stopped describing the value: three of its four alternatives were Vercel
+# preview patterns, but the ONE that mattered in production was the kartavaya
+# one, and a reader scanning for what grants `app.kartavaya.com` would not think
+# to open something called `_VERCEL_PREVIEW_RE`.
+#
+# ⚠ IT IS APPLIED WITH `fullmatch`, NOT `match`, AND THAT IS LOAD-BEARING.
+# Starlette's `CORSMiddleware.is_allowed_origin` calls `fullmatch` (1.3.1), so
+# `https://kartavaya.com.attacker.example` is refused. Older Starlette used
+# `match`, under which that same string matches THIS PATTERN AS A PREFIX and a
+# stranger's host is allowed with credentials. The pattern is unanchored, so
+# nothing here defends against that on its own — the guard is a test that drives
+# the real app (`test_the_origin_allowlist_names_only_our_hosts.py`) rather than
+# reading the pattern. Do not add `.*` to it, and do not anchor it with `^`/`$`
+# and assume that is equivalent: `^a|b$` anchors the alternatives, not the whole.
+_ALLOWED_ORIGIN_RE = r"https://([a-z0-9-]+\.)?kartavaya\.com"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=_VERCEL_PREVIEW_RE,
+    allow_origin_regex=_ALLOWED_ORIGIN_RE,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

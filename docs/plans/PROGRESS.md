@@ -10623,7 +10623,9 @@ read. Removed anyway: both of those are one config change from gone — somebody
 hits a cross-site problem, sets `SameSite=None`, and a domain a stranger can buy
 is holding a credentialed grant on the production API.
 
-Origins 22 → 19. Verified against live production before the change, which
+Origins 21 → 18 (this entry first said 22 → 19; recounted by parsing the
+literal on 2026-09-04, and the commit message carries the wrong number).
+Verified against live production before the change, which
 returned `access-control-allow-origin: https://kartavya.com`.
 
 ### Nothing tested the allowlist
@@ -10692,4 +10694,101 @@ Vercel, on a platform `CLAUDE.md` says is gone.
     live probe  kartavaya.com.attacker.example -> refused (no ACAO)
                 app.kartavaya.com              -> allowed
                 kartavya.com                   -> allowed, pre-change
-    origins     22 -> 19
+    origins     21 -> 18   (corrected; first written as 22 -> 19)
+
+
+## 2026-09-04 (later) · The Vercel origins, and the exposure that was waiting on a tidy-up
+
+Allowlist **18 → 11**. Seven `kartavya-*.vercel.app` entries, plus the three
+Vercel alternatives inside the regex.
+
+### They were enforcement, not documentation
+
+This is the part that separates them from the `kartavya.com` entries removed
+earlier today. No regex covered them, so production really did answer:
+
+    Origin: https://kartavya.vercel.app
+    -> access-control-allow-origin: https://kartavya.vercel.app
+       access-control-allow-credentials: true
+
+### Why they went, which is not the misspelling they all carried
+
+There was nothing to correct them TO. These are Vercel **project names**, not
+domains, and an identifier is spelled however it was created —
+`kartavaya.vercel.app`, `kartavaya-aekam.vercel.app` and
+`kartavaya-kevalvshah03-6145s-projects.vercel.app` all **404** (measured).
+
+They went because Vercel no longer serves this product: the frontend is
+Cloudflare Pages, `vercel.json` and `.vercel-trigger` are deleted, and no
+workflow deploys there.
+
+### ⚠ And one was a real exposure waiting on a routine cleanup
+
+`kartavya.vercel.app` and `kartavya-aekam.vercel.app` are **unscoped** project
+names — no team suffix — so whoever holds the Vercel project holds the origin.
+On 2026-09-04 that was still this account: **one** hobby project, `kartavya`,
+team `kevalvshah03-6145s-projects`, still linked to the **OLD**
+`kevalvshah/Kartavya` GitHub repo. And `kartavya.vercel.app` serves a bare
+**"Create Next App" scaffold** — not this product.
+
+The day somebody tidies that project away, the name frees up and any Vercel
+account may claim it, inheriting a credentialed CORS grant on this API. That is
+the `kartavya.com` shape with a cheaper trigger than buying a domain — and the
+trigger is not an attack, it is housekeeping.
+
+The other five carried `-kevalvshah03-6145s-projects`, a team slug only that
+team can produce: dead weight, not exposure.
+`kartavya-production.akeam.vercel.app` was neither — `akeam` is a **second**
+typo, a dotted subdomain is not a Vercel URL shape, and it has always returned
+000. It never existed.
+
+### `_VERCEL_PREVIEW_RE` -> `_ALLOWED_ORIGIN_RE`
+
+    https://([a-z0-9-]+\.)?kartavaya\.com
+
+Three of its four alternatives were Vercel patterns; the one that mattered in
+production was the kartavaya one. A reader asking "what grants
+`app.kartavaya.com`?" would not open something called `_VERCEL_PREVIEW_RE`.
+
+⚠ **`kartavaya.pages.dev` flipped sides in the same change.** The regex now
+covers `kartavaya.com` only, so that entry went from redundant to the only
+thing granting the host the Pages build is verified on. The comment says so,
+because a future reader trimming "duplicates" would take it.
+
+### ⚠ The env-var half, which a commit cannot reach
+
+`ALLOWED_ORIGINS = DEFAULT_ORIGINS + CORS_ORIGINS`. Read on 2026-09-04:
+
+    production  kartavaya.com, www., app., pages.dev, pay., staging.
+    staging     staging.kartavaya.com,
+                kartavya-git-staging-kevalvshah03-6145s-projects.vercel.app,
+                localhost:3000
+
+Production is clean. **Staging still carries a Vercel origin**, and staging is
+a live front door to the SAME production database. It is team-scoped, so no
+stranger can present it — but no edit to `server.py` removes it. It needs a
+Railway variable write, which redeploys that service. Left for an explicit
+decision.
+
+The ratchet covers it regardless: the vercel test parametrises over
+**`ALLOWED_ORIGINS`, not `DEFAULT_ORIGINS`**, so a deploy carrying that
+variable fails. Proven by running the suite with `CORS_ORIGINS` set to it.
+
+### Tests
+
+47, written against the **suffix** rather than the seven names that went — a
+test listing the names only asserts the past stayed deleted; this one also
+catches the eighth. One case is deliberately spelled correctly
+(`kartavaya-git-main-...`) because the point is not the typo.
+
+    a vercel origin back on the list          2 failed
+    a vercel alternative back in the regex    4 failed
+    regex gains a catch-all                  17 failed
+    CORS_ORIGINS carries staging's origin     1 failed
+    CORS_ORIGINS is innocent (control)          passed
+
+### ⚠ Correction to this morning's entry
+
+"Origins 22 → 19" was eyeballed. Parsing the literal gives **21 → 18 → 11**.
+The count in `ab2cde79`'s commit message is wrong and cannot be edited; the
+docs above are corrected in place.
