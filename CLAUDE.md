@@ -4,11 +4,19 @@ PM SaaS for Indian firms, by Aekam Inc. Vite + React (`frontend/`), FastAPI +
 asyncpg (`backend/`), Supabase Postgres, Railway backend + Vercel frontend,
 Expo React Native app (`mobile/`). ⚠ **WORK HAPPENS ON `main`, AND `main` IS
 PRODUCTION.** Everything from `staging` was moved to production; the `staging`
-branch is **172 commits behind** and nothing is developed on it (measured
-2026-09-04 with `git rev-list --left-right --count origin/staging...origin/main`,
-which also returns 0 on the left — `staging` is a strict ANCESTOR, so catching
-it up is a fast-forward. This line said 30 until then; re-run it, do not cite
-it). **Both branches
+branch is **caught up as of 2026-09-04** (`0b68d4d6`, a merge whose tree hash
+is byte-identical to `main`'s) and nothing is developed on it. ⚠ **THIS NUMBER
+HAS BEEN WRONG TWICE — DO NOT CITE IT, RUN IT.** It said "30 commits behind"
+for weeks while the real figure was 172, and it said 172 for one hour. The
+command is `git rev-list --left-right --count origin/staging...origin/main`;
+the LEFT number matters as much as the right, because a non-zero left means
+catching up is a merge rather than a fast-forward.
+
+⚠ **AND STALENESS THERE IS NOT COSMETIC.** Railway's staging service builds
+`branch: staging`, so a fix on `main` does NOT reach that door. On 2026-09-04
+it went on granting ten CORS origins `main` had removed — including
+`kartavya.com`, a domain this company does not own — for an hour after the
+fix had been verified on production. **Both branches
 deploy against the SAME database — see "The one dangerous fact". Testing
 "against staging" protects nothing; there is no safe host.** ⚠
 `staging.kartavaya.com` does not resolve today, and
@@ -51,7 +59,7 @@ The staging label buys exactly one thing: `OUTBOUND_MODE=dry`, which suppresses
 mail, push and social — **not data** — and it does not skip the business write,
 it changes the value written (`status='suppressed'`) into production tables.
 Two differences make staging *worse* than production, not safer: it runs a
-backend **172 commits** stale, and it serves `/docs` + `/openapi.json`
+backend that is only as fresh as the last catch-up merge, and it serves `/docs` + `/openapi.json`
 unauthenticated where production 404s both.
 
 Every migration and every write-path probe touches production data. **There is

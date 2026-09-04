@@ -10872,3 +10872,81 @@ merge. Corrected in `CLAUDE.md` (twice) and `STATUS.md`.
 
     health: status ok, db connected, schema public,
             environment staging, outbound_mode dry
+
+
+## 2026-09-04 (last) · `staging` caught up, and the number that was wrong three times
+
+`0b68d4d6` — 173 commits onto the door that had drifted.
+
+### Proven by tree hash, not by "no conflicts"
+
+    merged tree   ebcf7dd2a23d599b3cd435104883edf7147e8bde
+    origin/main   ebcf7dd2a23d599b3cd435104883edf7147e8bde
+
+The same tree object. "The merge reported no conflicts" would not have been
+evidence — a clean merge can still produce a tree nobody intended. It merged
+cleanly because the CORS region had been **spliced** from `main` rather than
+hand-edited an hour earlier, so both sides already agreed there. That shaping
+paid for itself the same afternoon.
+
+### The risk report ran first, because this service writes to production
+
+  · **Startup schema migrations: NO-OP.** `_run_startup_migrations` returns
+    early when `public.notifications` exists. Queried live: it does, and
+    `public` holds 308 tables. Everything past that guard is
+    `CREATE ... IF NOT EXISTS` anyway.
+  · **The only boot write** is the stranded scraper-run sweep, refund-once at
+    the database. Production's own workers run it on every deploy.
+  · ⚠ **The staging crons are NOT rebuilt by a git push** — they are
+    `curlimages/curl` images, not repo builds — and they are scheduled
+    `0 0 1 1 *`, once a year. This is the one that needed checking rather than
+    assuming: staging's `cron-nightly` calls the **retention and
+    pahchan-retention** endpoints, which delete, against the shared production
+    database. `cron-daily-prod` and `retention-cron` have no staging
+    configuration at all.
+  · **`REDIS_URL` is absent on staging and optional by design** — `limiter.py`
+    falls back to `memory://` rather than refusing to boot.
+
+Post-deploy health confirms each of those:
+
+    rate_limit_store  memory
+    billing_drift     {platform_line: 0, credits: 0}
+    outbound_mode     dry          (preserved)
+    schema            public
+
+### ⚠ And the `memory` limiter is not a weakening — checked, not assumed
+
+The in-process store multiplies every limit by the worker count, which on a
+door into the production database sounded like a finding. It is not, today:
+
+    production  WEB_CONCURRENCY=1, numReplicas 1
+    staging     WEB_CONCURRENCY=1, numReplicas 1
+
+So login's `5/minute` means five on both. It becomes a real difference the
+moment staging's worker count is raised, and nothing would say so.
+
+### The mechanism, and what it cost
+
+A force-push was the right tool — `staging`'s only unique commit was
+superseded, and overwriting the ref would have left it a strict ancestor. The
+permission classifier refused it, correctly. Verified it had **not** partially
+executed before doing anything else: staging's health payload still lacked
+`rate_limit_store` and `billing_drift`, which only `main`'s code returns, so
+that service was demonstrably still on the old build.
+
+Done as a merge instead. ⚠ **The cost is real and worth writing down**:
+`staging` now carries a merge commit `main` does not, so it is no longer a
+strict ancestor and the next catch-up is another merge rather than a
+fast-forward.
+
+### ⚠ The staleness number has now been wrong three times
+
+    said 30    for weeks
+    was  172   measured 2026-09-04
+    is   0     one hour later
+
+`CLAUDE.md` no longer carries a number there. It carries the command, and the
+note that the LEFT figure matters as much as the right — a non-zero left means
+catching up is a merge, not a fast-forward:
+
+    git rev-list --left-right --count origin/staging...origin/main
