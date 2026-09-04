@@ -1639,17 +1639,30 @@ def send_report_email(
             att.failed("no SES client (AWS_ACCESS_KEY_ID unset)",
                        provider="none")
             return
-        # In the sending thread, once, and used for BOTH the header and the SES
-        # envelope below. They must be the same string: SES rejects a raw
-        # message whose `Source` does not match the `From:` header it carries.
-        from_email = from_plan.resolve()
-        # Record WHICH address, now that it is known. `begin()` ran on the
-        # caller's thread before this resolved, which is why outbound_log
-        # carried only `mode` and `ref` and could never answer "what did this
-        # go out as?" — the one question the senders feature exists to control.
-        att.sender(from_email)
-
         try:
+            # ⚠ INSIDE THE TRY, AND THESE TWO LINES USED TO SIT ABOVE IT.
+            # This runs on a thread nobody joins, so anything raised out here
+            # kills the send with no log line, no `outbound_log` row and no
+            # exception anywhere a person will look — the failure-into-silence
+            # shape this codebase has shipped five times. It was not
+            # theoretical: `att.sender()` was added with the senders feature and
+            # `test_pdf_attachments_are_line_wrapped` sat red for weeks with
+            # "the sending thread never reached SES" and nothing else to say,
+            # because the AttributeError died out here where the handler below
+            # could not see it.
+            #
+            # Resolved in the sending thread, once, and used for BOTH the header
+            # and the SES envelope below. They must be the same string: SES
+            # rejects a raw message whose `Source` does not match the `From:`
+            # header it carries.
+            from_email = from_plan.resolve()
+            # Record WHICH address, now that it is known. `begin()` ran on the
+            # caller's thread before this resolved, which is why outbound_log
+            # carried only `mode` and `ref` and could never answer "what did
+            # this go out as?" — the one question the senders feature exists to
+            # control.
+            att.sender(from_email)
+
             msg = MIMEMultipart("mixed")
             msg["Subject"] = _safe_subject(f"{freq_cap} Report: {team_name} ({period_from} to {period_to})")
             msg["From"]    = from_email

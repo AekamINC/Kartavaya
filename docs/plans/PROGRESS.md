@@ -10362,3 +10362,121 @@ so a future sweep does not "fix" them.
     backend  6,431 passed / 185 skipped  (the skill, statute, billing and clock
                                           suites together)
     backend  27 new tests, 6 mutations red
+
+
+## 2026-09-04 · The seven standing red tests — six stale, one missing concept, two hiding something
+
+The clock sweep surfaced eight failures in the wider suite and seven of them
+pre-dated it. Confirmed rather than assumed: a detached worktree at HEAD
+(`56089b27`) ran the same eight and reproduced seven.
+
+**The production code was right in every case.** Six were tests that had stopped
+describing the code, and one was a rule with no concept for a legitimate
+exception. But two of the six were hiding something worth having.
+
+### ⚠ The report sender could die in silence, and did
+
+`test_report_email_wraps_pdf_AND_excel` failed with "the sending thread never
+reached SES" — a message that names the consequence and says nothing about the
+cause. The cause:
+
+    def _send():
+        ...
+        from_email = from_plan.resolve()      # <- outside the try
+        att.sender(from_email)                # <- outside the try
+        try:
+            ...build MIME, call SES...
+        except Exception as exc:
+            logger.error(...); att.failed(exc, provider="ses")
+
+`att.sender()` arrived with the senders feature. This file's `_Attempt` stub
+predates it, so the AttributeError was raised **on a thread nobody joins,
+outside the handler written to catch it** — no log line, no `outbound_log` row,
+no exception anywhere a person will look. The send simply did not happen.
+
+That is the failure-into-silence shape this codebase has now shipped six times.
+Both lines moved inside the try.
+
+⚠ **AND THE OBVIOUS FIX WOULD HAVE LEFT THE HOLE OPEN.** Adding `sender()` to
+the stub makes the test pass whichever side of the `try` those lines sit on. So
+there is a new test that asserts the PROPERTY instead — make `from_plan.resolve()`
+raise, and the failure must come back through `att.failed` — which is red if the
+lines move back out.
+
+### ⚠ An anti-vacuity guard did exactly what it was for
+
+`test_the_project_report_never_dunns_a_draft` failed on its own guard: "the
+project report issued no ganit_invoices read — the capture never reached the
+fee_invoiced branch, so this test certifies nothing."
+
+The route had been FIXED. It used to resolve a project from `public.boards` —
+zero rows, no INSERT anywhere in the backend, cannot gain one — and its team
+from `organisations.team_id`, one team per org, which 404'd for 8 of Unicode's 9
+projects. It now looks the project up in `public.teams`, where it lives. The
+fixture still answered the abandoned model, so the route 404'd on the first
+lookup and never reached the invoice read.
+
+Without that guard this test would have been **green over nothing** — asserting
+a draft exclusion in a query it never saw.
+
+### The three public-web-form failures were a 500 on a public route
+
+`KeyError: 'settings'` — in the test's own fixture, which had not followed the
+route's SELECT when `_presentation` was added. Fixed by giving the fixture a
+settings blob **worth leaking**: it carries `job_opening_id`, the uuid
+`land_hr_application` refuses to read from a payload and the exact value
+`_presentation` exists to keep out of the response. A blob with nothing secret
+in it would let a leak assertion pass over an empty dict.
+
+New assertion checks the WHOLE response body rather than named keys, because a
+`**settings` spread would leave every other assertion in that class green while
+putting the uuid on the wire.
+
+### The gate ratchet did its job for the third time by name
+
+Five client-obligation routes joined the wider module gate with the filing
+calendar's screen and were not written down. They belong there by the same test
+the other fourteen pass — **the subject is a client** — and a Ganit-only org owns
+its customers' compliance facts as much as a Graha org does. Now listed, with
+the reasoning, which is the entire point of the check being a list of names.
+
+### One rule needed a concept it did not have
+
+`scripts/check_backup_coverage.py` names `public` twice and is not a probe. It is
+an offline disaster-recovery audit that COMPARES a named backup schema against
+`public` — the schema is one of two operands, not a place to find a table.
+`current_schemas(false)` there would compare the backup against whatever the
+connection's search_path happens to be, which answers a question nobody asked.
+
+`KNOWN_OUTSTANDING` is the wrong home: it is a debt ceiling, and its own comment
+says not to add to it. So the ratchet gained `NOT_A_TABLE_LOOKUP` — one entry,
+structurally separate, with the count recorded and a staleness test that deletes
+the entry when the line stops matching. An exemption grants permanent permission
+rather than a ceiling to pay down, so a stale one is a hole that outlives the
+line it was written for.
+
+### ⚠ Two of six mutations escaped, both because MY mutation was invalid — and the first exposed a real hole
+
+    the public web form read goes back to SELECT *          RED
+    the raw settings blob is echoed                         RED
+    an unrelated route moves onto the wider gate            GREEN -> see below
+    the fee measure counts drafts again                     RED
+    a runtime probe hardcodes a schema                      RED
+    the sender's address record leaves the try              GREEN -> see below
+
+The gate mutation added `_gw=Depends(_crm_entity_gate)`. The ratchet read
+`parameters.get("_g")` — one name — so the same dependency under any other name
+was gated at runtime and **invisible to the check**. A ratchet that relies on a
+naming convention to see a security dependency has a rename-shaped hole in it.
+It reads every parameter now, and the corrected mutation is red.
+
+The sender mutation ADDED the lines above the try while leaving them inside,
+which is not the regression. Rewritten to remove them from inside, it is red —
+on both the original test and the new property test.
+
+### Verification
+
+    backend  80 passed / 4 skipped   the seven repaired suites
+    backend  2,460 passed / 193 skipped   graha, documents, email, outbound,
+                                          senders, schema probes, contacts
+    6 mutations, all red after correcting the two invalid ones

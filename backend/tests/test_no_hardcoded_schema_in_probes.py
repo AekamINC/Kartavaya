@@ -125,6 +125,32 @@ KNOWN_OUTSTANDING = {
     ("services/prachar_compliance.py", "to_regclass_bind_with_literal"): 0,
 }
 
+# -- Not a table lookup at all ------------------------------------------------
+#
+# ⚠ THIS IS NOT A SECOND BASELINE AND MUST NEVER BECOME ONE. `KNOWN_OUTSTANDING`
+# above is a debt ceiling for real violations; this is a list of lines that
+# match the patterns and are not the bug those patterns describe.
+#
+# The rule is about where a TABLE LIVES: a probe that names a schema answers
+# "does `staging.user_totp` exist" and silently answers NULL once that schema is
+# gone. An entry belongs here only when the schema NAME IS THE SUBJECT of the
+# query rather than the location of a table — a query ABOUT schemas, where
+# resolving through `search_path` would not be safer, it would be meaningless.
+#
+# One entry, and adding a second should feel hard. Each carries the count so a
+# file cannot grow a real violation under cover of an exemption, and
+# `test_no_exemption_has_gone_stale` deletes the entry when it stops matching.
+NOT_A_TABLE_LOOKUP = {
+    # An offline disaster-recovery audit: it compares a named backup schema
+    # (bound as $1) against `public` and reports what the backup does not cover.
+    # `public` here is one of the two OPERANDS of the comparison, not a place to
+    # find a table. `current_schemas(false)` would compare the backup against
+    # whatever the connection's search_path happens to be, which answers a
+    # question nobody asked. Nothing in this file runs in a request or gates
+    # anything; it prints a report to an operator.
+    ("scripts/check_backup_coverage.py", "nspname"): 2,
+}
+
 # -- Source analysis ----------------------------------------------------------
 
 
@@ -284,7 +310,7 @@ def test_no_new_hardcoded_schema_in_probes():
 
     offenders = []
     for key, count in sorted(observed.items()):
-        allowed = KNOWN_OUTSTANDING.get(key, 0)
+        allowed = KNOWN_OUTSTANDING.get(key, 0) + NOT_A_TABLE_LOOKUP.get(key, 0)
         if count > allowed:
             relpath, rule = key
             lines = [str(v) for v in VIOLATIONS if (v.relpath, v.rule) == key]
@@ -335,6 +361,39 @@ def test_the_baseline_has_not_silently_been_fixed():
         + "\n\nLower or delete the entry in KNOWN_OUTSTANDING in "
           "backend/tests/test_no_hardcoded_schema_in_probes.py. The ratchet "
           "only ratchets if it tightens."
+    )
+
+
+def test_no_exemption_has_gone_stale():
+    """An exemption that no longer matches must be deleted, not left to rot.
+
+    Same shape as the baseline check above and for a sharper reason: an entry in
+    `NOT_A_TABLE_LOOKUP` grants permanent permission rather than a ceiling to
+    pay down, so a stale one is a hole that outlives the line it was written
+    for. If the script is rewritten or deleted, this goes red and the entry
+    comes out with it.
+    """
+    observed = Counter((v.relpath, v.rule) for v in VIOLATIONS)
+
+    stale = []
+    for (relpath, rule), allowed in sorted(NOT_A_TABLE_LOOKUP.items()):
+        actual = observed.get((relpath, rule), 0)
+        if actual != allowed:
+            stale.append(
+                "  {} [{}]: exemption covers {}, found {}".format(
+                    relpath, rule, allowed, actual))
+
+    assert not stale, (
+        "These exemptions no longer describe the file they name:\n\n"
+        + "\n".join(stale)
+        + "\n\nFEWER hits than the exemption means the line was rewritten or "
+          "removed — delete the entry. MORE means the file grew a hit the "
+          "exemption was never written for, and the new one has to be read on "
+          "its own merits before the number is raised.\n\n"
+          "NOT_A_TABLE_LOOKUP is not a baseline. It names lines where the "
+          "schema is the SUBJECT of the query rather than the location of a "
+          "table. If that is not obviously true of the new hit, it is a "
+          "violation."
     )
 
 

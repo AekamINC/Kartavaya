@@ -51,9 +51,12 @@ prove the existing code works — the sends above do that.
 """
 import re
 import threading
+import time
 from pathlib import Path
 
 import pytest
+
+import outbound as outbound_mod
 
 # RFC 5321 §4.5.3.1.6: 1000 octets including CRLF.
 SMTP_LINE_LIMIT = 998
@@ -92,15 +95,33 @@ class _Attempt:
 
     `blocked = False` deliberately: the point of this test is to reach the MIME
     document, and every sender returns early when the dry-run gate is up.
+
+    ⚠ `sender()` IS NOT OPTIONAL AND ITS ABSENCE COST THIS FILE WEEKS. It was
+    added to the real handle with the senders feature, and `send_report_email`
+    called it OUTSIDE its own try block, on a thread nobody joins. So the
+    AttributeError from this stub killed the send silently — no log, no
+    `outbound_log` row — and the only symptom was `test_report_email_wraps_pdf_AND_excel`
+    failing with "the sending thread never reached SES", which names the
+    consequence and nothing about the cause. The call has been moved inside the
+    try (email_service.py), so the same omission now announces itself.
+
+    The address is RECORDED rather than dropped, so a test can assert what the
+    message went out as — the one question the senders feature exists to answer.
     """
 
     blocked = False
+
+    def __init__(self):
+        self.sender_address = None
 
     def sent(self, *a, **k):
         pass
 
     def failed(self, *a, **k):
         pass
+
+    def sender(self, address, *a, **k):
+        self.sender_address = address
 
 
 class _Plan:
@@ -230,6 +251,60 @@ def test_report_email_wraps_pdf_AND_excel(ses):
 
 
 # ── The contract, for the sender written next month ────────────────────────────
+
+def test_a_failure_in_the_sending_thread_is_recorded_and_not_swallowed(monkeypatch):
+    """⚠ THE SEND RUNS ON A THREAD NOBODY JOINS, SO ANYTHING RAISED OUTSIDE ITS
+    `try` DISAPPEARS COMPLETELY — no log line, no `outbound_log` row, no
+    exception where a person will look. The send simply does not happen.
+
+    That was live. `att.sender()` and `from_plan.resolve()` sat above the `try`,
+    so when the stub in this file lacked `sender()` the AttributeError killed the
+    thread in silence and the only symptom was the test above timing out with
+    "the sending thread never reached SES" — which names the consequence and
+    says nothing about the cause. Both lines moved inside the try.
+
+    Adding `sender()` to the stub fixed the symptom and would have left the hole
+    open, because with the stub complete the test passes whichever side of the
+    `try` those lines sit on. So this asserts the PROPERTY instead: make the
+    resolve raise, and the failure must come back through `att.failed`.
+    """
+    import email_service
+    from services import email_senders
+
+    class _Exploding:
+        def resolve(self):
+            raise RuntimeError("sender policy lookup exploded")
+
+    class _RecordingAttempt(_Attempt):
+        def __init__(self):
+            super().__init__()
+            self.failure = None
+
+        def failed(self, exc, *a, **k):
+            self.failure = exc
+
+    att = _RecordingAttempt()
+    monkeypatch.setattr(email_service, "ses_client", CaptureSES())
+    monkeypatch.setattr(outbound_mod, "begin", lambda *a, **k: att)
+    monkeypatch.setattr(email_senders, "plan", lambda *a, **k: _Exploding())
+
+    email_service.send_report_email(
+        to_email="nobody@kartavaya.invalid", team_name="Probe Team",
+        frequency="weekly", period_from="2026-08-24", period_to="2026-08-30",
+        pdf_bytes=PDF_BYTES, excel_bytes=PDF_BYTES,
+    )
+
+    deadline = time.time() + 15
+    while att.failure is None and time.time() < deadline:
+        time.sleep(0.05)
+
+    assert att.failure is not None, (
+        "the sending thread died without recording anything — the resolve "
+        "raised above the try again, and a failed report is now indistinguishable "
+        "from one that was never attempted"
+    )
+    assert "exploded" in str(att.failure)
+
 
 def test_every_set_payload_in_the_backend_is_followed_by_encode_base64():
     """The half that can see code this file does not import.

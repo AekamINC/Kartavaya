@@ -230,22 +230,53 @@ def test_exactly_the_named_routes_carry_the_wider_gate():
     # Widening this set has to be a decision somebody writes down — which is
     # exactly what going red forced here, and why the check is a list of names
     # rather than a count.
+    # ⚠ NINETEEN NOW. The five client-obligation routes joined with the filing
+    # calendar's screen (2026-09-02) and this ratchet went red on them —
+    # correctly, and it is the third time it has done its job by name.
+    #
+    # They belong on the wider gate by the same test the other fourteen pass:
+    # THE SUBJECT IS A CLIENT. A statutory obligation is a fact ABOUT a client —
+    # "this customer is registered for GST, files monthly" — and a Ganit-only
+    # org owns that as much as a Graha org does. A firm that bought Finance and
+    # not CRM still has customers and still files their returns; refusing them
+    # the register would mean selling a filing calendar to somebody who cannot
+    # tell it what to file.
+    #
+    # `list_obligation_keys` carries no client in its path and is the one that
+    # needed a second look. It serves the sixteen legal keys and their
+    # `can_be_dated` flag — a codelist backed by a database CHECK, identical for
+    # every org, revealing nothing about any of them. It is on the wider gate so
+    # the picker that fills the form can load beside the form; a narrower gate
+    # there would give a Ganit-only org a register it can open and not populate.
     widened = {
         "list_clients", "create_client", "get_client", "update_client",
         "delete_client", "list_contacts", "create_contact", "get_contact",
         "update_contact", "delete_contact",
         "set_client_coordinate", "clear_client_coordinate",
         "set_contact_coordinate", "clear_contact_coordinate",
+        "list_obligation_keys", "list_client_obligations",
+        "create_client_obligation", "update_client_obligation",
+        "delete_client_obligation",
     }
+    # ⚠ EVERY PARAMETER, NOT THE ONE CALLED `_g`. This looked only at a
+    # parameter of that exact name, so a route carrying the same dependency
+    # under any other name — `_gate`, `_gw`, `guard` — was gated at runtime and
+    # invisible here. The house convention is uniform today and a ratchet that
+    # relies on a naming convention to see a security dependency is a ratchet
+    # with a rename-shaped hole in it. Found by mutating this test, not by
+    # reading it: a probe route added as `_gw=Depends(_crm_entity_gate)` left
+    # every assertion green.
     on_wide, on_narrow = set(), set()
     for name, fn in vars(g).items():
         if not inspect.isfunction(fn):
             continue
-        param = inspect.signature(fn).parameters.get("_g")
-        dep = getattr(getattr(param, "default", None), "dependency", None)
-        if dep is g._crm_entity_gate:
+        deps = {
+            getattr(getattr(p, "default", None), "dependency", None)
+            for p in inspect.signature(fn).parameters.values()
+        }
+        if g._crm_entity_gate in deps:
             on_wide.add(name)
-        elif dep is g._gate:
+        elif g._gate in deps:
             on_narrow.add(name)
 
     assert on_wide == widened, (

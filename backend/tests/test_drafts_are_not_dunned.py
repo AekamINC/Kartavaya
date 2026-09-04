@@ -127,17 +127,28 @@ class CapturePool:
                     "email": "ap@example.invalid", "gstin": None,
                     "designation": "Accounts Payable",
                     "billing_address": "{}"}
-        if "public.boards" in sql:
-            return {"board_id": "board-x", "name": "Statutory Audit FY26"}
+        # ⚠ `public.teams`, NOT `public.boards`. The project report used to
+        # resolve a board from `public.boards` and its team from
+        # `organisations.team_id`; both were an abandoned model — `boards` holds
+        # zero rows and can never gain one, and one-team-per-org 404'd for 8 of
+        # Unicode's 9 projects. The route was fixed to look the project up in
+        # `public.teams`, where it lives, and this fixture was not.
+        #
+        # The cost was exactly what the anti-vacuity guard in
+        # `test_the_project_report_never_dunns_a_draft` says: the route 404'd on
+        # this lookup, issued no `ganit_invoices` read at all, and the draft
+        # assertion below certified a query it never saw. It went red rather
+        # than quietly green ONLY because that guard exists.
+        if "public.teams" in sql:
+            return {"team_id": "board-x", "name": "Statutory Audit FY26"}
         return None
 
     async def fetchval(self, sql, *args, **kwargs):
         self._record(sql, args)
-        # The project report 404s on a falsy team id and never reaches its
-        # invoice read, so this one lookup gets a truthy answer. Everything
-        # else stays 0 — the emptier the answers, the fewer assumptions.
-        if "SELECT team_id FROM public.organisations" in sql:
-            return "team_001"
+        # Everything stays 0 — the emptier the answers, the fewer assumptions
+        # the capture makes. The team lookup that used to need a truthy answer
+        # here (`SELECT team_id FROM public.organisations`) is gone from the
+        # route; see `fetchrow` above.
         return 0
 
     async def execute(self, sql, *args, **kwargs):

@@ -47,6 +47,26 @@ SLUG = "contact-us"
 FORM_ROW = {
     "name": "Talk to us",
     "fields": [{"key": "name"}, {"key": "email"}],
+    # ⚠ `settings` JOINED THE SELECT WITH THE TEMPLATES CHANGE AND THIS FIXTURE
+    # DID NOT FOLLOW, so the route raised `KeyError: 'settings'` — a 500 on an
+    # unauthenticated public route — in three tests here for as long as it took
+    # to notice.
+    #
+    # It carries `job_opening_id` on purpose. That is the uuid
+    # `land_hr_application` refuses to read from a payload precisely because an
+    # id in public reach is a parameter and not a secret, and it is the exact
+    # value `_presentation` exists to keep out of the response. A fixture whose
+    # settings blob held nothing worth hiding would let the leak assertion below
+    # pass over an empty dict.
+    "settings": {
+        "job_opening_id": "11111111-2222-3333-4444-555555555555",
+        "notify_emails": ["partner@thefirm.invalid"],
+        "presentation": {
+            "intro": "We usually reply within a day.",
+            "labels": {"name": "Your name", "email": "Work email"},
+            "hide": ["company"],
+        },
+    },
 }
 
 
@@ -87,7 +107,7 @@ class TestTheReadAnswersLittleEnough:
         assert body["fields"] == [{"key": "name"}, {"key": "email"}]
 
     @pytest.mark.anyio
-    async def test_it_reads_only_two_columns_from_the_table(self, api_client, mock_pool):
+    async def test_it_reads_only_the_three_columns_it_needs(self, api_client, mock_pool):
         """⚠ THE ASSERTION THIS FILE MOST EXISTS FOR.
 
         `submit_web_form` below does `SELECT *`, which is right for a handler
@@ -96,12 +116,17 @@ class TestTheReadAnswersLittleEnough:
         A later `SELECT *` here would hand out `org_id`, `submission_count`,
         `auto_assign_to` and `created_by` — everything needed to profile the
         organisation behind a slug — and every existing assertion above would
-        still pass, because the two keys it checks would still be there.
+        still pass, because the keys it checks would still be there.
+
+        THREE, NOT TWO: `settings` joined the SELECT with the templates change.
+        Widening what a public read selects is exactly the decision this test
+        exists to make somebody write down, so the count is named rather than
+        left as "starts with SELECT name".
         """
         mock_pool.fetchrow.return_value = dict(FORM_ROW)
         await api_client.get(f"/api/v1/graha/f/{SLUG}")
         sql = " ".join(str(c.args[0]) for c in mock_pool.fetchrow.await_args_list)
-        assert "SELECT name, fields" in sql, sql
+        assert "SELECT name, fields, settings" in sql, sql
         assert "SELECT *" not in sql, (
             "the public read went back to SELECT * — an unauthenticated caller "
             "now learns org_id, submission_count and auto_assign_to from a slug"
@@ -110,6 +135,43 @@ class TestTheReadAnswersLittleEnough:
             "the public read serves retired forms — a slug a firm took down "
             "keeps collecting leads nobody is watching"
         )
+
+    @pytest.mark.anyio
+    async def test_the_settings_blob_is_picked_from_and_never_echoed(
+        self, api_client, mock_pool,
+    ):
+        """⚠ SELECTING `settings` IS SAFE ONLY BECAUSE OF `_presentation`.
+
+        The column is a free-form jsonb blob the firm controls, and it already
+        holds `job_opening_id`. Returning it — or spreading it into the response
+        — hands a stranger the id `land_hr_application` refuses to take from a
+        payload, plus whatever a firm puts there next year.
+
+        So this asserts on the WHOLE response body, not on named keys: a
+        `**settings` spread would leave every assertion in this class green
+        while putting the uuid on the wire.
+        """
+        mock_pool.fetchrow.return_value = dict(FORM_ROW)
+        r = await api_client.get(f"/api/v1/graha/f/{SLUG}")
+        assert r.status_code == 200, r.text
+        body = r.json()
+
+        assert set(body) == {"name", "fields", "presentation"}, (
+            f"the public read grew a key: {sorted(body)}"
+        )
+        assert "job_opening_id" not in r.text, (
+            "the settings blob reached the wire — a stranger holding a slug now "
+            "has the job opening uuid the submit handler refuses to be told"
+        )
+        assert "notify_emails" not in r.text and "partner@thefirm.invalid" not in r.text
+
+        # And the three keys it IS allowed to publish came through, so this is
+        # not passing by returning nothing at all.
+        assert body["presentation"]["intro"] == "We usually reply within a day."
+        assert body["presentation"]["labels"] == {
+            "name": "Your name", "email": "Work email",
+        }
+        assert body["presentation"]["hide"] == ["company"]
 
     @pytest.mark.anyio
     async def test_a_retired_form_is_the_same_answer_as_a_wrong_slug(
