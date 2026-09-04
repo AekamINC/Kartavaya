@@ -1458,7 +1458,7 @@ Manav read **26 employees**, matching the database exactly.
 `price_monthly`-absent assertion failed because the string legitimately survives
 on `AdminBillingPage.jsx:555`, the platform-staff surface where a price SHOULD
 render — `PlanComparison.jsx` is deleted and `.opl` is gone, which is what
-04d30ba2 actually promised. And a `state` assertion failed on the Holidays
+04d30ba2 actually promised. And a `\bstate\b` assertion failed on the Holidays
 list because the product says "Applies to", not "State". **The earlier ledger
 claim that `price_monthly` "no longer appears anywhere in the deployed JS bundle
 at all" is corrected here: it does appear, correctly, via AdminBillingPage.**
