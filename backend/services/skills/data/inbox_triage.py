@@ -147,7 +147,7 @@ from datetime import date, timedelta
 
 from services.statute import obligation
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, days_between, return_period, utc_now
+from services.skills.timeutil import as_date, days_between, return_period, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -398,7 +398,7 @@ async def check_inbound_triage(
     nothing — `route_to` is a suggestion on the output and there is no UPDATE in
     this file.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=max(1, int(days_back)))
     cap = max(1, int(limit))
 
@@ -625,7 +625,7 @@ async def brief_reply_grounding(
     identification), open invoices, recent payments and recent orders. It does
     not draft anything and it does not send anything.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     # Which conversation. `$2::uuid IS NULL` is the default branch, so the
@@ -947,7 +947,7 @@ async def brief_mismatch_schedule(
     calling itself a reconciliation while comparing a number to itself is caught
     by the first CA who runs it.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
     period = (period or return_period()).strip()
     try:

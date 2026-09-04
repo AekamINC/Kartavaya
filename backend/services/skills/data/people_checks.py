@@ -58,7 +58,7 @@ from datetime import date, timedelta
 from services.on_the_rolls import still_on_the_rolls
 from services.statute import obligation
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, month_days, utc_now
+from services.skills.timeutil import as_date, month_days, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -265,7 +265,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
 
     Returns {as_at, findings, by_department, counts, coverage, caveats}.
     """
-    as_at = utc_now().date()
+    as_at = today_ist(utc_now())
 
     # The higher-rate section is resolved as at TODAY, not as at a payslip month,
     # because this check is about a deduction somebody is about to make on the
@@ -766,7 +766,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
 
     Returns {month, window, findings, by_department, counts, punch_data, caveats}.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     month = month or today.strftime("%Y-%m")
     try:
         month_start, month_end = _month_bounds(month)
@@ -1173,7 +1173,7 @@ async def brief_unpaid_reimbursements(pool, org_id: str, limit: int = 200) -> di
 
     Returns {as_at, totals, by_age, by_employee, by_department, oldest, caveats}.
     """
-    as_at = utc_now().date()
+    as_at = today_ist(utc_now())
 
     rows = await pool.fetch(
         """

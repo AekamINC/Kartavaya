@@ -143,7 +143,7 @@ from datetime import date, timedelta
 
 from services.skills.data.chase_ladder import LADDER, _rung_for
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, days_between, hours_between, utc_now
+from services.skills.timeutil import as_date, days_between, hours_between, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -261,7 +261,7 @@ async def check_whatsapp_chase_leg(pool, org_id: str, limit: int = 200) -> dict:
     Reads. Never writes, never sends. Nothing on the WhatsApp path could send
     even if it wanted to, which is the finding.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     # ── blocker 1: can Niyam deliver a WhatsApp message at all ──────────────
@@ -752,7 +752,7 @@ async def brief_ticket_sla_feasibility(pool, org_id: str) -> dict:
     ticket table does exist. Inventing a ticket model here to fill the card
     would be the exact failure the folio was guarding against.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
 
     has_tickets = await _table_exists(pool, "graha_tickets")
     has_messages = await _table_exists(pool, "graha_ticket_messages")

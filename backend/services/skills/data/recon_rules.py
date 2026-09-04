@@ -145,9 +145,7 @@ from services.skills.data.bank_matching import (
     _norm,
 )
 from services.skills.reachable import reachable
-from services.skills.timeutil import (
-    as_date, days_between, month_window, return_period, utc_now,
-)
+from services.skills.timeutil import (as_date, days_between, month_window, return_period, today_ist, utc_now)
 
 log = logging.getLogger(__name__)
 
@@ -456,7 +454,7 @@ async def check_upi_reference_threading(
 
     Never writes.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=max(1, int(days_back)))
     cap = max(1, int(limit))
 
@@ -734,7 +732,7 @@ async def check_payment_proof_claims(
 
     Never writes.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=max(1, int(days_back)))
     cap = max(1, int(limit))
 
@@ -1022,7 +1020,7 @@ async def check_narration_rule_candidates(
 
     Never writes.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=max(1, int(days_back)))
     support_floor = max(1, int(min_support))
     cap = max(1, int(limit))
@@ -1293,7 +1291,7 @@ async def brief_working_paper_figures(
 
     Never writes, and drafts no prose. It returns the table and the rules.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     period = period or return_period()
     # RAISES, WHERE THIS FILE'S OWN COPY RETURNED None. That copy was the only
     # one of ten with that contract, and a shared helper that sometimes returns

@@ -115,7 +115,7 @@ import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 
-from services.skills.timeutil import as_date, as_utc, days_between, hours_between, utc_now
+from services.skills.timeutil import as_date, as_utc, days_between, hours_between, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -214,16 +214,21 @@ def _as_of_date(value=None) -> date:
     """The calendar date a report is 'as at'. Defaults to today, and must —
     a handler with a required date cannot be scheduled."""
     if value is None:
-        return utc_now().date()
+        return today_ist(utc_now())
     parsed = as_date(value)
     if parsed:
         return parsed
     if isinstance(value, str):
         try:
-            return as_utc(datetime.fromisoformat(value.strip().replace("Z", "+00:00"))).date()
+            # `as_date`, not `.date()` — the calendar date of an instant is its
+            # IST date, and this branch was the last place in the handlers still
+            # taking the UTC one. A caller passing an ISO timestamp would have
+            # got a report dated a day earlier than the same caller passing the
+            # date alone, for every instant between 00:00 and 05:30 IST.
+            return as_date(datetime.fromisoformat(value.strip().replace("Z", "+00:00")))
         except ValueError:
             pass
-    return utc_now().date()
+    return today_ist(utc_now())
 
 
 def _jsonb(value):

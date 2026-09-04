@@ -62,14 +62,30 @@ def test_a_null_due_is_zero_not_an_exception():
 
 def test_days_are_calendar_days_not_elapsed_hours():
     """"3 days overdue" is a statement about days. Carrying hours into it makes
-    the answer flip at midnight for a row that has not changed."""
-    just_before_midnight = datetime(2026, 8, 1, 23, 59, tzinfo=timezone.utc)
+    the answer flip at midnight for a row that has not changed.
+
+    ⚠ THE MIDNIGHT IS THE INDIAN ONE, AND THIS FIXTURE USED TO SAY 23:59 UTC.
+    That is 05:29 IST — inside the window where the two clocks disagree, and on
+    the same Indian day as `NOW`, so the answer was 0 rather than 1 once
+    `as_date` began reading instants on the Indian calendar (2026-09-04). The
+    test was demonstrating a midnight crossing and had picked a midnight nobody
+    in this product experiences. 18:29 UTC is 23:59 IST, which is the one it
+    meant.
+    """
+    just_before_midnight = datetime(2026, 8, 1, 18, 29, tzinfo=timezone.utc)
     assert days_between(NOW, just_before_midnight) == 1
 
 
 def test_a_timezone_far_from_utc_still_lands_on_the_right_day():
     """IST is +5:30 and the product is Indian. A due time late in the Indian day
-    is still the same UTC calendar day here, and must not read as a day early."""
+    must not read as a day early.
+
+    This passed before 2026-09-04 for the wrong reason — the note here used to
+    say "still the same UTC calendar day", which was true of this particular
+    fixture and true of nothing three and a half hours later. It passes now
+    because both sides are read on the Indian calendar, which is what the
+    sentence above was actually asking for.
+    """
     ist = timezone(timedelta(hours=5, minutes=30))
     assert days_between(NOW, datetime(2026, 8, 1, 23, 0, tzinfo=ist)) == 1
 

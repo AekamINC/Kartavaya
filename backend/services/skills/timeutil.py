@@ -25,6 +25,8 @@ shapes go through `days_between`.
 import re
 from datetime import date, datetime, timedelta, timezone
 
+from services.clock import IST, now_ist, today_ist as _clock_today_ist
+
 
 def utc_now() -> datetime:
     """Now, timezone-aware, always.
@@ -46,10 +48,19 @@ def return_period(now: datetime | None = None) -> str:
 
     `check_payroll_readiness` defaults the other way, to the current month, and
     is also right: payroll is run for the month you are in, and returns are
-    filed for the month you have left. Two defaults, two clocks, on purpose.
+    filed for the month you have left. Two defaults, two clocks, on purpose —
+    and "two clocks" there means two POSITIONS in the calendar, not two
+    timezones. Both read IST.
+
+    ⚠ IST SINCE 2026-09-04; THIS READ UTC BEFORE. It is the sharpest of the
+    three clock fixes made that day, because the answer is STATUTORY. A preparer
+    opening a GST screen at 02:00 IST on 1 September was offered JULY: the UTC
+    clock still said 31 August, so "the month you have left" came out one
+    further back. Two months before the one they were about to file, on a screen
+    that names sections and due dates.
     """
-    now = now or utc_now()
-    year, month = now.year, now.month
+    ist = now_ist(now)
+    year, month = ist.year, ist.month
     return f"{year - 1}-12" if month == 1 else f"{year}-{month - 1:02d}"
 
 
@@ -60,9 +71,14 @@ def coming_week_start(now: datetime | None = None) -> date:
     this looks ahead rather than at the current week. On a Monday it still
     returns next Monday, because by then the week being asked about has already
     started and a gap in it is not a schedule any more, it is a shortage.
+
+    IST, like `today_ist` and for the same reason: which week a rota belongs to
+    is a question about the Indian calendar. On a UTC clock, a Monday between
+    00:00 and 05:30 IST is still Sunday, so this returned the week that had just
+    begun rather than the one being staffed — off by a whole week, not a day.
     """
-    today = (now or utc_now()).date()
-    return today + timedelta(days=7 - today.weekday())
+    day = _clock_today_ist(now)
+    return day + timedelta(days=7 - day.weekday())
 
 
 def as_utc(value: datetime) -> datetime:
@@ -78,14 +94,48 @@ def as_utc(value: datetime) -> datetime:
 def as_date(value) -> date | None:
     """Reduce a date, an aware datetime or a naive datetime to a calendar date.
 
+    ⚠ THE DATE OF AN INSTANT IS ITS **IST** DATE, SINCE 2026-09-04. Everyone
+    reading these handlers is in India, so "the day that row was created" means
+    the day it was in India. This returned the UTC date until then, which is the
+    day BEFORE for everything that happened between 00:00 and 05:30 IST — 23% of
+    every day.
+
+    THIS MOVED IN LOCKSTEP WITH `today()` AND IT HAD TO. Ages are computed as
+    `days_between(today, as_date(row["created_at"]))`; moving one clock and not
+    the other would not have half-fixed the count, it would have made it wrong in
+    a NEW way — two calendars subtracted from each other. Fourteen call sites
+    pair them exactly like that.
+
+    A `date` column is passed through untouched: asyncpg hands those back as
+    `datetime.date` with no instant behind them, so there is no timezone
+    question to answer. Only a `timestamptz` is converted, which is the only
+    case where the two clocks could ever have disagreed.
+
     Returns None for anything else — including None itself — so a NULL column
     does not become an exception three lines later.
     """
     if isinstance(value, datetime):
-        return as_utc(value).date()
+        return as_utc(value).astimezone(IST).date()
     if isinstance(value, date):
         return value
     return None
+
+
+def today_ist(now: datetime | None = None) -> date:
+    """The calendar date it is in India right now.
+
+    ⚠ USE THIS, NOT `utc_now().date()`, WHICH IS WHAT 54 HANDLERS USED UNTIL
+    2026-09-04. A UTC container asked "what day is it" at 02:00 IST answers
+    yesterday, so every "days overdue", every default month, and every `as_of`
+    handed to the statute calendar was a day behind for five and a half hours
+    out of every twenty-four.
+
+    `utc_now()` above stays UTC and must: it exists to compare against
+    `timestamptz` columns, and an INSTANT has no timezone opinion. It is the
+    calendar DATE of an instant that belongs to the reader, and the reader is in
+    India.
+    """
+    return _clock_today_ist(now)
 
 
 def days_between(later, earlier) -> int:

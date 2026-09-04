@@ -60,7 +60,7 @@ from datetime import date
 
 from services.statute import StatuteError, fy_bounds, obligation, obligations
 from services.skills.reachable import reachable
-from services.skills.timeutil import days_between, month_window, return_period, utc_now
+from services.skills.timeutil import days_between, month_window, return_period, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -494,7 +494,7 @@ async def brief_itc_at_risk_of_lapse(
              what_this_figure_is, the_deadline_may_already_have_passed,
              limitations, caveats}.
     """
-    financial_year = financial_year or _last_ended_financial_year(utc_now().date())
+    financial_year = financial_year or _last_ended_financial_year(today_ist(utc_now()))
     try:
         fy_start, fy_end = fy_bounds(financial_year)
     except StatuteError as exc:
@@ -584,7 +584,7 @@ async def brief_itc_at_risk_of_lapse(
         org_id, fy_start, fy_end, limit,
     )
 
-    today = utc_now().date()
+    today = today_ist(utc_now())
     bills = []
     for r in rows:
         entry = reachable({
@@ -827,7 +827,7 @@ async def check_dead_gst_slabs(
              caveats}.
     """
     try:
-        as_at_date = date.fromisoformat(as_at) if as_at else utc_now().date()
+        as_at_date = date.fromisoformat(as_at) if as_at else today_ist(utc_now())
     except (ValueError, TypeError):
         return {"error": f"'{as_at}' is not a date. Expected YYYY-MM-DD."}
 

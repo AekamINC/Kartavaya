@@ -77,7 +77,7 @@ import logging
 import re
 from datetime import date, timedelta
 
-from services.skills.timeutil import as_date, utc_now
+from services.skills.timeutil import as_date, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -176,7 +176,7 @@ async def check_unmatched_receipts(
     Never writes. Every section is a suggestion; `staging.ganit_payments` is
     written by the reconciliation screen and by nothing here.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=max(1, int(days_back)))
     cap = max(1, int(limit))
 

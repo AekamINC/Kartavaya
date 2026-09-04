@@ -56,7 +56,7 @@ from datetime import date, timedelta
 from services.statute import (
     obligation, obligation_for_fy, fy_bounds, due_date_from, statute_note, fy_of,
 )
-from services.skills.timeutil import as_date, month_days, utc_now
+from services.skills.timeutil import as_date, month_days, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ async def check_amendments_before_filing(
     That is named here because it is the single highest-value migration for the
     GST half of this catalogue.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     period = period or _return_period(today)
     start, end = _period_bounds(period)
     cap = max(1, int(limit))
@@ -266,7 +266,7 @@ async def brief_lut_expiry(
     monthly rather than daily. That is the general defect in this whole tier and
     the honest fix is the same `gst_filings` table #18 asks for.
     """
-    today = as_date(as_at) or utc_now().date()
+    today = as_date(as_at) or today_ist(utc_now())
     fy = _fy_of(today)
     fy_start, fy_end = fy_bounds(fy)
     cap = max(1, int(limit))
@@ -363,7 +363,7 @@ async def brief_annual_return_books(
     nothing. This returns ONE column — what the books say — and names the other
     column as the preparer's to fill from the portal.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     if not financial_year:
         this_fy = _fy_of(today)
         start_year = int(this_fy.split("-")[0])
@@ -524,7 +524,7 @@ async def check_thresholds_approaching(
     crossing. A skill that announces "you have crossed" needs a record of having
     said so, and there is none.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window_start = today - timedelta(days=365)
     ratio = min(1.0, max(0.1, float(approach_ratio)))
 
@@ -657,7 +657,7 @@ async def brief_advance_tax_reserve(
     on, so both are presented and the reader picks — rather than the skill
     quietly showing three deadlines that do not exist for them.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     financial_year = financial_year or _fy_of(today)
     fy_start, fy_end = fy_bounds(financial_year)
     upto = min(today, fy_end)

@@ -122,7 +122,7 @@ from datetime import date, datetime, timedelta
 
 from services.statute import obligation, fy_bounds, statute_note, fy_of
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, days_between, utc_now
+from services.skills.timeutil import as_date, days_between, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -218,7 +218,7 @@ def _as_of(value, fallback: date) -> date:
     `timeutil.as_date` handles a date and a datetime and returns None for
     EVERYTHING ELSE, strings included — which is right for a NULL database
     column and silently wrong for a caller's parameter. `as_at` reaches a
-    scheduled handler as a STRING, so `as_date(as_at) or utc_now().date()`
+    scheduled handler as a STRING, so `as_date(as_at) or today_ist(utc_now())`
     parses nothing, discards the caller's date and answers as of today without
     saying so. Written that way here first, and caught only because the test
     asked for 31 March and got the section that came in on 1 April.
@@ -366,7 +366,7 @@ async def check_msme_payment_clock(
     which bills were claimed as revenue expenditure and which were capitalised,
     so both are ceilings and say so.
     """
-    today = _as_of(as_at, utc_now().date())
+    today = _as_of(as_at, today_ist(utc_now()))
     cap = max(1, int(limit))
 
     section = await obligation(pool, MSME_SECTION_KEY, as_of=today)
@@ -657,7 +657,7 @@ async def check_tds_thresholds(
     vendors come back under `section_recorded_but_no_threshold` with their
     running total and no verdict.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     fy = financial_year or _fy_of(today)
     fy_start, fy_end = fy_bounds(fy)
     cap = max(1, int(limit))
@@ -955,7 +955,7 @@ async def check_einvoice_window(
     and a firm that crossed the threshold three years ago on a registration this
     product never saw would be told it had no exposure.
     """
-    today = _as_of(as_at, utc_now().date())
+    today = _as_of(as_at, today_ist(utc_now()))
     cap = max(1, int(limit))
 
     rule = await obligation(pool, EINVOICE_THRESHOLD_KEY, as_of=today)

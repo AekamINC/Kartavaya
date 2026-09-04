@@ -63,7 +63,7 @@ row — because writing one would mark an item chased that nobody chased.
 import logging
 from datetime import date, timedelta
 
-from services.skills.timeutil import as_date, days_between, utc_now
+from services.skills.timeutil import as_date, days_between, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ async def check_chase_ladder(
     Never sends, never writes. Not even a reminder row: writing one would mark
     an item chased that nobody chased.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     task_chases = await _chase_counts(pool, org_id, ENTITY_TASK)

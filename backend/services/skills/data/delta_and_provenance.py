@@ -184,7 +184,7 @@ import logging
 from datetime import date
 
 from services.statute import obligation, obligation_for_fy, fy_bounds, fy_of
-from services.skills.timeutil import as_date, month_days, utc_now
+from services.skills.timeutil import as_date, month_days, today_ist, utc_now
 
 #: The calendar helpers #18 and #20 already got right, imported rather than
 #: copied. `_due_date_from` in particular carries a bug that HAPPENED — it read
@@ -378,7 +378,7 @@ async def check_books_moved_since_due(
     so `predicts_a_departmental_notice` is a hard False on the output and the
     word notice appears nowhere else in it.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     period = period or _return_period(today)
     # `month_days`, INCLUSIVE, because `_MOVED_SQL` compares `invoice_date <= $3::date`
     # and `end` is also handed to `obligation(as_of=)` as the period end.
@@ -680,7 +680,7 @@ async def brief_gstr9c_books_side(
     can still be required on its real aggregate. That is on `limitations`, not
     only in this docstring.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     if not financial_year:
         this_fy = fy_of(today)
         start_year = int(this_fy.split("-")[0])
@@ -1021,7 +1021,7 @@ async def brief_content_provenance(
     cover on a monthly compliance brief costs the measured price of an image
     and buys nothing at all. Those are separated out by `skill_type`.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     window = max(1, min(60, int(months)))
     window_start = _month_window_start(today, window)
     cap = max(1, int(limit))

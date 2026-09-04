@@ -125,7 +125,7 @@ from datetime import date, timedelta
 from urllib.parse import quote
 
 from services.statute import obligations, obligation, due_date_from, statute_note
-from services.skills.timeutil import as_date, days_between, month_days, utc_now
+from services.skills.timeutil import as_date, days_between, month_days, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -296,7 +296,7 @@ async def brief_firm_filing_calendar(
     create the tasks it describes, because a calendar that quietly creates
     sixty rows the first time somebody opens it is not a calendar.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     target = (month or f"{today.year:04d}-{today.month:02d}").strip()
     try:
         month_start, month_end = _month_bounds(target)
@@ -693,7 +693,7 @@ async def check_approvals_that_sit(
     Never writes, never sends. It says what is due and to whom; delivering it
     is a Niyam rule and arming one is the owner's decision.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     rows = await pool.fetch(

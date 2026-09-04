@@ -35,7 +35,7 @@ run is.
 """
 import logging
 
-from services.skills.timeutil import utc_now
+from services.skills.timeutil import today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ async def propose_payment_run(
 
     Returns {as_of, horizon_days, total_due, by_bucket, bills: [...]}.
     """
-    as_of = utc_now().date()
+    as_of = today_ist(utc_now())
 
     rows = await pool.fetch(
         """

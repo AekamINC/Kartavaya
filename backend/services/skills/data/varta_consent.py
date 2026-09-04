@@ -196,9 +196,7 @@ import logging
 import re
 import unicodedata
 
-from services.skills.timeutil import (
-    as_date, days_between, month_window, return_period, utc_now,
-)
+from services.skills.timeutil import (as_date, days_between, month_window, return_period, today_ist, utc_now)
 
 log = logging.getLogger(__name__)
 
@@ -416,7 +414,7 @@ async def check_consent_ledger(pool, org_id: str, limit: int = 200) -> dict:
     silently suppressed a client's number would be making a legal decision on
     the firm's behalf out of a word list.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     # ── is there a WABA at all? ────────────────────────────────────────────
@@ -877,7 +875,7 @@ async def check_broadcast_preflight(pool, org_id: str, limit: int = 200) -> dict
     Never writes. It does not remove a recipient, unsubscribe anybody, or touch
     a campaign's status.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     campaigns = await pool.fetch(
@@ -1237,7 +1235,7 @@ async def brief_whatsapp_cost(
 
     Never writes.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     period = month or return_period()
     try:
         start, end_exclusive = _month_bounds(period)

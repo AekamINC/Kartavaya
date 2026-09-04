@@ -57,7 +57,7 @@ from datetime import date, timedelta
 
 from services.skill_ack import opaque_ref
 from services.skills.reachable import reachable
-from services.skills.timeutil import month_days, utc_now
+from services.skills.timeutil import month_days, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -162,7 +162,7 @@ async def check_retainers_that_stopped_billing(
     Returns {as_at, horizon_days, month, due_soon, contracts, counts,
              limitations, caveats}.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     month = month or today.strftime("%Y-%m")
     try:
         month_start, month_end = _month_bounds(month)
@@ -686,7 +686,7 @@ async def check_duplicate_vendor_bills(
     All parameters default, so this can be scheduled. Returns
     {as_at, windows, pairs, counts, blind_spots, limitations, caveats}.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     near_days = max(0, int(near_days or 0))
     wide_days = max(near_days, int(wide_days or 0))
     since = today - timedelta(days=wide_days + _LOOKBACK_MARGIN_DAYS)
@@ -997,7 +997,7 @@ async def pack_collection_messages(
     Returns {as_at, receiving_addresses, messages, counts, how_to_send,
              limitations, caveats}.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     min_days_overdue = max(0, int(min_days_overdue or 0))
 
     org = await pool.fetchrow(
@@ -1497,7 +1497,7 @@ async def check_invoice_series_and_splits(
     from services.gstr1_json import parse_state_code, supplier_state_code
     from services.skills.timeutil import return_period
 
-    today = utc_now().date()
+    today = today_ist(utc_now())
 
     if not financial_year:
         # The month being FILED, not the month we are in. GSTR-1 for August is

@@ -10256,3 +10256,109 @@ their own decision rather than a sweep. Recorded, not changed.
     backend  22 new tests
     frontend 3,445 passed / 221 files, 15 new tests, 20 gates, build clean
     9 mutations, all red after the three fixes
+
+
+## 2026-09-04 · "Today" is the date in India — the other two clock surfaces
+
+The billing period moved earlier today and left two behind, recorded as open:
+`utc_now().date()` as "today" in the skill handlers, and `return_period()`. Both
+done now, and one of them was worse than the note said.
+
+### What moved
+
+    utc_now().date()  ->  today_ist(utc_now())     52 sites, 18 handler files
+    as_date(instant)  ->  its IST calendar date    68 call sites benefit
+    return_period()   ->  IST                      STATUTORY
+    coming_week_start ->  IST                      was a WEEK out, not a day
+    wip_and_quotes._as_of_date's last as_utc(...).date()
+
+⚠ **THE TWO HAD TO MOVE TOGETHER AND THAT IS THE LOAD-BEARING PART.** Fourteen
+handlers compute `days_between(today, as_date(row["created_at"]))`. Moving
+`today` to IST while `as_date` still took the UTC date would not have half-fixed
+the age — it would have subtracted two different calendars from each other, which
+is wrong in a NEW way and wrong at a different hour than before. A row created at
+the instant the report runs must read as zero days old; on two clocks it reads 1.
+
+### ⚠ `return_period` is the sharp one, because the answer is statutory
+
+It returns "the month you have left" for a GST filing, derived from today. On the
+UTC clock inside the window the month went back TWICE — once because the clock
+said yesterday, and again because the helper subtracts a month:
+
+    01:30 IST, 1 September   UTC clock -> 31 August -> returns 2026-07  (JULY)
+                             IST clock -> 1 Sept    -> returns 2026-08
+
+Two months before the one the preparer was about to file, on a screen that names
+sections and due dates.
+
+`coming_week_start` was wrong in kind rather than degree. At 01:30 IST on a
+Monday the UTC clock still says Sunday, and Sunday's "coming Monday" is TOMORROW
+— the week that has already begun — while Monday's is seven days out.
+
+### What it costs, measured
+
+    tasks               434 rows,  7 whose Indian created-date differs (1.6%)
+    ganit_invoices        1 row,   1
+    ganit_vendor_bills    3 rows,  0
+
+Eight rows' computed age moves by one day. Going forward, every "today"-relative
+answer is right for the 5.5 hours a day it used to be wrong.
+
+### ⚠⚠ The existing suite was blind to all of it, by construction
+
+4,941 tests passed before the change and after it, and proved nothing either way.
+**Every frozen-clock fixture in the suite freezes at
+`datetime(2026, 8, 20, 6, 0, tzinfo=utc)` — 06:00 UTC is 11:30 IST**, the middle
+of the Indian working day, where the two clocks agree about everything.
+
+So all 27 new tests freeze INSIDE the 00:00–05:30 IST window and state each
+answer as a difference from what UTC gives. Anything else is a test that cannot
+fail.
+
+### ⚠ Two things went wrong on the way, and the second was the useful one
+
+**The first attempt shipped a crash.** Naming the helper `today` made 40 of the
+52 sites read `today = today()` — which binds a local, so the call on the right
+resolves to the unbound local and raises `UnboundLocalError`. Caught by grepping
+the result of my own rewrite before running anything, and fixed by naming it
+`today_ist`, which matches `services/clock.py` and cannot collide with the local
+every handler already calls `today`.
+
+**Then 18 tests went red for a better reason.** Every frozen fixture patches the
+HANDLER MODULE's `utc_now`; a bare `today_ist()` reads the real clock straight
+past it. The red ones were easy. The ones that stayed GREEN were the worse half —
+they had silently stopped freezing anything at all, and would have drifted with
+the calendar until some future day made them flaky.
+
+The fix keeps one seam for both clocks: call sites read `today_ist(utc_now())`,
+so patching `utc_now` still freezes everything, and no fixture needed editing. A
+test asserts that SHAPE — `today_ist(utc_now())` present, bare `today_ist()`
+absent — rather than trusting the convention to hold.
+
+### Mutations — 6 of 6 red on the first pass
+
+    as_date reverts to the UTC date of an instant          RED
+    today_ist reverts to the UTC date                      RED
+    return_period reverts to UTC (the statutory one)       RED
+    coming_week_start reverts to UTC (a week out)          RED
+    a handler drops the instant, escaping frozen fixtures  RED
+    a handler goes back to utc_now().date()                RED
+
+The ratchet reads the AST rather than the text, because the notes added by this
+change NAME `utc_now().date()` to explain what was removed — the same trap that
+took two earlier ratchets green on their own prose. It refuses both spellings:
+`utc_now().date()` and `as_utc(x).date()`, which is the same mistake by a
+different route and was the last one left in the tree.
+
+### What is still UTC, deliberately
+
+`utc_now()` itself, and `hours_between`. An INSTANT is UTC — it exists to compare
+against `timestamptz` columns asyncpg returns as aware UTC datetimes — and
+elapsed hours are the same number on every clock. Both now have a test saying so,
+so a future sweep does not "fix" them.
+
+### Verification
+
+    backend  6,431 passed / 185 skipped  (the skill, statute, billing and clock
+                                          suites together)
+    backend  27 new tests, 6 mutations red

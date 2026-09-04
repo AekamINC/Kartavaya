@@ -123,7 +123,7 @@ import logging
 from datetime import date, timedelta
 
 from services.statute import obligation, due_date_from, statute_note
-from services.skills.timeutil import as_date, days_between, month_days, utc_now
+from services.skills.timeutil import as_date, days_between, month_days, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -830,7 +830,7 @@ async def brief_client_obligations_register(
     and NO date, and the reason is printed in `statute_gaps`. A board that
     silently omitted them would tell a firm its QRMP clients have nothing due.
     """
-    today = _as_day(as_at) or utc_now().date()
+    today = _as_day(as_at) or today_ist(utc_now())
     cap = max(1, int(limit))
     horizon = max(1, int(horizon_days))
     win_end = today + timedelta(days=horizon)
@@ -1051,7 +1051,7 @@ async def pack_client_filing_calendar(
     the row count and the missing screen; `could_not_check` is true while the
     register is empty and `no_findings` is false, deliberately.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     # `[:7]` KEEPS THIS HANDLER'S OWN LENIENCY, VISIBLY. Its former private copy
     # split on `-` and kept the first two fields, so it alone accepted a full
     # date — `'2026-08-01'` answered about August — while the other nine copies
@@ -1307,7 +1307,7 @@ async def check_regional_send_guard(
     because a guard that quietly sees nothing reads exactly like a guard that
     found nothing wrong.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     day = _as_day(send_on) or today
     cap = max(1, int(limit))
     sat_off = bool(saturday_is_closed)

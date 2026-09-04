@@ -65,7 +65,7 @@ from services.statute import (
     obligation, obligation_for_fy, fy_bounds, statute_note, fy_of,
 )
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, month_days, utc_now
+from services.skills.timeutil import as_date, month_days, today_ist, utc_now
 # The one canonical Indian state codelist in this backend. #27 joins the
 # employee's work state to a professional-tax slab, and both ends of that join
 # are spelled by different hands — see `_state_keys` below.
@@ -238,7 +238,7 @@ async def check_pf_esi_debit_missing(
     the tolerance is deliberately loose and the output calls what it finds a
     CANDIDATE.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     run = await _latest_approved_run(pool, org_id, month)
     if not run:
         return {
@@ -381,7 +381,7 @@ async def pack_form130_annexure(
     END OF THE YEAR THE CERTIFICATE COVERS, not as of today, so a certificate
     prepared in 2026 for FY 2025-26 still says Form 16.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     if not financial_year:
         this_fy = _fy_of(today)
         start_year = int(this_fy.split("-")[0])
@@ -546,7 +546,7 @@ async def pack_quarterly_deductees(
     has no challan record at all, so the deductee list is everything it can
     honestly produce and the challan columns of the return are the preparer's.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     anchor = as_date(quarter_of) or (today.replace(day=1) - timedelta(days=1))
     qno, q_start, q_end = _quarter_of(anchor)
     fy = _fy_of(q_start)
@@ -651,7 +651,7 @@ async def check_esi_ceiling_crossings(
     Both the ceiling and the two period ends come from the statute calendar
     (migration 172). Neither is a literal here.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     if not month:
@@ -819,7 +819,7 @@ async def brief_professional_tax(
     which questions it did not answer. That is the whole design: a PT brief that
     invented a due date would be wrong in a different state every month.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     run = await _latest_approved_run(pool, org_id, month)

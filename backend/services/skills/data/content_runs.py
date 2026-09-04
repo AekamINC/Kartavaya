@@ -69,7 +69,7 @@ import logging
 import re
 from datetime import date, timedelta
 
-from services.skills.timeutil import as_date, days_between, utc_now
+from services.skills.timeutil import as_date, days_between, today_ist, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ async def pack_engagement_letter_inputs(
     produces letter prose. See the module docstring: a model-drafted scope
     paragraph reaching eSign becomes a signed contract nobody wrote.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     since = today - timedelta(days=max(1, int(months_back)) * 31)
     cap = max(1, int(limit))
 
@@ -259,7 +259,7 @@ async def brief_vernacular_template_targets(
     POST-VALIDATION against this inventory, never something the model is
     trusted to have done.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     cap = max(1, int(limit))
 
     templates = await pool.fetch(
@@ -363,7 +363,7 @@ async def check_event_followup_split(
     "never marked" state. Measured live: 150 attended, 75 cancelled, 75
     no_show across 300 registrations.
     """
-    today = utc_now().date()
+    today = today_ist(utc_now())
     since = today - timedelta(days=max(1, int(days_back)))
     cap = max(1, int(limit))
 
