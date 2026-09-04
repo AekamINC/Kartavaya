@@ -11172,3 +11172,59 @@ urgent; worth knowing before anyone bumps that far.
       client / task                               3,345 passed, 87 skipped, 2 xfailed
     pip-audit, per pin                            clean x3
     baseline                                      17 -> 4
+
+
+## 2026-09-04 (last) · python-multipart, and the baseline reaches its floor
+
+    24 -> 17 -> 4 -> 1
+
+`python-multipart==0.0.29` -> `0.0.32`. Three advisories, fixes at 0.0.30,
+0.0.30 and 0.0.31 — so 0.0.31 was the floor and 0.0.32 is the latest. fastapi
+0.138.0 asks only for `>=0.0.18`, so nothing capped it the way starlette was
+capped.
+
+⚠ **This is the multipart parser for every file the product accepts** — the R2
+uploads in `routers/uploads.py` and `services/storage.py`, the Graha client
+documents, the Pahchan enrolment photos. On the public web-form routes that is
+reachable by anyone who can post a form.
+
+### ⚠ The local tests do not prove this bump, and quoting them would imply they do
+
+The desk was **already running 0.0.32**. So every local run in this session
+exercised it while `requirements.txt` still claimed 0.0.29. The 1,701
+upload / attachment / storage / esign tests confirm the product works on
+0.0.32; they say nothing whatsoever about changing the pin, because nothing in
+this environment changed when the pin moved.
+
+Only CI tests that, because CI installs from `requirements.txt` into a clean
+environment. That is the real check for all four of today's backend bumps.
+
+### ⚠ The baseline is now at its floor, and the file says why
+
+    PYSEC-2026-3412 · weasyprint==68.0 · fix: NO FIX AVAILABLE
+
+One entry, and it **cannot be cleared by bumping** — upstream has shipped no
+fix. The `_comment` now states that, so the next reader does not spend an hour
+trying to shrink a file that is already as small as it can be. A non-empty
+baseline is not automatically neglect.
+
+### The finding that ran through all four bumps
+
+    pinned in requirements.txt        desk actually running
+    fastapi          0.115.12         0.138.0
+    starlette        (unpinned)       1.3.1
+    cryptography     44.0.3           49.0.0  (and 50.0.1 was needed)
+    python-multipart 0.0.29           0.0.32
+
+Every one of today's backend bumps was, in part, `requirements.txt` admitting
+what the desk had already been exercising. That is why the version jumps look
+alarming and behaved calmly — but it also means **the pins named versions
+nobody was testing against**, which is the actual defect. The gap is closed for
+these four; nothing guarantees it stays closed.
+
+### Verification
+
+    pip-audit python-multipart==0.0.32     no known vulnerabilities found
+    upload / attachment / storage /
+      file / import / pahchan / esign      1,701 passed, 40 skipped
+    baseline                               4 -> 1 (BY NAME)
