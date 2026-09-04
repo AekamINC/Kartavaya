@@ -10480,3 +10480,103 @@ on both the original test and the new property test.
     backend  2,460 passed / 193 skipped   graha, documents, email, outbound,
                                           senders, schema probes, contacts
     6 mutations, all red after correcting the two invalid ones
+
+
+## 2026-09-04 · CI runs the full suite green — and the one gate still red was a real CVE
+
+### The suite
+
+    === 16275 passed, 327 skipped, 3 xfailed, 116 warnings in 312.53s (0:05:12) ===
+
+`Run unit tests` — success, on `4945bbfc`. This is the run that hangs locally
+after a heavy session, so CI has now done the check that could not be done here.
+
+⚠ **327 SKIPS IS NOT INCIDENTAL AND THE WORKFLOW SAYS SO.** CI runs
+`pytest -q -rs` with `DATABASE_URL` deliberately absent, so every `live_dsn()`
+half skips. A green tick there covers the OFFLINE half only. The live halves are
+the `railway run` invocations done by hand — 129 of those passed against
+production earlier today.
+
+### The Backend job was still red, on a step that is not tests
+
+    ✘ 4 NEW vulnerability(ies) in production dependencies
+        GHSA-23w6-3w8w-8484  pypdf==6.14.2 · fix: 6.16.1
+        GHSA-763m-79hh-57f2  pypdf==6.14.2 · fix: 6.16.1
+        GHSA-fc8x-2rww-xw9m  pypdf==6.14.2 · fix: 6.15.0
+        GHSA-jp53-mhqp-8xcg  pypdf==6.14.2 · fix: 6.16.0
+
+`pypdf` is the library that binds the signature page onto the document that was
+actually signed — three call sites: `esign_signed_doc`, `report_delivery`,
+`routers/esign`. Bumped **6.14.2 → 6.16.1**, the highest fix version among the
+six advisories (4 new plus the 2 already baselined), so one bump clears all of
+them.
+
+**Verified rather than assumed**, three ways:
+
+  · `pip-audit` against the pin on its own — *No known vulnerabilities found*.
+  · Both real code paths driven directly, not by suite name: the eSign
+    page-copy bind produced a 2-page document, and `report_delivery`'s
+    `clone_from` + `encrypt` still opens with the right passphrase and still
+    refuses a wrong one.
+  · ⚠ And **an empty passphrase is still accepted by pypdf** — unchanged
+    behaviour, which means `report_delivery`'s own refusal of an empty
+    passphrase remains load-bearing rather than redundant.
+
+2,532 tests across the eSign, report, PDF, document, invoice, payslip, delivery,
+storage and attachment suites: green.
+
+### Baseline 24 → 17, shrunk BY NAME
+
+  · **PyJWT (5)** — stale. `requirements.txt` already pinned 2.13.0, which fixes
+    all five; the baseline had never followed. Found because the audit prints
+    "baselined vulnerabilities are gone" as well as new ones.
+  · **pypdf (2)** — cleared by this bump.
+
+⚠ **NOT with `--write`.** That flag re-records whatever the audit finds NOW,
+which would silently baseline any advisory that had appeared since — precisely
+the thing this gate exists to stop. Removing seven ids by name leaves the audit
+to prove everything else on its own.
+
+Remaining: cryptography (6), starlette (7), python-multipart (3), weasyprint (1,
+still NO FIX AVAILABLE). cryptography and starlette are the ones to do next.
+
+⚠ **The audit cannot be run on this machine**, and that is worth writing down
+rather than rediscovering: `pip-audit` builds a venv from `requirements.txt`,
+`cryptography==44.0.3` has no cp314 Windows wheel, and it falls back to building
+from source and downloading a Rust toolchain. CI's Python 3.12 on Linux has
+wheels. The single-package audit above is the part that can be checked here.
+
+### Two CI jobs stay red, and neither is code
+
+**E2E smoke** — red on every run for weeks, and it CANNOT pass:
+
+    staging.kartavaya.com            -> 000  (no DNS)
+    kartavya-staging.up.railway.app  -> 404  (pre-rename hostname, missing the 'a')
+
+Both measured, not inferred. The first is the host `CLAUDE.md` says does not
+resolve and must NOT be created; the second is the Railway hostname from before
+the rename. `E2E_ADMIN_TOKEN` and `E2E_GODMODE_TOKEN` also expired 2026-08-27.
+
+The job is gated on `vars.PLAYWRIGHT_BASE_URL != ''`, so **unsetting that one
+variable disables it cleanly**, which matches reality — there is no staging to
+smoke-test. Pointing it at production instead would put a live admin session
+against the production database on every push; the job's own docstring is
+explicit that "whatever this job touches, production's database is what it
+touches". That is an owner decision and is left open.
+
+**Frontend tests** — red on `56089b27`, but the log reads `run-vitest-baselined:
+no new failures` immediately before:
+
+    check-dependency-audit: yarn audit produced no summary record.
+    ESOCKETTIMEDOUT  https://registry.yarnpkg.com/-/npm/v1/security/audits
+
+A registry timeout. The gate is right to refuse to call an audit that did not
+complete a pass — that is its documented anti-vacuity reason — but it has no
+retry, so the build is hostage to registry availability.
+
+### Verification
+
+    CI       16,275 passed / 327 skipped / 3 xfailed   (the full backend suite)
+    local    2,532 passed / 171 skipped   on pypdf 6.16.1
+    pip-audit pypdf==6.16.1  ->  no known vulnerabilities
+    baseline 24 -> 17

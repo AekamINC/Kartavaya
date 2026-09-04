@@ -1,14 +1,9 @@
 {
-  "_comment": "Known vulnerabilities in backend production dependencies. SHRINK ONLY \u2014 see scripts/check_dependency_audit.py. Clearing these means bumping pinned versions in requirements.txt, which needs the full suite and a deploy behind it. pyjwt and cryptography are the ones to do first.",
-  "_recorded": "2026-08-30",
+  "_comment": "Known vulnerabilities in backend production dependencies. SHRINK ONLY \u2014 see scripts/check_dependency_audit.py. Clearing these means bumping pinned versions in requirements.txt, which needs the full suite and a deploy behind it. 24 \u2192 17 on 2026-09-04: PyJWT (5) was already at 2.13.0 and this file had not followed, and pypdf went 6.14.2 \u2192 6.16.1, clearing 2 baselined and 4 NEW advisories that were failing the build. cryptography (6) and starlette (7) are the ones to do next; weasyprint (1) still has no fix.",
+  "_recorded": "2026-09-04",
   "known": {
     "GHSA-537c-gmf6-5ccf": "cryptography==44.0.3 \u00b7 fix: 48.0.1",
     "PYSEC-2026-161": "starlette==0.46.2 \u00b7 fix: 1.0.1",
-    "PYSEC-2026-175": "pyjwt==2.12.0 \u00b7 fix: 2.13.0",
-    "PYSEC-2026-176": "pyjwt==2.12.0 \u00b7 fix: 2.12.1",
-    "PYSEC-2026-177": "pyjwt==2.12.0 \u00b7 fix: 2.13.0",
-    "PYSEC-2026-178": "pyjwt==2.12.0 \u00b7 fix: 2.13.0",
-    "PYSEC-2026-179": "pyjwt==2.12.0 \u00b7 fix: 2.13.0",
     "PYSEC-2026-1941": "starlette==0.46.2 \u00b7 fix: 0.47.2",
     "PYSEC-2026-1942": "starlette==0.46.2 \u00b7 fix: 0.49.1",
     "PYSEC-2026-2141": "cryptography==44.0.3 \u00b7 fix: 46.0.5",
@@ -23,8 +18,6 @@
     "PYSEC-2026-35": "cryptography==44.0.3 \u00b7 fix: 46.0.6",
     "PYSEC-2026-3552": "cryptography==44.0.3 \u00b7 fix: 50.0.0",
     "PYSEC-2026-3553": "cryptography==44.0.3 \u00b7 fix: 49.0.0",
-    "PYSEC-2026-3554": "cryptography==44.0.3 \u00b7 fix: 49.0.0",
-    "PYSEC-2026-3655": "pypdf==6.14.2 \u00b7 fix: 6.15.0",
-    "PYSEC-2026-3656": "pypdf==6.14.2 \u00b7 fix: 6.15.0"
+    "PYSEC-2026-3554": "cryptography==44.0.3 \u00b7 fix: 49.0.0"
   }
 }
