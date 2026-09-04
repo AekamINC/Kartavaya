@@ -10792,3 +10792,83 @@ catches the eighth. One case is deliberately spelled correctly
 "Origins 22 → 19" was eyeballed. Parsing the literal gives **21 → 18 → 11**.
 The count in `ab2cde79`'s commit message is wrong and cannot be edited; the
 docs above are corrected in place.
+
+
+## 2026-09-04 (later still) · The door that kept granting them, because it builds a different branch
+
+### The finding
+
+Both `main` commits had landed and been verified on production. The staging
+door had not moved:
+
+    kartavaya-staging.up.railway.app
+      Origin: https://kartavya.com          -> allowed, with credentials
+      Origin: https://kartavya.vercel.app   -> allowed, with credentials
+
+Railway's staging service has `source.branch = "staging"`, read from its
+config — not `main`. So it serves that branch's `server.py`, which still
+carried all ten origins.
+
+⚠ **And that door writes to the SAME production database.** A stale branch is
+not a staging environment; it is production with older code in front of it.
+
+### ⚠ Clearing the variable first changed nothing observable
+
+Staging's `CORS_ORIGINS` carried
+`kartavya-git-staging-kevalvshah03-6145s-projects.vercel.app`. It was cleared,
+Railway redeployed (SUCCESS at 14:01:43), and the origin stayed allowed —
+because **the same string is also hard-coded in that branch's
+`DEFAULT_ORIGINS`**. Two sources; removing one is invisible.
+
+The earlier claim that clearing the variable "fixes one grant of four" is
+corrected: it fixed **zero** observable grants. It was still necessary — the
+variable is a second source that no commit reaches — but a poll watching for
+the flip could never have gone green, and it ran for seven minutes before the
+deployment list showed the deploy had already succeeded.
+
+Variable is now `https://staging.kartavaya.com,http://localhost:3000`.
+
+### The commit is shaped for a merge that has not happened yet
+
+The CORS region was **spliced from `main`**, not hand-edited, so it is
+byte-identical there. The eventual catch-up merge sees the same content on both
+sides and has nothing to resolve in that region. Verified two ways: a byte
+comparison of the spliced region, and importing the branch's own `server.py` —
+11 origins, no `kartavya.com`, no `vercel.app`, regex
+`https://([a-z0-9-]+\.)?kartavaya\.com`.
+
+Deliberately left OFF that branch: the `STATUS.md` / `PROGRESS.md` entries and
+`test_the_origin_allowlist_names_only_our_hosts.py`. Those files are 172
+commits ahead on `main`; duplicating them would manufacture exactly the
+conflict the splice avoids. The test arrives with the catch-up merge.
+
+Also checked before pushing, because a push to that branch runs CI on it: no
+test on `staging` references `DEFAULT_ORIGINS`, `ALLOWED_ORIGINS` or
+`vercel.app`, so the change breaks nothing there and adds nothing red.
+
+### ⚠ "30 commits behind" was wrong wherever it appeared
+
+    git rev-list --left-right --count origin/staging...origin/main
+    0    172
+
+**172**, not 30 — and the 0 on the left matters as much as the 172: `staging`
+is a strict ANCESTOR of `main`, so catching it up is a fast-forward, not a
+merge. Corrected in `CLAUDE.md` (twice) and `STATUS.md`.
+
+### Verification, after deploy
+
+    https://kartavya.com                                refused
+    https://www.kartavya.com                            refused
+    https://public.kartavya.com                         refused
+    https://kartavya.vercel.app                         refused
+    https://kartavya-aekam.vercel.app                   refused
+    https://kartavya-git-staging-...vercel.app          refused
+    https://kartavaya.com.attacker.example              refused
+
+    https://kartavaya.com                               allowed
+    https://app.kartavaya.com                           allowed
+    https://staging.kartavaya.com                       allowed
+    https://kartavaya.pages.dev                         allowed
+
+    health: status ok, db connected, schema public,
+            environment staging, outbound_mode dry
