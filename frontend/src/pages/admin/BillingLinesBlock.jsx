@@ -60,20 +60,11 @@ const BILLING_LINE_COLUMNS = [
  * one top-up endpoint that already exists.
  */
 
-/**
- * `YYYY-MM` for the month this console is acting on — UTC, because
- * `credits.current_period()` is UTC and this string becomes a `period_start`.
- *
- * Read locally it is wrong for five and a half hours every month: at 00:30 IST
- * on the 1st the server is still in the previous period, so a support line
- * saved here would be stamped with a month that has not begun and would not be
- * billed until it did. A billing period cannot depend on where the operator is
- * sitting.
- */
-function currentPeriod() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
+/* The billing period is `lib/dates.currentPeriod` — IST, matching
+   `credits.current_period()`, because this string becomes a `period_start`.
+   The note that stood here said it best and still holds: a billing period
+   cannot depend on where the operator is sitting. What changed on
+   2026-09-04 is which clock both sides sit on, not that they must agree. */
 
 /** The four rows, in the order the owner listed them. `setup` is the one-off. */
 const ROWS = [

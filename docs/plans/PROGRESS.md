@@ -10136,3 +10136,123 @@ It parses an `ast.Call` now. All six mutations red:
     backend  1,519 passed            wider sweep: gst / period / month /
                                       commission / proration / tally / invoice
     6 mutations, all red
+
+
+## 2026-09-04 · The billing period is IST, because everyone this product bills is in India
+
+The owner asked the question I had not: *"you know you are in UTC but application
+users will be in IST?"* They were right, and it took two corrections to get to it.
+
+### What UTC cost
+
+`credits.current_period()` returned the first day of the month in UTC. Every
+customer of this product is an Indian firm, so the billing month rolled over at
+**05:30 IST**:
+
+    02:00 IST, 1 September   ->  UTC says 20:30 on 31 August  ->  booked to AUGUST
+    02:00 IST, 1 April       ->  UTC says 20:30 on 31 March   ->  booked to the
+                                                                  PREVIOUS FY
+
+Nothing raises. Both months look plausible. The row simply appears on the wrong
+invoice, and at the April boundary in the wrong financial year — in a product
+Indian chartered accountants use to close their own books.
+
+⚠ **THE REST OF THE PRODUCT ALREADY AGREED.** `outbound._today_keys` has always
+computed the daily and monthly email caps "in IST for period boundaries".
+Billing was the outlier, not this change.
+
+### Measured before, so it could be forward-only
+
+    org_billing_lines      4 rows, 0 whose period_start disagrees with IST
+    invoice_billing_lines  4 rows, 0
+    hub_org_credit_transactions  131 rows, 3 inside the 05:30 window, 0 on a 1st
+
+**No migration, nothing re-dated.** Every stored period already matches what IST
+would have given; the change only affects rows written from now on. This is the
+cheapest this will ever be to fix, and that was the argument for doing it now.
+
+### One IST, where there were three about to be four
+
+`IST = timezone(timedelta(hours=5, minutes=30))` existed byte-identically in
+`services/esign_signed_doc.py` and `services/push_service.py`, and `outbound.py`
+inlined the same offset a third time as `datetime.now(timezone.utc) +
+timedelta(...)` — which produces the right wall-clock string and a datetime whose
+`tzinfo` LIES, claiming UTC while holding IST. Fine for the `strftime` it fed;
+a trap for anyone who later subtracts two of them.
+
+`services/clock.py` is the one definition now: `IST`, `now_ist`, `today_ist`,
+`month_start_ist`. `credits.current_period()` keeps its name, module and
+signature — all 18 call sites untouched — and delegates.
+
+The `outbound` rewrite was proven a no-op before it landed: both forms produce
+identical `(day_key, month_key)` pairs at six instants including 18:29/18:30 UTC
+on 31 August and 20:00 UTC on 31 March.
+
+### Frontend: three copies, one clock, and a dropdown that was a month behind
+
+`InvoiceBuilder`, `BillingLinesBlock` and `BillingUsageSection` each derived the
+period from `getUTCFullYear`/`getUTCMonth`, each with its own note explaining
+that UTC was what the server used. One `lib/dates.currentPeriod` now, on IST.
+
+`BillingUsageSection.monthOptions` also built each dropdown entry with
+`Date.UTC(y, m - i, 1)` — correct arithmetic on the wrong clock, so at 02:00 IST
+on the 1st it offered a list starting one month behind what the server considered
+open. It is `recentPeriods`, integer arithmetic off the IST anchor.
+
+`lib/dates.thisMonth` stays local and is now documented as a different question:
+a month shown to a person is theirs; a month naming a billing period is the
+server's. `skills.timeutil.utc_now` stays UTC for the same reason, with a test
+asserting it: **an INSTANT is UTC, a PERIOD A PERSON NAMES is IST.**
+
+### ⚠ Three of nine mutations escaped the first draft, and two were the flaw the file's own docstring warns about
+
+    IST silently reverts to UTC                          RED
+    credits.current_period goes back to the UTC clock    GREEN -> fixed
+    month_start_ist stops converting                     RED
+    the email caps drift off IST                         GREEN -> fixed
+    a fifth IST definition appears                       GREEN -> fixed
+    utc_now is "helpfully" switched to IST too           RED
+    (frontend) BILLING_TZ reverts to UTC                 RED
+    (frontend) currentPeriod reads UTC directly          RED
+    (frontend) the period list anchors on local time     GREEN -> fixed
+
+`assert current_period() == month_start_ist()` — the obvious assertion — is green
+at every instant except the 5.5 hours a month it exists to guard. Green in CI at
+any hour a human runs the suite; red only in production. The same was true of the
+email-cap comparison and of the frontend list's default argument, which every
+test passed explicitly and so exercised never.
+
+All four are structural now — `ast.Call` on the backend, a source match on the
+default argument — plus an identity check (`mod.IST is clock.IST`) because the
+fifth-definition mutation escaped a source regex simply by ALIASING the import.
+
+### ⚠ And two corrections to my own work, one of them mine to have caught
+
+**I recommended making `InvoiceBuilder` read local time.** That would have desynced
+one form from the server and offered lines it will not bill. The reason I missed
+it is exact and worth recording: my rename the day before INSERTED a second
+docblock above `thisMonthUtc` and stranded the original above it, and when I
+re-read the function to write the recommendation I read only my own comment. The
+original said, and had always said, that UTC was the grain
+`credits.current_period()` uses.
+
+**Then I called UTC "correct".** It was *consistent*. The owner's question is what
+separated the two, and the answer needed the backend read, not more reading of
+the frontend.
+
+### Still open — same root cause, wider blast radius, NOT touched here
+
+`utc_now().date()` is "today" in every skill handler, and
+`skills.timeutil.return_period()` derives the GST return period from it. Both are
+a day (or a period) behind for the same 5.5 hours. Those are reporting and
+STATUTORY periods rather than billing ones — a statutory deadline has its own
+timezone rules and a wrong answer there is a compliance answer — so they want
+their own decision rather than a sweep. Recorded, not changed.
+
+### Verification
+
+    backend  4,259 passed / 113 skipped  (credit, billing, period, outbound,
+                                          push, esign, proration, invoice, clock)
+    backend  22 new tests
+    frontend 3,445 passed / 221 files, 15 new tests, 20 gates, build clean
+    9 mutations, all red after the three fixes

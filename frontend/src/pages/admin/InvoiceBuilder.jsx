@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { inr } from '../../lib/inr';
 import { gstBreakdown, defaultTreatment, supplierStateKnown, TREATMENTS } from './gst';
 import { monthLabel, refusalMessage } from './BillingLineRow';
+import { currentPeriod } from '../../lib/dates';
 
 /**
  * InvoiceBuilder — 11-platform-admin.md §1 "Invoice builder".
@@ -169,25 +170,11 @@ export function lineTotal(row) {
   return Math.round(num(row.amount) * q * 100) / 100;
 }
 
-/** `YYYY-MM` for today, UTC — the grain `credits.current_period()` uses, and the
- *  grain a billing line's `period_start` is stored at. Read locally, an operator
- *  in IST opening this at 00:30 on the 1st would be offered next month's lines
- *  while the server still considers the previous month open. */
-/**
- * ⚠ UTC, AND NAMED FOR IT. `lib/dates.thisMonth` — which hub, manav and vetana
- * all use — reads the month in the READER's timezone. These two disagree for an
- * IST user between midnight and 05:30 on the first of a month: this one still
- * names the month that just ended.
- *
- * Left as it is rather than folded into the shared helper, because which of the
- * two an invoice defaults to is a product decision. The name is the fix for
- * now: the difference was previously three lines down and identical from the
- * call site.
- */
-function thisMonthUtc() {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-}
+/* The billing period is `lib/dates.currentPeriod` — IST, matching
+   `credits.current_period()`. This file declared its own on a UTC clock,
+   with a note explaining that UTC was what the server used. It was, until
+   2026-09-04; both sides read IST now, and a form that picks its own clock
+   is the bug that note was written to prevent. */
 
 /** The last day of `YYYY-MM`, as `YYYY-MM-DD`. */
 function monthEnd(period) {
@@ -219,7 +206,7 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
   const [period, setPeriod] = React.useState({ start: '', end: '', due: '' });
   const [rows, setRows] = React.useState([blank()]);
   const [treatment, setTreatment] = React.useState(() => defaultTreatment(org?.gstin));
-  const [month, setMonth] = React.useState(thisMonthUtc);
+  const [month, setMonth] = React.useState(currentPeriod);
   const [loading, setLoading] = React.useState(false);
   const [loadErr, setLoadErr] = React.useState('');
   const [billed, setBilled] = React.useState([]);

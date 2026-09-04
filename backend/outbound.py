@@ -175,6 +175,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 
 from services import outbound_log
+from services.clock import now_ist
 
 logger = logging.getLogger("outbound")
 
@@ -671,9 +672,19 @@ _email_counters: dict[str, dict] = defaultdict(
 
 
 def _today_keys() -> tuple[str, str]:
-    """Return (day_key, month_key) in IST for period boundaries."""
-    from datetime import timedelta
-    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    """Return (day_key, month_key) in IST for period boundaries.
+
+    Was `datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)`, which
+    produces the right two strings and a datetime whose `tzinfo` LIES — it
+    claims UTC while holding IST wall time. Harmless for the `strftime` below
+    and a trap for anyone who later subtracts or compares one. Same instant,
+    correctly tagged, via the one IST definition.
+
+    This function is also the precedent the billing period followed on
+    2026-09-04: the email caps have always rolled over on IST boundaries, and
+    `credits.current_period()` was the outlier that did not.
+    """
+    now = now_ist()
     return now.strftime("%Y-%m-%d"), now.strftime("%Y-%m")
 
 

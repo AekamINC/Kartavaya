@@ -65,7 +65,9 @@ EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 #: answer "was this person notified through the gate or around it" — which is
 #: the question this module's own docstring says was wrong for years.
 _CHANNEL = "push"
-IST = timezone(timedelta(hours=5, minutes=30))
+#: IST is `services/clock.py` — one definition. This file held one of the
+#: three copies that existed before 2026-09-04.
+from services.clock import IST
 
 # pref mode constants
 MODE_OFF       = "off"

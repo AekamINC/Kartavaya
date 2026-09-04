@@ -45,13 +45,15 @@ import base64
 import io
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from services import doc_render as R
 
 log = logging.getLogger(__name__)
 
-IST = timezone(timedelta(hours=5, minutes=30))
+#: IST is `services/clock.py` — one definition. This file held one of the
+#: three copies that existed before 2026-09-04.
+from services.clock import IST
 
 # A drawn signature is a small canvas PNG; a megabyte of it is not a signature.
 # Bounded so one signer cannot make the executed document unopenable for anyone.

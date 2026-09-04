@@ -67,12 +67,11 @@ export function dayWindow(base = new Date()) {
  * instant differently is the defect, and it is invisible until the screens are
  * open side by side.
  *
- * ⚠ LOCAL TIME, NOT UTC. `pages/admin/InvoiceBuilder.jsx` still derives its own
- * month from `getUTCFullYear`/`getUTCMonth`, which names the PREVIOUS month for
- * an IST user between midnight and 05:30 on the first. That copy is left where
- * it is, renamed `thisMonthUtc` so the difference is in the name rather than
- * three lines down, because which of the two an invoice screen wants is a
- * product decision and not a de-duplication.
+ * ⚠ `thisMonth` IS THE READER'S MONTH. A BILLING PERIOD IS `currentPeriod`.
+ * The two are different questions and the difference is not cosmetic — see the
+ * note on `currentPeriod` below. A screen showing a person their own month
+ * wants theirs; anything that names a period the SERVER will bill against must
+ * agree with the server, or it offers lines the server will not bill.
  */
 
 /** The current month as `YYYY-MM`, in the reader's own timezone. */
@@ -114,4 +113,68 @@ export function shortStamp(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' });
+}
+
+/* ── The billing period ───────────────────────────────────────────────────
+ *
+ * ⚠ NOT `thisMonth`, AND NOT THE BROWSER'S CLOCK EITHER. This is the period the
+ * SERVER will bill against — `credits.current_period()` in `services/credits.py`
+ * — and a form that disagrees with it offers lines the server will not bill.
+ *
+ * Both sides read IST. That is the business's clock: the customers are Indian
+ * firms, `outbound._today_keys` has always rolled the email caps on IST
+ * boundaries, and billing was the one thing still on UTC — which meant the
+ * billing month turned over at 05:30 IST, booking a charge made at 02:00 on the
+ * 1st to the month before, and on 1 April to the previous FINANCIAL YEAR. Moved
+ * to IST on both sides, 2026-09-04.
+ *
+ * Three copies of this lived in `admin/InvoiceBuilder.jsx`,
+ * `admin/BillingLinesBlock.jsx` and `billing/BillingUsageSection.jsx`, each
+ * reading `getUTCFullYear`/`getUTCMonth` with its own note about why. One now,
+ * so the next change to the business's clock is one edit on each side.
+ */
+
+const BILLING_TZ = 'Asia/Kolkata';
+
+/** IST calendar parts of an instant, via the browser's own tz database.
+ *
+ *  `formatToParts` rather than a `+5:30` shift or a locale date string: the
+ *  shift trick leaves a Date whose UTC getters happen to read as IST, which is
+ *  the same lie `outbound.py` carried on the server side, and a locale string's
+ *  field order is not guaranteed to be the one you assumed. */
+const _istParts = (d = new Date()) => Object.fromEntries(
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: BILLING_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d).filter(p => p.type !== 'literal').map(p => [p.type, p.value]),
+);
+
+/** The date it is in India right now, as `YYYY-MM-DD`. */
+export function todayIst(now = new Date()) {
+  const p = _istParts(now);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+/** The billing period it is in India right now, as `YYYY-MM`. */
+export function currentPeriod(now = new Date()) {
+  const p = _istParts(now);
+  return `${p.year}-${p.month}`;
+}
+
+/**
+ * `count` billing periods ending at `from`, newest first — `['2026-09', …]`.
+ *
+ * Integer arithmetic on the anchor rather than walking `Date` objects back a
+ * month at a time. The previous version built each option with `Date.UTC(y, m -
+ * i, 1)`, which is correct arithmetic on the WRONG clock: at 02:00 IST on the
+ * 1st it offered a list starting one month behind what the server considered
+ * open.
+ */
+export function recentPeriods(count = 12, from = currentPeriod()) {
+  const [y, m] = from.split('-').map(Number);
+  const out = [];
+  for (let i = 0; i < count; i += 1) {
+    const total = y * 12 + (m - 1) - i;
+    out.push(`${Math.floor(total / 12)}-${String((total % 12) + 1).padStart(2, '0')}`);
+  }
+  return out;
 }

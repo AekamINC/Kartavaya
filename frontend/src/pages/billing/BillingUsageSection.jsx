@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import { grouped, inr } from '../../lib/inr';
 import { apiErrorText } from '../../lib/apiError';
+import { currentPeriod, recentPeriods } from '../../lib/dates';
 import { formatDate } from '../../lib/timeFormat';
 import { canManageBilling } from '../admin/platformRoles';
 import MemberCeilingModal from './MemberCeilingModal';
@@ -106,21 +107,11 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
   'August', 'September', 'October', 'November', 'December'];
 
-/** The current month, UTC — the same grain `credits.current_period()` uses. */
-function currentPeriod() {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
-}
-
-function monthOptions(count = 12) {
-  const now = new Date();
-  const out = [];
-  for (let i = 0; i < count; i += 1) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
-  }
-  return out;
-}
+/* The period and the period list are `lib/dates` — IST, matching
+   `credits.current_period()`. Both were declared here on a UTC clock; the list
+   walked `Date.UTC(y, m - i, 1)`, which is correct arithmetic on the wrong
+   clock, so at 02:00 IST on the 1st it offered a dropdown starting a month
+   behind what the server considered open. */
 
 const periodLabel = (ym) => {
   const [y, m] = String(ym || '').split('-');
@@ -298,7 +289,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
         value={period}
         onChange={e => { setSelectedPerson(null); setPeriod(e.target.value); }}
       >
-        {monthOptions().map(ym => <option key={ym} value={ym}>{periodLabel(ym)}</option>)}
+        {recentPeriods().map(ym => <option key={ym} value={ym}>{periodLabel(ym)}</option>)}
       </Select>
       <span className="bl__sub">
         A billing period is a calendar month, because that is what an allowance is

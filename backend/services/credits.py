@@ -53,12 +53,13 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any, Literal, Optional
 
 from fastapi import HTTPException
 
 from db import get_pool
+from services.clock import month_start_ist
 
 log = logging.getLogger(__name__)
 
@@ -243,9 +244,27 @@ class Receipt:
 # ── Period arithmetic ───────────────────────────────────────────────────────
 
 def current_period() -> date:
-    """The first day of the month, UTC. The grain of every allowance figure."""
-    now = datetime.now(timezone.utc)
-    return date(now.year, now.month, 1)
+    """The first day of the month **in IST**. The grain of every allowance figure.
+
+    ⚠ THIS WAS UTC UNTIL 2026-09-04 AND THE CHANGE IS DELIBERATE. Every user of
+    this product is in India, so a UTC month boundary rolled the billing period
+    over at 05:30 IST: a charge incurred at 02:00 on the 1st was booked to the
+    month that had just ended, and on 1 April to the previous FINANCIAL YEAR.
+
+    The rest of the product already agreed — `outbound._today_keys` has always
+    computed its daily and monthly email caps "in IST for period boundaries" —
+    and billing was the outlier.
+
+    The clock lives in `services/clock.py` rather than here, because `IST` had
+    three definitions in this codebase before this change and was about to have
+    a fourth. The 18 call sites of this function are untouched: it keeps its
+    name, its module and its signature, so nothing else had to know.
+
+    Measured before the change: 8 rows across `org_billing_lines` and
+    `invoice_billing_lines`, ZERO whose `period_start` disagreed with what IST
+    would have given. Forward-only; nothing was re-dated.
+    """
+    return month_start_ist()
 
 
 def next_period(period: date) -> date:
