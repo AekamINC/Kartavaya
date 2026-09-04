@@ -123,7 +123,7 @@ import logging
 from datetime import date, timedelta
 
 from services.statute import obligation, due_date_from, statute_note
-from services.skills.timeutil import as_date, days_between, utc_now
+from services.skills.timeutil import as_date, days_between, month_days, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -326,12 +326,13 @@ def _month_end(year: int, month: int) -> date:
     return nxt - timedelta(days=1)
 
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'2026-08' -> (2026-08-01, 2026-08-31). Raises on anything else."""
-    year, mon = (int(x) for x in str(month).split("-")[:2])
-    if not 1 <= mon <= 12:
-        raise ValueError(f"{month!r} is not a month")
-    return date(year, mon, 1), _month_end(year, mon)
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_month_bounds = month_days
 
 
 def _shift_months(day: date, n: int) -> date:
@@ -1051,7 +1052,13 @@ async def pack_client_filing_calendar(
     register is empty and `no_findings` is false, deliberately.
     """
     today = utc_now().date()
-    wanted = month or f"{today.year:04d}-{today.month:02d}"
+    # `[:7]` KEEPS THIS HANDLER'S OWN LENIENCY, VISIBLY. Its former private copy
+    # split on `-` and kept the first two fields, so it alone accepted a full
+    # date — `'2026-08-01'` answered about August — while the other nine copies
+    # raised. `timeutil.month_days` is strict, so without this the same input
+    # would fall through to the `except` below and SILENTLY answer about the
+    # current month instead, which is the one outcome worse than refusing.
+    wanted = (month or f"{today.year:04d}-{today.month:02d}")[:7]
     try:
         win_start, win_end = _month_bounds(wanted)
         month = wanted

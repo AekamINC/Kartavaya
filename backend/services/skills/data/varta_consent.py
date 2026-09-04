@@ -195,9 +195,10 @@ import json
 import logging
 import re
 import unicodedata
-from datetime import date
 
-from services.skills.timeutil import as_date, days_between, return_period, utc_now
+from services.skills.timeutil import (
+    as_date, days_between, month_window, return_period, utc_now,
+)
 
 log = logging.getLogger(__name__)
 
@@ -381,19 +382,11 @@ def _display(*candidates) -> str:
     return "(no name recorded)"
 
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'2026-07' -> (2026-07-01, 2026-08-01). The second bound is EXCLUSIVE.
-
-    Exclusive because the column compared against it is a `timestamptz`: a
-    `<= last_day` comparison silently drops everything that happened after
-    midnight on the last day of the month, which is nearly all of that day.
-    """
-    year, mon = (int(x) for x in month.split("-"))
-    if not 1 <= mon <= 12:
-        raise ValueError(f"month out of range: {month}")
-    start = date(year, mon, 1)
-    end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_window` AND IS IMPORTED, NOT
+#: RESTATED. HALF-OPEN — pair the second bound with `<`, never `<=`. Ten modules
+#: declared their own until 2026-09-04 under one name and two contracts; the
+#: name now carries which one this is.
+_month_bounds = month_window
 
 
 # ══════════════════════════════════════════════════════════════════════════

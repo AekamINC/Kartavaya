@@ -26,10 +26,9 @@ are rejected, 27AAQCR5055K1ZR is accepted. A second implementation of a check
 digit is a second implementation that drifts.
 """
 import logging
-from datetime import date
 
 from services.gstin import is_valid as gstin_is_valid
-from services.skills.timeutil import return_period
+from services.skills.timeutil import month_window, return_period
 
 log = logging.getLogger(__name__)
 
@@ -37,17 +36,11 @@ log = logging.getLogger(__name__)
 _FILEABLE = ("tax_invoice", "credit_note", "debit_note")
 
 
-def _period_bounds(period: str) -> tuple[date, date]:
-    """'YYYY-MM' -> [first day, first day of next month).
-
-    Computed here rather than imported from `routers/documents.py`: a skill
-    handler must not import from a router, or `HTTPException` and the whole
-    request stack come with it.
-    """
-    year, month = (int(p) for p in period.split("-", 1))
-    start = date(year, month, 1)
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_window` AND IS IMPORTED, NOT
+#: RESTATED. HALF-OPEN — pair the second bound with `<`, never `<=`. Ten modules
+#: declared their own until 2026-09-04 under one name and two contracts; the
+#: name now carries which one this is.
+_period_bounds = month_window
 
 
 async def check_gstr1_readiness(

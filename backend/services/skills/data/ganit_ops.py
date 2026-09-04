@@ -57,7 +57,7 @@ from datetime import date, timedelta
 
 from services.skill_ack import opaque_ref
 from services.skills.reachable import reachable
-from services.skills.timeutil import utc_now
+from services.skills.timeutil import month_days, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -76,26 +76,13 @@ def _money(value) -> float:
     return round(float(value or 0), 2)
 
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'YYYY-MM' -> (first day, last day), both inclusive.
-
-    Inclusive of BOTH ends, unlike `gst_readiness._period_bounds`, which returns
-    a half-open range. The two conventions sit in the same package on purpose
-    and both are stated: the queries here compare `invoice_date <= $end`, and
-    silently pairing an inclusive comparison with a half-open bound is how the
-    last day of a month stops being billed.
-
-    Month 0 is checked explicitly. `date(y, 0 + 1, 1)` is a valid 1 January, so
-    a caller building the string from a zero-based month index would otherwise
-    sail through and be answered about the wrong YEAR — the same trap
-    `itc_reversal._period_end` documents. Month 13 and up already raise.
-    """
-    year, month_no = (int(p) for p in month.split("-", 1))
-    if not 1 <= month_no <= 12:
-        raise ValueError(month)
-    start = date(year, month_no, 1)
-    nxt = date(year + 1, 1, 1) if month_no == 12 else date(year, month_no + 1, 1)
-    return start, date.fromordinal(nxt.toordinal() - 1)
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_month_bounds = month_days
 
 
 # ═══════════════════════════════════════════════════════════════════════════

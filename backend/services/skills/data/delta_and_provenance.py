@@ -184,16 +184,14 @@ import logging
 from datetime import date
 
 from services.statute import obligation, obligation_for_fy, fy_bounds, fy_of
-from services.skills.timeutil import as_date, utc_now
+from services.skills.timeutil import as_date, month_days, utc_now
 
 #: The calendar helpers #18 and #20 already got right, imported rather than
 #: copied. `_due_date_from` in particular carries a bug that HAPPENED — it read
 #: `due_month_offset` and never `due_month`, and printed GSTR-9 for FY 2025-26
 #: as 31 March 2026, nine months early, next to a statute citation. A second
 #: implementation of that rule in this file would be a second chance to make it.
-from services.skills.data.gst_year import (
-    _due_date_from, _period_bounds, _return_period,
-)
+from services.skills.data.gst_year import _due_date_from, _return_period
 
 log = logging.getLogger(__name__)
 
@@ -382,7 +380,9 @@ async def check_books_moved_since_due(
     """
     today = utc_now().date()
     period = period or _return_period(today)
-    start, end = _period_bounds(period)
+    # `month_days`, INCLUSIVE, because `_MOVED_SQL` compares `invoice_date <= $3::date`
+    # and `end` is also handed to `obligation(as_of=)` as the period end.
+    start, end = month_days(period)
     cap = max(1, int(limit))
 
     gstr1 = await obligation(pool, "gst.return.gstr1", as_of=end)

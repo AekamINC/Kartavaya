@@ -100,7 +100,7 @@ import logging
 from datetime import date
 
 from services.skills.reachable import reachable
-from services.skills.timeutil import return_period
+from services.skills.timeutil import month_days, return_period
 
 log = logging.getLogger(__name__)
 
@@ -125,24 +125,21 @@ TAX_HEADS = ("cgst", "sgst", "igst", "cess")
 def _period_end(period: str) -> date:
     """'YYYY-MM' -> the last day of that month.
 
-    Written out here rather than imported from `gst_readiness._period_bounds`:
-    that one is a private helper of another handler and returns a half-open
-    range, and the honest place for a shared version is `timeutil`, which is not
-    this change's to edit. Duplicating four lines of calendar arithmetic beats
-    reaching into another module's underscore.
+    THE ELEVENTH COPY, IN DISGUISE. This is `month_days(period)[1]`, and its own
+    docstring said where it belonged: "the honest place for a shared version is
+    `timeutil`, which is not this change's to edit." It is edited now.
+
+    ⚠ AND THIS ONE'S MONTH-0 GUARD WAS REAL, unlike the ten `_month_bounds` and
+    `_period_bounds` copies collapsed alongside it. Those all built the month's
+    FIRST day from the parsed month, so `date(y, 0, 1)` raised before their
+    guard could matter — measured, and their docstrings claiming otherwise were
+    wrong. This function computed only the END, from `date(y, month + 1, 1)`, so
+    month 0 never reached a bad `date()` call: `'2026-00'` returned 2025-12-31,
+    a cutoff in the wrong YEAR, and the guard is what stopped it. Verified by
+    running this body with the check removed. `timeutil._month_parts` refuses
+    the same input, so the refusal survives the move.
     """
-    year, month = (int(p) for p in period.split("-", 1))
-    # The month range is checked HERE and not left to `date()` to raise, because
-    # month 0 is the one value `date()` accepts by accident: `date(year, 0 + 1,
-    # 1)` is a valid 1 January, so '2026-00' used to sail through and come back
-    # as at 2025-12-31 — a cutoff in the wrong YEAR, with every bill then bucketed
-    # against a period string that does not exist. Month 13 and up already raised;
-    # only the zero slipped, and a zero is exactly what a caller building the
-    # string from an off-by-one month index produces.
-    if not 1 <= month <= 12:
-        raise ValueError(period)
-    nxt = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return date.fromordinal(nxt.toordinal() - 1)
+    return month_days(period)[1]
 
 
 def _month_after(day: date) -> str:

@@ -60,7 +60,7 @@ from datetime import date
 
 from services.statute import StatuteError, fy_bounds, obligation, obligations
 from services.skills.reachable import reachable
-from services.skills.timeutil import days_between, return_period, utc_now
+from services.skills.timeutil import days_between, month_window, return_period, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -93,23 +93,11 @@ _MASTER_IS_THE_STALE_SIDE = (
 
 # ── shared helpers ───────────────────────────────────────────────────────────
 
-def _period_bounds(period: str) -> tuple[date, date]:
-    """'YYYY-MM' -> [first day, first day of next month).
-
-    Half-open, matching `gst_readiness._period_bounds`, so a bill dated the last
-    of the month lands in that month and one dated the first of the next does
-    not. The month is range-checked HERE rather than left to `date()` to raise,
-    because `date(y, 0 + 1, 1)` is a perfectly valid 1 January: '2026-00' would
-    otherwise sail through and be answered with January's bills under a period
-    string that does not exist. Month 13 and up already raise; only the zero
-    slipped, and a zero is exactly what an off-by-one month index produces.
-    """
-    year, month = (int(p) for p in period.split("-", 1))
-    if not 1 <= month <= 12:
-        raise ValueError(period)
-    start = date(year, month, 1)
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_window` AND IS IMPORTED, NOT
+#: RESTATED. HALF-OPEN — pair the second bound with `<`, never `<=`. Ten modules
+#: declared their own until 2026-09-04 under one name and two contracts; the
+#: name now carries which one this is.
+_period_bounds = month_window
 
 
 def _last_ended_financial_year(today: date) -> str:
@@ -264,9 +252,11 @@ async def brief_ims_expectations(
              what_this_is, what_this_is_not, caveats}.
     """
     period = period or return_period()
+    # The `len(period) != 7 or period[4] != "-"` pre-check that stood here is
+    # gone: `timeutil.month_window` is strict about the form and raises the same
+    # ValueError this already catches, naming the input where the old raise did
+    # not. One shape check, in the helper that owns the shape.
     try:
-        if len(period) != 7 or period[4] != "-":
-            raise ValueError(period)
         start, end = _period_bounds(period)
     except (ValueError, AttributeError, TypeError):
         return {"error": f"'{period}' is not a period. Expected YYYY-MM, e.g. 2026-07."}

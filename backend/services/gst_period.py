@@ -31,9 +31,11 @@ skill that called `period_bounds` would get a 500 for a bad period, so it does
 its own parsing instead (`services/skills/data/gst_readiness.py`).
 """
 import json
-from datetime import date, datetime
+from datetime import date
 
 from fastapi import HTTPException
+
+from services.skills.timeutil import month_window
 from pydantic import BaseModel, Field
 
 
@@ -147,12 +149,14 @@ def period_bounds(period: str) -> tuple[str, str]:
     strings rather than becoming `date` objects for the query's benefit.
     """
     try:
-        datetime.strptime(period, "%Y-%m")
+        start, end = month_window(period)
     except (ValueError, TypeError):
+        # Re-raised as a 400 because this sits behind a router, where a
+        # ValueError is a 500 and a 500 tells the preparer nothing. The
+        # arithmetic is `timeutil.month_window`'s — this file held three copies
+        # of that rollover until 2026-09-04, and the OTHER TWO are below.
         raise HTTPException(400, "period must be YYYY-MM")
-    year, month = int(period[:4]), int(period[5:7])
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return f"{period}-01", end.isoformat()
+    return start.isoformat(), end.isoformat()
 
 
 async def assemble_gstr3b(
@@ -165,9 +169,10 @@ async def assemble_gstr3b(
     and a filing screen that disagrees with the document it generates is worse
     than a screen with no figures — the preparer cannot tell which one lied.
     """
-    start = f"{period}-01"
-    py, pm = int(period[:4]), int(period[5:7])
-    end_exclusive = date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)
+    # Half-open, and `month_window`'s name says so — this was the rollover
+    # written out a second time ten lines below the helper that already had it.
+    start_date, end_exclusive = month_window(period)
+    start = start_date.isoformat()
 
     # ── WHY `doc_status <> 'draft'` IS HERE, AND WHAT IT COST TO LEAVE OUT ──
     # A draft invoice is a document that has NOT been issued to anybody. It was
@@ -329,9 +334,10 @@ async def prefiling_checks(
     """
     from services.gstin import is_valid
 
-    start = f"{period}-01"
-    py, pm = int(period[:4]), int(period[5:7])
-    end_exclusive = (date(py + 1, 1, 1) if pm == 12 else date(py, pm + 1, 1)).isoformat()
+    # The third copy of the same rollover in this file. See `period_bounds`.
+    start_date, end_date = month_window(period)
+    start = start_date.isoformat()
+    end_exclusive = end_date.isoformat()
 
     checks: list[dict] = []
 

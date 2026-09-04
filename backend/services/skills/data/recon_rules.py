@@ -131,7 +131,7 @@ Three organisations: Aekam Inc, Unicode Group, and the seeded E2E test org.
 """
 import logging
 import re
-from datetime import date, timedelta
+from datetime import timedelta
 
 # The matcher's own ruler, imported rather than re-implemented. #17 audits
 # whether a reference WOULD be found, and `bank_matching.check_unmatched_receipts`
@@ -145,7 +145,9 @@ from services.skills.data.bank_matching import (
     _norm,
 )
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, days_between, return_period, utc_now
+from services.skills.timeutil import (
+    as_date, days_between, month_window, return_period, utc_now,
+)
 
 log = logging.getLogger(__name__)
 
@@ -355,25 +357,11 @@ def _threading_verdict(invoice_number: str | None, org_name: str) -> tuple[bool,
     return True, ""
 
 
-def _month_bounds(period: str) -> tuple[date, date] | None:
-    """'YYYY-MM' -> (first day, first day of the NEXT month), or None.
-
-    Integer arithmetic on the year and the month rather than any date
-    subtraction. `tests/test_skill_handler_clock.py` parses this file and fails
-    hand-rolled datetime arithmetic, for the good reason that it has twice been
-    the actual production bug.
-    """
-    try:
-        if len(period) != 7 or period[4] != "-":
-            return None
-        year, month = int(period[:4]), int(period[5:7])
-        if not 1 <= month <= 12:
-            return None
-    except (TypeError, ValueError):
-        return None
-    start = date(year, month, 1)
-    end = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_window` AND IS IMPORTED, NOT
+#: RESTATED. HALF-OPEN — pair the second bound with `<`, never `<=`. Ten modules
+#: declared their own until 2026-09-04 under one name and two contracts; the
+#: name now carries which one this is.
+_month_bounds = month_window
 
 
 def _rule_tokens(*texts) -> set:
@@ -1307,8 +1295,13 @@ async def brief_working_paper_figures(
     """
     today = utc_now().date()
     period = period or return_period()
-    bounds = _month_bounds(period)
-    if bounds is None:
+    # RAISES, WHERE THIS FILE'S OWN COPY RETURNED None. That copy was the only
+    # one of ten with that contract, and a shared helper that sometimes returns
+    # None and sometimes raises is a third contract nobody can hold in their
+    # head. The refusal below is unchanged; only where it is decided moved.
+    try:
+        start, end = _month_bounds(period)
+    except (ValueError, TypeError):
         return {
             "error": f"'{period}' is not a period. Expected YYYY-MM, e.g. 2026-07.",
             "period": period,
@@ -1319,7 +1312,6 @@ async def brief_working_paper_figures(
                 "a finding of no differences.",
             ],
         }
-    start, end = bounds
     cap = max(1, int(limit))
 
     figures = []

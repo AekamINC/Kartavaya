@@ -745,11 +745,41 @@ async def test_an_unparseable_period_measures_nothing_and_says_so():
 
 
 def test_month_bounds_rolls_over_december_without_date_arithmetic():
+    """The window is unchanged and still HALF-OPEN — the second bound is the
+    first of the NEXT month, which is what `_DRIFT_SQL` and friends compare with
+    `<`. `timeutil.month_window` carries that in its name now."""
     assert _month_bounds("2026-12") == (date(2026, 12, 1), date(2027, 1, 1))
     assert _month_bounds("2026-07") == (date(2026, 7, 1), date(2026, 8, 1))
-    assert _month_bounds("2026-13") is None
-    assert _month_bounds("2026-7") is None
-    assert _month_bounds("") is None
+
+
+@pytest.mark.parametrize("junk", ["2026-13", "2026-00", "2026-7", "", None])
+def test_a_bad_period_now_raises_here_and_is_refused_at_the_handler(junk):
+    """THE CONTRACT MOVED, DELIBERATELY, AND THIS ASSERTS BOTH HALVES.
+
+    This file's private copy returned None for anything it could not parse and
+    was the only one of ten to do so; the other nine raised. A shared helper
+    that sometimes returns None and sometimes raises is a third contract, so the
+    canonical raises and the None-handling moved to the one call site that
+    wanted it.
+
+    The second assertion is the one that matters: the HANDLER still refuses, and
+    still says nothing was measured. Without it this test would only be checking
+    that a rename happened.
+    """
+    import asyncio
+
+    with pytest.raises((ValueError, TypeError)):
+        _month_bounds(junk)
+
+    out = asyncio.run(brief_working_paper_figures(_paper_pool(), ORG, period=junk))
+    if junk in (None, ""):
+        # Falsy — the handler defaults to the previous return period rather than
+        # refusing, which is its documented behaviour and is not this change's.
+        assert "error" not in out
+        return
+    assert "error" in out
+    assert out["counts"]["guards_run"] == 0
+    assert any("nothing was measured" in x.lower() for x in out["limitations"])
 
 
 @pytest.mark.asyncio

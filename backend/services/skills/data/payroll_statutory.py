@@ -65,7 +65,7 @@ from services.statute import (
     obligation, obligation_for_fy, fy_bounds, statute_note, fy_of,
 )
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, utc_now
+from services.skills.timeutil import as_date, month_days, utc_now
 # The one canonical Indian state codelist in this backend. #27 joins the
 # employee's work state to a professional-tax slab, and both ends of that join
 # are spelled by different hands — see `_state_keys` below.
@@ -102,12 +102,13 @@ def _f(value, default=0.0) -> float:
     return default if value is None else float(value)
 
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'2026-07' -> (2026-07-01, 2026-07-31)."""
-    year, mon = (int(x) for x in month.split("-"))
-    start = date(year, mon, 1)
-    end = (date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)) - timedelta(days=1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_month_bounds = month_days
 
 
 #: THE FINANCIAL YEAR IS `services.statute.fy_of`, THE INVERSE OF `fy_bounds`,

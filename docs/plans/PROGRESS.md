@@ -10011,3 +10011,128 @@ why. That cross-reference is the thing `_due_date_from` never had.
     backend   25 passed              live, against the production calendar
     frontend 3,431 passed / 220 files
     frontend 20 gates green + `npm run build`
+
+
+## 2026-09-04 · A month has two bounds — the open item, and the four copies the enumeration missed
+
+Yesterday's sweep left one thing open with a note that it needed a decision
+rather than a patch: ten copies of `_month_bounds`/`_period_bounds` in
+`services/skills/data/`, under **one name over two contracts**. Closed now.
+
+### The decision: two named functions, not `inclusive=False`
+
+    start, last_day = month_days(period)     # ... AND d.invoice_date <= $3
+    start, before   = month_window(period)   # ... AND d.created_at   <  $3
+
+A boolean at a call site says nothing about what it buys, and picking it wrong
+does not raise — it silently covers a window one day off. The names do the work:
+`before` beside `<=` reads wrong at a glance, which a bare `False` never can.
+
+⚠ **AGAINST A `timestamptz` COLUMN ONLY `month_window` IS CORRECT.**
+`created_at <= last_day` drops everything after midnight on the last day, which
+is nearly all of that day. Against a `date` column both forms are right and both
+are in use here. That asymmetry is why the pair exists rather than one function;
+`varta_consent` is the handler that reasoned it out first and has its own test
+pinning it, named for that reason.
+
+**No query changed.** Every one of the ten pairings was checked against the
+operator in its own SQL before anything moved, and all ten were already correct
+— which is why this was priced as hygiene and why the inclusive callers were NOT
+converted to half-open. Six SQL edits against zero known defects is a bad trade.
+
+### ⚠ The enumeration said ten. The walking ratchet found fourteen.
+
+Same lesson as 268's third resolver, one layer up: a list of modules you already
+know is not a search.
+
+  · `itc_reversal._period_end` — an eleventh **in disguise**. It is
+    `month_days(p)[1]`, and its own docstring said so: "the honest place for a
+    shared version is `timeutil`, which is not this change's to edit."
+  · `services/gst_period.py` — **three more**. The `period_bounds` helper, plus
+    the same rollover inlined in `assemble_gstr3b` (ten lines below it) and
+    again in a third function. Its two differences are real and kept: it returns
+    ISO **strings** (callers bind `$n::text::date`, and `_build_tally` puts them
+    into XML) and raises `HTTPException(400)`, because a ValueError behind a
+    router is a 500 that tells the preparer nothing.
+
+`commission.period_bounds` and `platform_proration.period_bounds` are NOT copies
+— both answer "the whole settlement period of this CADENCE containing this
+date", neither takes a `'YYYY-MM'` — and are exempted **by name with their
+signature** rather than by narrowing the pattern. A narrower regex would also
+have stopped finding real copies, and this walk finding three modules nobody had
+enumerated is the only reason `gst_period` was collapsed at all.
+
+### ⚠ And it corrects yesterday's own finding, which was half wrong
+
+Yesterday: "the `'2026-00'` guard three copies document at length is DEAD in
+every copy, because `date(y, 0, 1)` raises first." True of the ten — they all
+build the month's FIRST day from the parsed month.
+
+**Not true of `_period_end`.** That one computed only the END, from
+`date(y, month + 1, 1)`, so nothing bad was ever constructed and `'2026-00'`
+came back **2025-12-31 — a cutoff in the wrong YEAR**, with every bill then
+bucketed against a period string that does not exist. There the guard was the
+only thing standing in the way. Verified by running its body with the check
+removed, and that unguarded body is now kept inside the test as the anti-vacuity
+proof, so the claim cannot rot into folklore in either direction.
+
+`timeutil._month_parts` range-checks for both reasons: for `month_days` and
+`month_window` it only improves the message (`date()` says "month must be in
+1..12" and names nothing), and for any caller taking only `[1]` it is load-
+bearing.
+
+### One error contract, where there were three
+
+Nine copies raised, `recon_rules` returned `None`, and `client_register` alone
+split on `-` and kept two fields — so it accepted `'2026-08-01'` and answered
+about August while the other nine raised. The canonical raises and names the
+input; the None-handling moved to the one call site that wanted it, and the
+date-leniency to the one that had it, written as `[:7]` with a comment. That
+second one matters: without it the same input would have fallen through
+`client_register`'s existing `except` and **silently answered about the current
+month**, which is the one outcome worse than refusing.
+
+`gst_cliffs`' hand-rolled `len(period) != 7 or period[4] != "-"` pre-check is
+gone — the canonical is strict about the shape and raises the same ValueError
+that handler already catches.
+
+### ⚠ A NEW ASSERTION WAS SATISFIED BY PROSE, AND MUTATION FOUND IT
+
+Six mutations were run against the new suite. Five went red immediately. The
+sixth — re-inlining the rollover inside `gst_period.period_bounds` — **stayed
+green**, because the delegation check was written as `"month_window" in body`
+and the function's own comment says *"the arithmetic is `timeutil.month_window`'s"*.
+The assertion was matching the PROSE ABOUT the code while the code underneath
+had become a copy again. The same trap `test_ganit_ops._sql_only` was written
+for, in a test written the same hour to prevent copies.
+
+It parses an `ast.Call` now. All six mutations red:
+
+    varta_consent silently goes inclusive        -> RED
+    month_window stops being half-open           -> RED
+    the month range check is dropped             -> RED
+    an eleventh copy appears                     -> RED
+    the gst_period adapter re-inlines            -> RED  (was green)
+    recon_rules stops refusing a bad period      -> RED
+
+### Two existing tests were wrong afterwards, and both were corrected rather than deleted
+
+  · `test_the_clock_is_timeutil_and_never_utcnow` asserted an EXACT import line,
+    so it broke when `month_days` joined the same import — an edit that changed
+    nothing about the clock. Now a regex for "timeutil is where `utc_now` comes
+    from". A test that fails on the shape of an unrelated edit is a test people
+    learn to edit blindly.
+  · `test_month_bounds_rolls_over_december_without_date_arithmetic` asserted
+    `_month_bounds("2026-13") is None` — the contract that deliberately moved.
+    Split: the rollover values stay, and a new parametrized test asserts the
+    helper now RAISES **and** that the handler still returns its "nothing was
+    measured" refusal. The second half is the one that matters; without it the
+    test would only be checking that a rename happened.
+
+### Verification
+
+    backend  757 passed, 2 skipped   (the 13 touched modules + yesterday's two
+                                      statute suites)
+    backend  1,519 passed            wider sweep: gst / period / month /
+                                      commission / proration / tally / invoice
+    6 mutations, all red

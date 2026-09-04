@@ -125,7 +125,7 @@ from datetime import date, timedelta
 from urllib.parse import quote
 
 from services.statute import obligations, obligation, due_date_from, statute_note
-from services.skills.timeutil import as_date, days_between, utc_now
+from services.skills.timeutil import as_date, days_between, month_days, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -194,12 +194,13 @@ WEEKEND = frozenset({5, 6})
 MAX_SHIFT_DAYS = 14
 
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'2026-08' -> (2026-08-01, 2026-08-31)."""
-    year, mon = (int(x) for x in month.split("-"))
-    start = date(year, mon, 1)
-    nxt = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
-    return start, nxt - timedelta(days=1)
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_month_bounds = month_days
 
 
 def _previous_month(month: str) -> str:

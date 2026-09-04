@@ -56,7 +56,7 @@ from datetime import date, timedelta
 from services.statute import (
     obligation, obligation_for_fy, fy_bounds, due_date_from, statute_note, fy_of,
 )
-from services.skills.timeutil import as_date, utc_now
+from services.skills.timeutil import as_date, month_days, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -96,12 +96,13 @@ def _return_period(day: date) -> str:
     return f"{prev.year:04d}-{prev.month:02d}"
 
 
-def _period_bounds(period: str) -> tuple[date, date]:
-    """'2026-08' -> (2026-08-01, 2026-08-31)."""
-    year, month = (int(x) for x in period.split("-"))
-    start = date(year, month, 1)
-    end = (date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)) - timedelta(days=1)
-    return start, end
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_period_bounds = month_days
 
 
 #: THE RESOLVER LIVES IN `services.statute` AND IS IMPORTED, NOT RESTATED.

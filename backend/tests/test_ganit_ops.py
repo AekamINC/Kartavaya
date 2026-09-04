@@ -43,6 +43,7 @@ on 2026-08-20:
                 the wrong tax head carrying ₹3,75,300
 """
 import inspect
+import re
 import json
 from datetime import date, datetime, timedelta, timezone
 
@@ -1222,7 +1223,13 @@ def test_the_clock_is_timeutil_and_never_utcnow():
 
     src = inspect.getsource(mod)
     assert "utcnow()" not in src
-    assert "from services.skills.timeutil import utc_now" in src
+    # Matched as "timeutil is where the clock comes from", not as one exact
+    # import line: this assertion broke on 2026-09-04 when `month_days` joined
+    # the same import, which changed nothing about the clock. A test that fails
+    # on the shape of an unrelated edit is a test people learn to edit blindly.
+    assert re.search(
+        r"^from services\.skills\.timeutil import [^\n]*\butc_now\b", src, re.M
+    ), "ganit_ops must take its clock from services.skills.timeutil"
 
 
 def test_no_uuid_reaches_any_output():

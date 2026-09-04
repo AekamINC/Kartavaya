@@ -58,7 +58,7 @@ from datetime import date, timedelta
 from services.on_the_rolls import still_on_the_rolls
 from services.statute import obligation
 from services.skills.reachable import reachable
-from services.skills.timeutil import as_date, utc_now
+from services.skills.timeutil import as_date, month_days, utc_now
 
 log = logging.getLogger(__name__)
 
@@ -106,21 +106,13 @@ AGE_BUCKETS = ("0-15 days", "16-30 days", "31+ days")
 
 # ── small calendar helpers ───────────────────────────────────────────────────
 
-def _month_bounds(month: str) -> tuple[date, date]:
-    """'YYYY-MM' -> (first day, last day). Raises ValueError on anything else.
-
-    The month range is checked HERE rather than left to `date()`, because month
-    0 is the one bad value `date()` accepts by accident: `date(y, 0 + 1, 1)` is
-    a valid 1 January, so '2026-00' would sail through and come back as a window
-    in the wrong YEAR. A zero is exactly what a caller building the string from
-    an off-by-one month index produces.
-    """
-    year, mon = (int(p) for p in month.split("-", 1))
-    if not 1 <= mon <= 12:
-        raise ValueError(month)
-    first = date(year, mon, 1)
-    nxt = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
-    return first, date.fromordinal(nxt.toordinal() - 1)
+#: THE MONTH IS `services.skills.timeutil.month_days` AND IS IMPORTED, NOT
+#: RESTATED. Ten modules in this package declared their own until 2026-09-04,
+#: under ONE NAME OVER TWO CONTRACTS — six returning the last day and four the
+#: first of the next month — so reading one handler to learn another's bound
+#: gave the wrong answer. The name now carries the convention: `month_days`
+#: pairs with `<=`, `month_window` with `<`.
+_month_bounds = month_days
 
 
 def _previous_month(month: str) -> str:

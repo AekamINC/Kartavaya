@@ -22,6 +22,7 @@ The DATE case is the other half. `ganit_invoices.due_date` is a DATE, so asyncpg
 hands back a `datetime.date`, and `datetime - date` is its own TypeError. Both
 shapes go through `days_between`.
 """
+import re
 from datetime import date, datetime, timedelta, timezone
 
 
@@ -114,3 +115,95 @@ def hours_between(later, earlier) -> float:
     if not isinstance(later, datetime) or not isinstance(earlier, datetime):
         return 0.0
     return (as_utc(later) - as_utc(earlier)).total_seconds() / 3600
+
+
+# ── A month, as two dates ────────────────────────────────────────────────────
+#
+# TWO FUNCTIONS, NOT ONE WITH A FLAG, AND THE NAMES ARE THE POINT.
+#
+#     start, last_day = month_days(period)     # ... AND d.invoice_date <= $3
+#     start, before   = month_window(period)   # ... AND d.created_at   <  $3
+#
+# Crossing them reads wrong at the call site, which is the entire reason the
+# pair is spelled out rather than hidden behind `inclusive=False`. A bare
+# `False` in an argument list says nothing about what it buys, and picking it
+# wrong does not raise — it silently answers about a window one day off.
+#
+# ⚠ AGAINST A `timestamptz` COLUMN, `month_window` IS THE ONLY CORRECT ONE.
+# `created_at <= last_day` drops everything that happened after midnight on the
+# last day of the month, which is nearly all of that day. Against a `date`
+# column both forms are correct and both are in use here; against a timestamp
+# only one is. That asymmetry is why the half-open form exists at all, and
+# `varta_consent` is the handler that reasoned it out first.
+#
+# ── WHY THESE ARE HERE ───────────────────────────────────────────────────────
+#
+# Ten copies lived in `services/skills/data/` until 2026-09-04 — seven called
+# `_month_bounds`, three called `_period_bounds` — under ONE NAME OVER TWO
+# CONTRACTS. `_period_bounds` alone was three files split two-to-one, so reading
+# one handler to understand another gave you the wrong bound. Every pairing was
+# correct when they were collapsed, checked one call site at a time; nothing
+# below changes what any query asks for. It removes the eleventh copy's chance
+# to get it wrong.
+#
+# ⚠ AND IT CORRECTS THE REASON THREE OF THEM GAVE FOR EXISTING — WITHOUT
+# THROWING AWAY THE ONE PLACE THE SAME REASON WAS TRUE. Three copies carried a
+# paragraph each explaining that a month range-check was load-bearing because
+# `date(y, 0 + 1, 1)` is a valid 1 January, so `'2026-00'` "would otherwise sail
+# through and be answered about the wrong YEAR".
+#
+#   · In all TEN it was dead. Every one of them built the month's FIRST day from
+#     the parsed month, so `date(y, 0, 1)` raised before the guard could matter.
+#     Measured by executing each copy against the same inputs, not read.
+#   · In `itc_reversal._period_end` it was REAL, and that function is an
+#     eleventh copy in disguise — `month_days(period)[1]`. It computed only the
+#     END, from `date(y, month + 1, 1)`, so nothing bad was ever constructed:
+#     `'2026-00'` came back 2025-12-31, a cutoff in the wrong year. Verified by
+#     running its body with the check removed.
+#
+# So `_month_parts` range-checks. For the two functions below the check only
+# improves the message — `date()` would raise anyway, saying "month must be in
+# 1..12" without naming the input — but for any caller taking only `[1]` it is
+# the thing standing between a typo and an answer about another year.
+
+_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def _month_parts(month) -> tuple[int, int]:
+    """`'2026-08'` -> `(2026, 8)`. Raises ValueError naming the input otherwise.
+
+    STRICT: `'2026-8'`, `'2026-08-01'` and `None` are all refused. One former
+    copy (`client_register`) split on `-` and kept the first two fields, so it
+    alone accepted a full date and answered about its month while the other nine
+    raised. That leniency now sits at that one call site, where a reader can see
+    it, rather than in the helper the other nine share.
+    """
+    m = _MONTH_RE.match(month) if isinstance(month, str) else None
+    if not m:
+        raise ValueError(f"{month!r} is not a month in the form 'YYYY-MM'")
+    year, mon = int(m.group(1)), int(m.group(2))
+    if not 1 <= mon <= 12:
+        raise ValueError(f"{month!r} is not a month: {mon} is not 1-12")
+    return year, mon
+
+
+def month_days(month) -> tuple[date, date]:
+    """`'2026-08'` -> `(2026-08-01, 2026-08-31)`. BOTH ENDS INCLUSIVE.
+
+    For a `date` column, compared with `>=` and `<=`. For a `timestamptz`
+    column, use `month_window` — see the note above.
+    """
+    year, mon = _month_parts(month)
+    nxt = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
+    return date(year, mon, 1), nxt - timedelta(days=1)
+
+
+def month_window(month) -> tuple[date, date]:
+    """`'2026-08'` -> `(2026-08-01, 2026-09-01)`. THE SECOND BOUND IS EXCLUSIVE.
+
+    For a half-open comparison, `>= start` and `< before`. Correct against a
+    `date` column and the only correct form against a `timestamptz` one.
+    """
+    year, mon = _month_parts(month)
+    return (date(year, mon, 1),
+            date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1))
