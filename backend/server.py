@@ -467,10 +467,27 @@ async def security_headers(request: Request, call_next):
 api_router = APIRouter(prefix="/api")
 
 # ── CORS ──────────────────────────────────────────
+# ⚠ THE DOMAIN IS `kartavaya.com`. THERE IS NO `kartavya.com` HERE, AND THERE
+# MUST NOT BE. Three origins for the misspelling sat in this list until
+# 2026-09-04 — `kartavya.com`, `www.kartavya.com`, `public.kartavya.com` — and
+# that domain is NOT OWNED BY THIS COMPANY. It resolves today to an nginx
+# parking page whose title reads "Kartavya.com is for sale - Premium Domain",
+# so anyone may buy it.
+#
+# What that granted, precisely, because the honest severity is not the dramatic
+# one: `allow_credentials=True` below, so a permitted origin may READ responses
+# that carry credentials. It was NOT exploitable, for two reasons that both had
+# to hold — the `session_token` cookie is `SameSite=Lax`, which browsers do not
+# attach to a cross-site fetch, and `COOKIE_DOMAIN` is unset so the cookie is
+# host-only on the API. Auth is otherwise a Bearer token in `localStorage`,
+# which no other origin can read.
+#
+# It is removed anyway. Both of those mitigations are one config change away
+# from gone — somebody hits a cross-site problem, sets `SameSite=None`, and a
+# domain a stranger can buy is holding a credentialed grant on the production
+# API. An allowlist entry for a host we do not own has no upside to weigh
+# against that.
 DEFAULT_ORIGINS = [
-    "https://kartavya.com",
-    "https://www.kartavya.com",
-    "https://public.kartavya.com",
     "https://kartavaya.com",
     "https://www.kartavaya.com",
     "https://staging.kartavaya.com",

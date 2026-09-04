@@ -10580,3 +10580,116 @@ retry, so the build is hostage to registry availability.
     local    2,532 passed / 171 skipped   on pypdf 6.16.1
     pip-audit pypdf==6.16.1  ->  no known vulnerabilities
     baseline 24 -> 17
+
+
+## 2026-09-04 · The domain typo, and what it was holding open
+
+`kartavya` is one letter short of `kartavaya`. The CI variable was the visible
+half; the CORS allowlist was the half that mattered.
+
+### The variable
+
+`E2E_API_URL` named `kartavya-staging.up.railway.app` — a 404. Corrected to
+`kartavaya-staging.up.railway.app`, which is live and answers
+
+    {"status": "ok", "environment": "staging", "outbound_mode": "dry"}
+
+⚠ An earlier recommendation to delete this variable outright is **withdrawn**.
+The reasoning was hand-wavy ("a trap for the next reader") and the measurement
+contradicted it: the staging backend exists and answers.
+
+### The allowlist
+
+Grepping the same typo found three more in `server.py`:
+
+    https://kartavya.com
+    https://www.kartavya.com
+    https://public.kartavya.com
+
+⚠ **That domain is not owned by this company.** It serves an nginx parking
+page titled *"Kartavya.com is for sale - Premium Domain"*. The CORS middleware
+sets `allow_credentials=True`, so an origin on this list may read responses that
+carried the caller's credentials.
+
+**It was not exploitable, and saying so is the point** — the dramatic reading
+would be wrong. Two mitigations both held:
+
+  · `session_token` is `SameSite=Lax`; a browser does not attach it to a
+    cross-site fetch.
+  · `COOKIE_DOMAIN` is unset, so the cookie is host-only on the API.
+
+and auth is otherwise a Bearer token in `localStorage`, which no other origin can
+read. Removed anyway: both of those are one config change from gone — somebody
+hits a cross-site problem, sets `SameSite=None`, and a domain a stranger can buy
+is holding a credentialed grant on the production API.
+
+Origins 22 → 19. Verified against live production before the change, which
+returned `access-control-allow-origin: https://kartavya.com`.
+
+### Nothing tested the allowlist
+
+`grep -l DEFAULT_ORIGINS tests/` returned nothing. 34 tests now, and the sharpest
+one is not about the typo at all.
+
+⚠ **`_VERCEL_PREVIEW_RE` is passed as `allow_origin_regex` and is UNANCHORED.**
+Starlette applies it with `fullmatch`, so `https://kartavaya.com.attacker.example`
+is refused — confirmed against live production, no `access-control-allow-origin`
+returned. Under `re.match`, which Starlette used in older releases, that same
+string matches `https://([a-z0-9-]+\.)?kartavaya\.com` as a PREFIX and the
+attacker's host is allowed with credentials.
+
+So the tests **drive the real app** rather than reading the pattern. A library
+downgrade, a resolver change or an added `.*` turns them red instead of turning
+the allowlist into a suggestion. Anti-vacuity floors throughout: an app that
+refuses every origin, or a list that is empty, passes every refusal test, so
+`app.kartavaya.com` being allowed is asserted beside them.
+
+Six mutations, all red:
+
+    put https://kartavya.com back on the list        2 failed
+    add |https://.* to the regex                     9 failed
+    drop app.kartavaya.com (anti-vacuity floor)      1 failed
+    allow_credentials=False                          1 failed
+    trailing slash on an origin                      1 failed
+    regex matches nothing                            1 failed
+
+The last one failed only the regex-level test and that is correct:
+`app.kartavaya.com` is on the explicit list too, so the app still allows it.
+
+### Still open, and it is a different decision
+
+The seven `kartavya-*.vercel.app` entries carry the same misspelling. They are
+**not** the same class of thing and were left alone:
+
+  · They are Vercel PROJECT names, not domains — an identifier is spelled
+    however it was created. There is nothing to correct them to:
+    `kartavaya.vercel.app`, `kartavaya-aekam.vercel.app` and
+    `kartavaya-kevalvshah03-6145s-projects.vercel.app` all **404**.
+  · ⚠ Unlike the `kartavaya.com` entries, these are **enforcement, not
+    documentation**. The regex does not match them; production returns
+    `access-control-allow-origin: https://kartavya.vercel.app` today. Removing
+    them removes a real grant.
+  · All the live ones are aliases of the **one Vercel project the company still
+    owns** — `kartavya`, hobby team `kevalvshah03-6145s-projects`, linked to
+    the OLD `kevalvshah/Kartavya` repo. No stranger holds one.
+  · ⚠ But `kartavya.vercel.app` serves a bare **"Create Next App"** scaffold,
+    not this product. Deleting that project frees the name for anyone with a
+    Vercel account to claim — the `kartavya.com` shape, with a cheaper trigger
+    than buying a domain.
+  · `kartavya-production.akeam.vercel.app` carries a SECOND typo (`akeam`, not
+    `aekam`), is not a Vercel URL shape, and returns 000. It never existed.
+
+`server.py`'s own note says the regex "is the thing that actually decides, and
+narrowing it is a separate decision with its own blast radius". That holds. The
+question is not spelling — it is whether anything still loads the app from
+Vercel, on a platform `CLAUDE.md` says is gone.
+
+### Verification
+
+    backend    400 passed / 5 skipped   (cors, origin, server, security, auth, health)
+    new file    34 passed
+    mutations    6 of 6 red
+    live probe  kartavaya.com.attacker.example -> refused (no ACAO)
+                app.kartavaya.com              -> allowed
+                kartavya.com                   -> allowed, pre-change
+    origins     22 -> 19
