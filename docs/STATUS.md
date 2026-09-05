@@ -466,6 +466,17 @@ only client-side codecs and deliberately sets no `search_path`, and there is no
 `.prepare()` anywhere in `backend/`. Report:
 `docs/incidents/2026-08-31-production-on-the-session-mode-pooler.md`.
 
+✅ **DONE — this owner action was applied and this section never recorded it.**
+Read live from the startup log of deployment `33f3cc46`, 2026-09-05 21:06:14Z:
+
+    DATABASE_URL: postgresql://...pooler.supabase.com:6543/postgres
+    DB pool created successfully
+
+Production is on **6543, transaction mode**. The 15-client session cap no
+longer applies, and the five `EMAXCONNSESSION` Sentry issues it produced were
+resolved on 2026-09-05. The command below is kept as the record of what was
+run, not as an outstanding action.
+
 **OWNER ACTION — one variable, reversible.** Blocked twice by the auto-mode
 classifier here, and the MCP alternative would print the DB password:
 
