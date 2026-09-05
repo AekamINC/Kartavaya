@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Kartavaya — Thirteen Modules, Thirteen Flows</title>
+<meta name="description" content="Marketing collateral: the customer-facing flow through each of Kartavaya's thirteen modules, one A4 page each." />
+<!-- Fonts are embedded, not fetched. See build-fonts.mjs for why: a CDN link
+     let Chromium substitute a system Devanagari face during the PDF print
+     pass on 9 of 12 one-pagers. Regenerate with `node build-fonts.mjs`. -->
+<link rel="stylesheet" href="fonts.css" />
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Kartavaya — module flow collateral.
+
+   Palette, type scale and the lotus are taken from the product, not invented:
+   grounds and inks are the light arm of `frontend/src/styles/kartavaya-design.css`
+   (:416); the mark is drawn from the exported COURSES/lobe() geometry in
+   `frontend/src/components/brand/Lotus.jsx`, so it cannot drift by transcription.
+
+   ── One measured constraint drives every colour choice here ────────────────
+   --primary #04837A is 3.08:1 - 4.25:1 on the cream ladder. It FAILS AA for
+   small text on every ground in this document. --primary-text #046B64 holds
+   4.66:1 on the darkest ground used (--s-high #E3DCCA) and 5.85:1 on the
+   lightest. So: #04837A is a STROKE AND FILL colour only — rails, nodes,
+   rules, the mark. Every accent WORD is #046B64. The two darkest steps of the
+   ladder (--s-highest #DBD2BC, 4.24:1) are deliberately unused as a text
+   ground for exactly this reason.
+
+   Print: A4 landscape, 297x210mm, full bleed, no browser margin.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Grounds — the product's light surface ladder. */
+  --bg:            #F3EFE6;
+  --s-lowest:      #FFFEFB;
+  --surface:       #FDFCF8;
+  --s-low:         #F8F5ED;
+  --s-container:   #EBE5D6;
+  --s-high:        #E3DCCA;
+
+  /* Inks. */
+  --ink:           #1B1D1A;
+  --ink-2:         #4A4E48;
+  --ink-3:         #5E625A;
+  --outline:       #78725F;
+  --outline-var:   #D8D1BE;
+
+  /* Accent. --primary strokes, --primary-text writes. */
+  --primary:       #04837A;
+  --primary-text:  #046B64;
+  --primary-cont:  #B4F1E8;
+
+  /* Tiro is listed in EVERY stack, after the Latin face. Font fallback is
+     per-character, so Latin still resolves to Newsreader/Inter/JetBrains and
+     only the Devanagari drops through to Tiro.
+
+     Without it the three places that set Devanagari in a Latin-only face — the
+     module footers, the cover footer and the ecosystem band — fell through to
+     whatever the OS offers, which on this machine is Nirmala UI. That font was
+     being EMBEDDED IN THE PDF: the deck rendered differently depending on the
+     machine that built it, and shipped a Windows system face as brand type. */
+  --font-display:  'Newsreader', 'Tiro Devanagari Hindi', Georgia, serif;
+  --font-ui:       'Inter', 'Tiro Devanagari Hindi', system-ui, sans-serif;
+  --font-hindi:    'Tiro Devanagari Hindi', serif;
+  --font-mono:     'JetBrains Mono', 'Tiro Devanagari Hindi', ui-monospace, monospace;
+
+  --r-sm:  7px;
+  --r-md:  12px;
+  --r-lg:  17px;
+
+  --gap:   4.6mm;      /* the flow-track gutter; the chevron sits at half of it */
+  --node:  8.2mm;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { background: #C9C2AF; }
+body {
+  font-family: var(--font-ui);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  font-variant-ligatures: common-ligatures;
+}
+
+/* ── Page ──────────────────────────────────────────────────────────────── */
+@page { size: A4 landscape; margin: 0; }
+
+.page {
+  position: relative;
+  width: 297mm;
+  height: 210mm;
+  overflow: hidden;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  page-break-after: always;
+  break-after: page;
+}
+.page:last-child { page-break-after: auto; break-after: auto; }
+
+/* On screen only — stack the sheets so the deck can be reviewed in a browser. */
+@media screen {
+  body { padding: 24px 0; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+  .page { box-shadow: 0 2px 4px rgba(27,29,26,.10), 0 18px 46px rgba(27,29,26,.20); }
+}
+
+/* Single-module export: `?only=<code>` hides every other sheet. */
+body.only .page { display: none; }
+body.only .page.show { display: flex; }
+
+/* ── The mark ──────────────────────────────────────────────────────────── */
+/* EVERY .lotus needs an explicit size. The generated <svg> carries a viewBox
+   and no width/height, so an unsized one resolves to 100% of its container and
+   then takes whatever height that implies — the footer mark alone was 23mm
+   tall, which is most of why 13 of 14 sheets ran past the bottom of the page. */
+.lotus { display: block; flex: none; }
+.lotus path, .lotus circle { fill: none; stroke: currentColor; stroke-width: 1.6; }
+.lotus--pen2 path, .lotus--pen2 circle { stroke-width: 2.6; }
+
+/* ═══ COVER ════════════════════════════════════════════════════════════ */
+.cover { background: var(--s-low); }
+.cover__mark {
+  position: absolute; color: var(--outline-var);
+  right: -62mm; top: 50%; transform: translateY(-50%);
+  width: 210mm; height: 210mm;
+}
+.cover__body { position: relative; padding: 20mm 0 0 24mm; max-width: 190mm; flex: 1; }
+.cover__chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 8.4pt; font-weight: 500;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--primary-text);
+  border: 1px solid var(--primary); border-radius: 999px; padding: 4px 13px;
+}
+.cover h1 {
+  font-family: var(--font-display); font-weight: 400;
+  font-size: 56pt; line-height: 1.0; letter-spacing: -.022em;
+  margin: 10mm 0 0; color: var(--ink);
+}
+.cover h1 em { font-style: italic; color: var(--primary-text); }
+.cover__deva {
+  font-family: var(--font-hindi); font-size: 20pt; color: var(--ink-3);
+  margin-top: 4mm; line-height: 1.5;
+}
+.cover__lede {
+  font-family: var(--font-display); font-size: 14.5pt; line-height: 1.52;
+  color: var(--ink-2); margin-top: 7mm; max-width: 144mm;
+}
+.cover__rule { width: 44mm; height: 2px; background: var(--primary); margin: 8mm 0 6mm; }
+.cover__meta {
+  font-family: var(--font-mono); font-size: 8.2pt; line-height: 1.95;
+  color: var(--ink-3); letter-spacing: .04em;
+}
+.cover__meta b { color: var(--ink); font-weight: 600; }
+.cover__foot {
+  position: relative; padding: 0 24mm 12mm; display: flex;
+  justify-content: space-between; align-items: flex-end;
+  font-family: var(--font-mono); font-size: 8pt; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+
+/* ═══ MAP (how the thirteen connect) ══════════════════════════════════ */
+.map { padding: 11mm 16mm 0; }
+.map__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6mm; margin-top: 6mm; }
+.spine {
+  border: 1px solid var(--outline-var); border-radius: var(--r-lg);
+  background: var(--surface); padding: 7mm 7mm 6.5mm; display: flex; flex-direction: column;
+}
+.spine__label {
+  font-family: var(--font-mono); font-size: 7.6pt; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--primary-text); margin-bottom: 2mm;
+}
+.spine__title { font-family: var(--font-display); font-size: 17pt; line-height: 1.15; margin-bottom: 4.5mm; }
+/* flex:1 rather than margin-top:auto on the note — bottom-aligning the note
+   put the three cards' rules at three different heights, because the notes are
+   three different lengths. Growing the chain aligns the rules instead. */
+.spine__chain { display: flex; flex-direction: column; gap: 0; margin-bottom: 4mm; flex: 1; }
+.chain__item { display: flex; align-items: baseline; gap: 7px; padding: 2.1mm 0; }
+.chain__dot { width: 5px; height: 5px; border-radius: 999px; background: var(--primary); flex: none; transform: translateY(-2px); }
+.chain__name { font-size: 10.5pt; font-weight: 600; color: var(--ink); }
+.chain__deva { font-family: var(--font-hindi); font-size: 9pt; color: var(--ink-3); }
+.chain__what { font-size: 9pt; color: var(--ink-3); margin-left: auto; }
+/* The connector between two links: a hairline drop with a chevron on it,
+   centred under the dot rather than floating beside it. */
+.chain__arrow { position: relative; height: 4.6mm; margin-left: 2px; }
+.chain__arrow::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--outline-var); }
+.chain__arrow::after {
+  content: ''; position: absolute; left: .5px; bottom: 0; width: 4px; height: 4px;
+  border-right: 1.2px solid var(--primary); border-bottom: 1.2px solid var(--primary);
+  transform: translate(-50%, 1px) rotate(45deg);
+}
+.spine__note { font-size: 9pt; line-height: 1.55; color: var(--ink-2); border-top: 1px solid var(--outline-var); padding-top: 3.5mm; min-height: 21mm; }
+.map__across {
+  margin-top: 6mm; border: 1px solid var(--primary); border-radius: var(--r-lg);
+  background: var(--primary-cont); padding: 5.5mm 7mm;
+  display: grid; grid-template-columns: 74mm 1fr; gap: 7mm; align-items: center;
+}
+.map__across .spine__label { color: #00201D; margin: 0 0 1.5mm; }
+.map__across h3 { font-family: var(--font-display); font-size: 15pt; font-weight: 400; line-height: 1.7; color: #00201D; }
+.map__across p { font-size: 9.6pt; line-height: 1.55; color: #00201D; }
+.map__across b { font-weight: 600; }
+
+/* ═══ MODULE SHEET ═════════════════════════════════════════════════════ */
+
+/* Head band — the family tint. Four steps of the product's own ladder, so the
+   deck has rhythm without inventing a colour the design system does not have. */
+/* flex:none is LOAD-BEARING. The page is a fixed-height flex column, so without
+   it the band is a shrinkable item: when the sheet's content exceeded 210mm the
+   browser compressed the header rather than the flow, and `overflow: hidden`
+   then silently ate the promise line and the bottom half of the stat numerals.
+   Nothing errored — the words were simply not on the page. */
+.head {
+  position: relative; flex: none; padding: 11mm 16mm 8mm;
+  border-bottom: 1px solid var(--outline-var); overflow: hidden;
+}
+.fam-revenue      .head { background: var(--s-low); }
+.fam-people       .head { background: var(--s-container); }
+.fam-conversation .head { background: var(--bg); }
+.fam-intelligence .head { background: var(--s-high); }
+
+.head__mark {
+  position: absolute; color: var(--outline-var);
+  right: -34mm; top: -40mm; width: 126mm; height: 126mm; opacity: .6;
+}
+.head__row { position: relative; display: flex; align-items: flex-end; gap: 8mm; }
+.head__left { flex: 1; min-width: 0; }
+.eyebrow {
+  font-family: var(--font-mono); font-size: 7.8pt; font-weight: 500;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--primary-text);
+  display: flex; align-items: center; gap: 9px;
+}
+.eyebrow span { color: var(--ink-3); letter-spacing: .12em; }
+.eyebrow i { width: 14px; height: 1px; background: var(--outline); font-style: normal; }
+.head h2 {
+  font-family: var(--font-display); font-weight: 400; font-size: 40pt;
+  line-height: 1.02; letter-spacing: -.02em; margin-top: 4.5mm;
+  display: flex; align-items: baseline; gap: 5mm; flex-wrap: wrap;
+}
+.head h2 .deva { font-family: var(--font-hindi); font-size: 25pt; color: var(--ink-3); letter-spacing: 0; }
+.promise {
+  font-family: var(--font-display); font-style: italic; font-size: 15pt;
+  line-height: 1.4; color: var(--ink-2); margin-top: 4mm; max-width: 168mm;
+}
+.head__stats { position: relative; display: flex; gap: 7mm; flex: none; padding-bottom: 1.5mm; }
+.stat { text-align: right; }
+.stat b {
+  display: block; font-family: var(--font-display); font-size: 25pt;
+  font-weight: 400; line-height: 1; color: var(--primary-text);
+  font-variant-numeric: tabular-nums;
+}
+.stat span {
+  display: block; font-family: var(--font-mono); font-size: 7.2pt;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--ink-3); margin-top: 2mm;
+}
+
+/* ── The flow track ────────────────────────────────────────────────────── */
+.flow { padding: 8mm 16mm 0; flex: 1; display: flex; flex-direction: column; }
+.section-label {
+  font-family: var(--font-mono); font-size: 7.8pt; font-weight: 500;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
+  display: flex; align-items: center; gap: 9px; margin-bottom: 6.5mm;
+}
+.section-label::after { content: ''; flex: 1; height: 1px; background: var(--outline-var); }
+
+.track { position: relative; display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--gap); }
+/* The rail sits behind the nodes; each node's solid fill punches through it. */
+.track::before {
+  content: ''; position: absolute; left: 0; right: 0;
+  top: calc(var(--node) / 2); height: 1px; background: var(--outline-var);
+}
+.stage { position: relative; display: flex; flex-direction: column; }
+.stage:not(:last-child)::after {
+  content: ''; position: absolute; left: calc(100% + var(--gap) / 2);
+  top: calc(var(--node) / 2); width: 4.6px; height: 4.6px;
+  border-top: 1.3px solid var(--primary); border-right: 1.3px solid var(--primary);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.node {
+  position: relative; width: var(--node); height: var(--node); border-radius: 999px;
+  background: var(--s-lowest); border: 1.3px solid var(--primary);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 8.2pt; font-weight: 600;
+  color: var(--primary-text); flex: none;
+}
+.stage h4 {
+  font-size: 12pt; font-weight: 600; letter-spacing: -.005em;
+  color: var(--ink); margin: 4.5mm 0 2.4mm; line-height: 1.2;
+}
+.stage p { font-size: 9.3pt; line-height: 1.52; color: var(--ink-2); }
+.stage p b { font-weight: 600; color: var(--ink); }
+
+/* ── Bottom band ───────────────────────────────────────────────────────── */
+.band {
+  margin-top: auto; padding: 0 16mm 0; display: grid;
+  grid-template-columns: 1fr 1fr .82fr; gap: var(--gap); padding-top: 7mm;
+}
+.col {
+  border: 1px solid var(--outline-var); border-radius: var(--r-lg);
+  background: var(--surface); padding: 5.6mm 6mm 5.8mm;
+}
+.col--accent { background: var(--s-low); }
+.col__label {
+  font-family: var(--font-mono); font-size: 7.4pt; font-weight: 500;
+  letter-spacing: .17em; text-transform: uppercase;
+  color: var(--primary-text); margin-bottom: 3.6mm;
+}
+.col ul { list-style: none; display: flex; flex-direction: column; gap: 2.6mm; }
+/* The bullet is an absolutely-positioned ::before, NOT a flex item. As a flex
+   item the <b> that opens most of these lines became a second flex item and
+   shrank to its own column — "One record per company" stacked three words wide
+   beside the rest of its own sentence. The text must stay one inline flow. */
+.col li { font-size: 9.4pt; line-height: 1.48; color: var(--ink-2); position: relative; padding-left: 11px; }
+.col li::before {
+  content: ''; position: absolute; left: 0; top: 5.2px;
+  width: 4px; height: 4px; border-radius: 999px; background: var(--primary);
+}
+.col li b { font-weight: 600; color: var(--ink); }
+.chips { display: flex; flex-wrap: wrap; gap: 4px 5px; }
+.chip {
+  font-size: 8.6pt; font-weight: 500; color: var(--ink-2);
+  border: 1px solid var(--outline-var); border-radius: 999px;
+  padding: 2.6px 8px; background: var(--s-lowest); white-space: nowrap;
+}
+.chip .d { font-family: var(--font-hindi); color: var(--ink-3); font-size: 8pt; }
+.col__place {
+  margin-top: 4.5mm; padding-top: 3.8mm; border-top: 1px solid var(--outline-var);
+  font-family: var(--font-display); font-style: italic; font-size: 10pt;
+  line-height: 1.45; color: var(--ink-3);
+}
+
+/* ── Footer ────────────────────────────────────────────────────────────── */
+.foot {
+  flex: none; padding: 5mm 16mm 6mm; display: flex; justify-content: space-between; align-items: center;
+  font-family: var(--font-mono); font-size: 7.4pt; letter-spacing: .13em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.foot__brand { display: flex; align-items: center; gap: 7px; color: var(--ink-3); }
+.foot__brand .lotus { width: 6.5mm; height: 6.5mm; color: var(--primary); }
+.cover__chip .lotus { width: 4.6mm; height: 4.6mm; }
+</style>
+</head>
+<body>
+<div id="deck"></div>
+
+<script>
+/* ══ The mark, from the product's own geometry ═══════════════════════════
+   lobe() and COURSES are transcribed verbatim from
+   frontend/src/components/brand/Lotus.jsx — the same numbers the app, the
+   loader and the Sanvaad conversation ground all draw from. Generating the
+   paths here rather than pasting 8KB of path data means the mark cannot drift
+   from the product by a typo. */
+const f = n => n.toFixed(2);
+function lobe(r0, r1, w) {
+  const s = r1 - r0;
+  return `M0,${f(-r0)}C${f(w)},${f(-r0 - s * 0.30)} ${f(w)},${f(-r1 + s * 0.26)} 0,${f(-r1)}`
+       + `C${f(-w)},${f(-r1 + s * 0.26)} ${f(-w)},${f(-r0 - s * 0.30)} 0,${f(-r0)}Z`;
+}
+const COURSES = [[10,34,70,12,0],[10,35,56,7,18],[20,76,120,11.5,0],[20,82,96,4.2,0]];
+const EYE_R = 32;
+
+/* `courses` caps how many of the four are drawn — the mark drops outer courses
+   rather than shrinking an unreadable one. `pen` widens the stroke to match. */
+function lotus(courses = 4, cls = '') {
+  const parts = [`<circle r="${EYE_R}"/>`];
+  COURSES.slice(0, courses).forEach(([n, r0, r1, w, off], ci) => {
+    if (ci === 2) parts.push('<circle r="74"/>');
+    const d = lobe(r0, r1, w);
+    for (let i = 0; i < n; i++) parts.push(`<path d="${d}" transform="rotate(${(off + (360 / n) * i).toFixed(2)})"/>`);
+  });
+  const pen = courses <= 2 ? 2.6 : 1.6;
+  const r = (courses <= 2 ? 70 : 120) + pen / 2;
+  const box = `${f(130 - r)} ${f(130 - r)} ${f(2 * r)} ${f(2 * r)}`;
+  return `<svg class="lotus ${courses <= 2 ? 'lotus--pen2' : ''} ${cls}" viewBox="${box}" aria-hidden="true">`
+       + `<g transform="translate(130,130)">${parts.join('')}</g></svg>`;
+}
+
+/* ══ Content ════════════════════════════════════════════════════════════
+   Every flow below is the flow stated in docs/modules/<code>.md, written for a
+   buyer rather than a maintainer. Surface figures (screens, endpoints) are the
+   generated ones in docs/MODULES.md. Nothing here claims a capability that
+   those documents do not. */
+
+const MODULES = [
+  {
+    code: 'graha', family: 'revenue', name: 'Graha', deva: 'ग्रह', kind: 'CRM',
+    promise: 'Every rupee starts as a name. This is where the name is kept.',
+    screens: 34, routes: 99,
+    place: 'The head of the revenue spine. Everything downstream resolves back to a company held here.',
+    flow: [
+      ['Capture',  'A web form, an inbound email or an import lands as a contact against a <b>company</b> — because the company is the customer, and people come and go.'],
+      ['Score',    'Scoring rules rank it without anyone deciding by feel. Duplicates surface on their own, and a merge can be <b>undone</b>.'],
+      ['Work',     'Calls, notes and follow-ups append to one timeline. <i>Today</i> shows what is owed today, per person.'],
+      ['Advance',  'The deal moves stage by stage on the pipeline. Each move writes an activity and can fire a rule automatically.'],
+      ['Win',      'A stage that needs sign-off raises an <b>approval request</b> instead of moving. A won deal hands over to Vikray as an order.'],
+    ],
+    gives: [
+      '<b>One record per company</b> — an invoice, an order and a signature all resolve back to it.',
+      'A pipeline that <b>reports on itself</b>: velocity, conversion, forecast, source and rep performance.',
+      'Territories, labels and lead scoring, so routing is a rule rather than a habit.',
+    ],
+    built: [
+      '<b>Approval-gated stages</b> — the deal waits for a person, and the wait is a row.',
+      '<b>Duplicate merge with undo</b> — a wrong merge is reversible, not archaeology.',
+      'Inbound lead and inbound email capture, scored on arrival.',
+    ],
+    to: [['Vikray','विक्रय'],['Ganit','गणित'],['E-Sign','प्रमाण'],['Prachar','प्रचार'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'vikray', family: 'revenue', name: 'Vikray', deva: 'विक्रय', kind: 'Sales orders',
+    promise: 'Agree the number before you ask for it.',
+    screens: 20, routes: 19,
+    place: 'Between a won deal and an invoice — the step where the number is agreed.',
+    flow: [
+      ['Draft',    'An order opens against a Graha client — usually the deal that was just won, so nothing is re-typed.'],
+      ['Price',    'Line by line: quantity, rate, discount and tax. The arithmetic is the system’s, not a spreadsheet’s.'],
+      ['Agree',    'Delivery terms and validity sit on the same record, so what was promised is on the document that was sent.'],
+      ['Convert',  'One action turns the agreed order into a <b>Ganit invoice</b> — with the tax treatment already decided.'],
+      ['Trace',    'The two stay linked. An order always knows what it was billed as, and an invoice knows what it was sold as.'],
+    ],
+    gives: [
+      'The step between <b>won</b> and <b>billed</b> stops being email.',
+      'Quotes and orders share one line-item model, so a quote becomes an order without re-entry.',
+      'Targets and attainment read off real orders, not a parallel sheet.',
+    ],
+    built: [
+      '<b>Order-to-invoice link</b> — the audit question "what was this billed as" has an answer.',
+      'Discounts and delivery terms are fields, not free text in a PDF.',
+      'Soft-deleted and draft rows are <b>excluded</b> from revenue figures.',
+    ],
+    to: [['Graha','ग्रह'],['Ganit','गणित'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'ganit', family: 'revenue', name: 'Ganit', deva: 'गणित', kind: 'Finance and invoicing',
+    promise: 'GST-correct, or it does not leave the building.',
+    screens: 26, routes: 51,
+    place: 'The end of the revenue spine, and the only place the tax treatment is decided.',
+    flow: [
+      ['Raise',    'An invoice opens against a client. Every invoice belongs to a company — there is no such thing as an invoice attached to nobody.'],
+      ['Place',    'Place of supply is <b>derived from the two GSTINs</b>, following s.12(2)(a) of the IGST Act. It is not a dropdown someone guesses at.'],
+      ['Split',    'The state codes decide it: <b>CGST + SGST</b> within the state, <b>IGST</b> across it. The split is computed, never typed.'],
+      ['Issue',    'The document renders as a PDF. E-way bills and TDS hang off the same record rather than living in a separate file.'],
+      ['Settle',   'Payments post against the invoice and the balance falls. <b>Paid</b> comes from bank reconciliation — there is no gateway in the middle.'],
+    ],
+    gives: [
+      'The tax logic is <b>in the product</b>, so a junior raising an invoice raises a correct one.',
+      'Unpaid invoices stay editable — a typo is a correction, not a credit note.',
+      'Custom fields (PO number, client reference) travel onto the printed document.',
+    ],
+    built: [
+      '<b>s.12(2)(a) place of supply</b>, derived from supplier and recipient GSTIN.',
+      '<b>No payment gateway, by design</b> — money is confirmed at the bank, not by a webhook.',
+      'GSTIN, PAN and TAN are <b>never mandatory to save</b> a client or an invoice.',
+    ],
+    to: [['Graha','ग्रह'],['Vikray','विक्रय'],['E-Sign','प्रमाण'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'kray', family: 'revenue', name: 'Kray', deva: 'क्रय', kind: 'Procurement',
+    promise: 'Commit to the spend before it arrives as a bill.',
+    screens: 4, routes: 21,
+    place: 'The mirror of Vikray — विक्रय sells, क्रय buys. Both settle in Ganit.',
+    flow: [
+      ['Draft',    'A purchase order against a vendor, priced line by line, before anybody has promised anything.'],
+      ['Approve',  'Thresholds <b>your organisation sets</b> decide whether it needs sign-off. Amend it past them and it needs approving again.'],
+      ['Issue',    'Cleared orders take a <b>PO number and a timestamp</b>. The commitment is now a record, not an understanding.'],
+      ['Receive',  'Receipts record what actually turned up — which is rarely all of it, and rarely all at once.'],
+      ['Match',    'Order against receipt against bill, <b>three ways</b>, with every discrepancy flagged for a person.'],
+    ],
+    gives: [
+      '<b>Committed spend</b> you can see while it is still a commitment, not after it is a bill.',
+      '<b>Received not invoiced</b> — the period-end accrual, otherwise assembled by hand or not at all.',
+      'Late suppliers reported rather than remembered.',
+    ],
+    built: [
+      '<b>s.194Q warned at PO time</b> — vendors nearing the ₹50 lakh threshold, the rate read from the statute calendar <b>as of the date</b>.',
+      '<b>The match approves nothing.</b> It surfaces exceptions; auto-approval is a decision for after you have watched it be right.',
+      'Vendors and bills are Ganit’s own tables — not a second copy of them.',
+    ],
+    to: [['Ganit','गणित'],['Vikray','विक्रय'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'esign', family: 'revenue', name: 'E-Sign', deva: 'प्रमाण', kind: 'Electronic signatures',
+    promise: 'A signature with an address, a time, and a trail behind it.',
+    screens: 4, routes: 14,
+    place: 'Attaches to whatever needs signing, and files the signed copy back onto it.',
+    flow: [
+      ['Prepare',  'Pick the document against the record it belongs to — a contract on a deal, an engagement letter on a client.'],
+      ['Send',     'The signer gets a <b>tokenised link</b>. One link, one document, one signer.'],
+      ['Sign',     'They open it in a browser and sign. <b>No account, no app, no download</b> — the most common reason signing stalls.'],
+      ['Seal',     'The signed artefact is written back <b>against the originating record</b>, not into somebody’s inbox.'],
+      ['Prove',    'The trail states who signed, from where, and when. An audit answer, not a recollection.'],
+    ],
+    gives: [
+      'Signing lives <b>next to the deal</b>, so chasing a signature is not a separate tool.',
+      'The signed copy is filed automatically against the record that needed it.',
+      'An audit trail you can hand over, rather than a screenshot of an email.',
+    ],
+    built: [
+      '<b>Deliberately not Aadhaar</b> — no eKYC dependency, no third-party outage between you and a signature.',
+      'Signer needs no login, which is what makes a first-time counterparty actually finish.',
+      'Documents are stored in object storage; the record keeps the reference.',
+    ],
+    to: [['Graha','ग्रह'],['Ganit','गणित']],
+  },
+
+  {
+    code: 'manav', family: 'people', name: 'Manav', deva: 'मानव', kind: 'HR / HRMS',
+    promise: 'Joiner to leaver, on one record.',
+    screens: 34, routes: 85,
+    place: 'The head of the people spine. Attendance and payroll both read from this record.',
+    flow: [
+      ['Join',     'One employee record anchors everything that follows. Nothing about a person lives in a second place.'],
+      ['Hold',     'Documents are filed against that record — PAN, contracts, police verification — while the Aadhaar number itself is <b>encrypted at rest</b> and masked on read.'],
+      ['Request',  'Leave is asked for as a row — not a message that can be missed, forgotten or denied later.'],
+      ['Approve',  'Approval is a <b>separate row</b>. A granted leave therefore always records <b>who granted it</b>.'],
+      ['Leave',    'Appraisals and the exit interview reference the same record, so the file is complete on the day someone goes.'],
+    ],
+    gives: [
+      'A single record per person, from candidate through to exit interview.',
+      '<b>Two-step leave</b>, so entitlement disputes have a name and a date attached.',
+      'Documents filed against the person, and Aadhaar stored encrypted and masked — never a shared drive.',
+    ],
+    built: [
+      '<b>Excluded from platform staff</b> by the role tiers — the vendor cannot read your employee records, and reading a colleague’s documents needs admin.',
+      'Data residency: Singapore, permanently.',
+      'Feeds Vetana directly, so payroll draws from the HR record rather than a copy.',
+    ],
+    to: [['Vetana','वेतन'],['Pahchan','पहचान'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'pahchan', family: 'people', name: 'Pahchan', deva: 'पहचान', kind: 'Attendance',
+    promise: 'A punch that still works where the signal does not.',
+    screens: 15, routes: 32,
+    place: 'Between the employee record and the payroll run — it supplies the days.',
+    flow: [
+      ['Enrol',    'An employee enrols a face template <b>once</b>. Everything after that is a match against it.'],
+      ['Punch',    'Clock-in captures a photo, a location and the device. Three facts, not one tap.'],
+      ['Place',    'The punch is checked against a <b>geofence</b> — attendance is placed, not merely timed.'],
+      ['Queue',    'No signal? The punch is held <b>on the device</b> and reconciled later, inside a <b>72-hour</b> buffer.'],
+      ['Roll up',  'Shift policy decides lateness; the days-worked figure flows into Vetana for the month.'],
+    ],
+    gives: [
+      'Site and field staff can clock in where there is no network.',
+      '<b>Face plus place</b> — the two questions a paper register cannot answer.',
+      'The month’s attendance arrives at payroll already totalled.',
+    ],
+    built: [
+      '<b>Offline-first, 72-hour buffer</b> — the punch survives the dead zone.',
+      'Shift policies decide lateness by rule, so the same lateness means the same thing in every branch.',
+      'Attendance detail is visible only at the highest access tier, under DPDP.',
+    ],
+    to: [['Manav','मानव'],['Vetana','वेतन']],
+  },
+  {
+    code: 'vetana', family: 'people', name: 'Vetana', deva: 'वेतन', kind: 'Payroll',
+    promise: 'PF, ESI, PT and TDS — computed by the product, approved by someone else.',
+    screens: 10, routes: 27,
+    place: 'The end of the people spine. Nothing is paid without a second person.',
+    flow: [
+      ['Open',     'A run is created for a month. It is a record with a state, not a spreadsheet with a filename.'],
+      ['Pull',     'Employees come from Manav, and days worked from Pahchan. Nothing is re-keyed between the three.'],
+      ['Compute',  'Gross, then each statutory deduction — <b>PF, ESI, PT, TDS</b> — to reach net, per employee, on the correct state slab.'],
+      ['Approve',  'A <b>second, separate action</b>. The role that runs payroll <b>cannot approve it</b>.'],
+      ['Issue',    'Payslips are released only after approval. Before that there is nothing to send by accident.'],
+    ],
+    gives: [
+      'Statutory Indian deductions computed rather than looked up.',
+      '<b>Separated duty</b> built into the roles, which is the control an auditor asks about first.',
+      'A run you can re-open and re-check before anybody is paid.',
+    ],
+    built: [
+      '<b>PF on the statutory ceiling</b>, PT on the state slab — the arithmetic your CA would redo by hand.',
+      '<b>Run and approve are different roles</b>, enforced by the product, not by trust.',
+      'No payslip exists until approval, so a draft cannot escape.',
+    ],
+    to: [['Manav','मानव'],['Pahchan','पहचान'],['Ganit','गणित']],
+  },
+
+  {
+    code: 'prachar', family: 'conversation', name: 'Prachar', deva: 'प्रचार', kind: 'Marketing',
+    promise: 'Send it, then find out whether it worked.',
+    screens: 10, routes: 53,
+    place: 'The outbound half of the conversation spine.',
+    flow: [
+      ['Audience', 'Built from Graha contacts — the CRM you already keep, not a list exported six weeks ago.'],
+      ['Template', 'One template renders per recipient, so personalisation is a field rather than a mail merge.'],
+      ['Send',     'Out through <b>WhatsApp or email</b>, on the same campaign record.'],
+      ['Measure',  'Delivery and engagement post back <b>per recipient</b> — so a campaign is measured rather than assumed.'],
+      ['Return',   'What came back lands on the contact, where the next conversation will start.'],
+    ],
+    gives: [
+      'Campaigns that read from the CRM, so the audience is never stale.',
+      '<b>Per-recipient delivery</b> — you know who received it, not just how many.',
+      'Templates and audiences are reusable objects, not one-off sends.',
+    ],
+    built: [
+      'Outbound sits <b>opposite Sanvaad</b>: this is the firm talking out, that is the firm talking among itself.',
+      'Engagement writes back to the contact record and can feed lead scoring.',
+      'Paid-ad spend is tracked on the same campaign as the organic sends.',
+    ],
+    to: [['Graha','ग्रह'],['Varta','वार्ता'],['Dristi','दृष्टि']],
+  },
+  {
+    code: 'varta', family: 'conversation', name: 'Varta', deva: 'वार्ता', kind: 'WhatsApp',
+    promise: 'One thread, both directions.',
+    screens: 9, routes: 13,
+    place: 'The channel Prachar sends through, and the one replies arrive on.',
+    flow: [
+      ['Template', 'A business-initiated message must use an <b>approved template</b> — which is why templates are first-class here rather than an afterthought.'],
+      ['Send',     'The message goes through the WhatsApp Cloud API and its <b>message id is stored</b>.'],
+      ['Receipt',  'Delivery status arrives on a webhook and is matched back by that id.'],
+      ['Reply',    'The customer’s reply matches by the same id — so it joins the conversation instead of starting a new one.'],
+      ['Thread',   'The result is one readable thread, not a pile of receipts and a separate inbox.'],
+    ],
+    gives: [
+      'The channel Indian customers actually answer, inside the system of record.',
+      '<b>Replies land against the customer</b>, not in a phone somebody took home.',
+      'Template management, because the platform will not deliver without it.',
+    ],
+    built: [
+      '<b>Message id matching</b> — receipt, reply and send are one conversation by construction.',
+      'Inbound arrives on a webhook, so a reply does not wait for a poll.',
+      'Shares templates and audiences with Prachar rather than duplicating them.',
+    ],
+    to: [['Prachar','प्रचार'],['Graha','ग्रह']],
+  },
+  {
+    code: 'sanvaad', family: 'conversation', name: 'Sanvaad', deva: 'संवाद', kind: 'Messaging',
+    promise: 'Talk about the record, on the record.',
+    screens: 26, routes: 27,
+    place: 'The inward half — the firm talking to itself, against the record.',
+    flow: [
+      ['Open',     'A thread belongs to a <b>channel or a record</b> — a deal, an invoice, a task. Context is structural.'],
+      ['Say',      'Messages append with attachments. The discussion lives where the work is, not in a parallel app.'],
+      ['Mention',  'A mention raises a notification for that person, so being needed is explicit.'],
+      ['Read',     'Read state is <b>per person</b>. An unread count means unread <b>by you</b>.'],
+      ['Keep',     'The conversation stays attached to the thing it was about, for whoever opens it in a year.'],
+    ],
+    gives: [
+      'The decision and the record it changed are <b>in the same place</b>.',
+      'New joiners read the history instead of asking for it.',
+      'Internal talk stays internal — Varta is the outside line, this is not.',
+    ],
+    built: [
+      'Threads anchor to records, which is what makes the history worth keeping.',
+      'Per-person read state, so a shared channel does not lie about what you have seen.',
+      'Attachments live in object storage with the thread holding the reference.',
+    ],
+    to: [['Graha','ग्रह'],['Ganit','गणित'],['Manav','मानव']],
+  },
+
+  {
+    code: 'sahayak', family: 'intelligence', name: 'Sahayak', deva: 'सहायक', kind: 'AI assistant and skills',
+    promise: 'Every run says what it cost. Nothing is silently billed.',
+    screens: 22, routes: 92,
+    place: 'On no spine. It is what you point at every other module.',
+    flow: [
+      ['Ask',      'A skill — social post, ad copy, an email campaign, a GST question — or a grounded chat against <b>your own data</b>.'],
+      ['Debit',    'Credits are taken <b>up front</b>, at a price you can see before the run.'],
+      ['Route',    'The router picks the model. Versions are pinned, so an answer does not change because a vendor shipped.'],
+      ['Log',      'The run records <b>what it touched and what it cost</b> — every run, not a monthly total.'],
+      ['Refund',   'A failed run <b>refunds its credits</b>. You are not charged for an answer you did not get.'],
+    ],
+    gives: [
+      'AI priced in credits you can watch, instead of a bill that arrives later.',
+      'Answers grounded in <b>your</b> clients, invoices and documents — not the open web.',
+      'A skills catalogue that says who each skill is for and when to run it.',
+    ],
+    built: [
+      '<b>Refund on failure</b>, and a per-run cost line. The spend is legible by design.',
+      '<b>Pinned model versions</b> — no silent upgrade changing what your firm gets told.',
+      'Web search is a dedicated search provider, so a citation is a real page.',
+    ],
+    to: [['Graha','ग्रह'],['Prachar','प्रचार'],['Ganit','गणित']],
+  },
+  {
+    code: 'dristi', family: 'intelligence', name: 'Dristi', deva: 'दृष्टि', kind: 'Analytics and reports',
+    promise: 'Reads everything. Writes nothing.',
+    screens: 14, routes: 19,
+    place: 'On no spine. It reads every other module and writes to none of them.',
+    flow: [
+      ['Fan out',  'One request reaches across <b>every other module</b> — revenue, pipeline, HR and sales — rather than a nightly copy.'],
+      ['Aggregate','The numbers are computed at read time, so a figure is as current as the record behind it.'],
+      ['Build',    'Saved dashboards and a <b>pivot builder</b>, so a new question does not need a new report.'],
+      ['Schedule', 'The same queries run on a timer. A report is a subscription, not a task someone remembers.'],
+      ['Deliver',  'It arrives by email, to whoever needs it, on the morning they need it.'],
+    ],
+    gives: [
+      'One set of numbers for the whole firm, from the systems that produced them.',
+      '<b>Scheduled delivery</b> — the partner gets Monday’s figures without asking on Monday.',
+      'A pivot builder for the question nobody anticipated.',
+    ],
+    built: [
+      '<b>Read-only by construction</b> — no report can alter what it reports on.',
+      'Drafts, credit notes and deleted rows are <b>excluded</b> from revenue, so a headline matches its own breakdown.',
+      'Computed live across modules; there is no warehouse to fall behind.',
+    ],
+    to: [['Every module','']],
+  },
+];
+
+/* ══ Rendering ══════════════════════════════════════════════════════════ */
+
+const esc = s => String(s);
+const FAMILY_LABEL = { revenue: 'Revenue', people: 'People', conversation: 'Conversation', intelligence: 'Intelligence' };
+
+function footer(left, right) {
+  return `<div class="foot">
+    <div class="foot__brand">${lotus(2)} <span>Kartavaya &middot; kartavaya.com</span></div>
+    <div>${esc(left)}</div>
+    <div>${esc(right)}</div>
+  </div>`;
+}
+
+function coverPage() {
+  return `<section class="page cover" data-code="_cover">
+    ${lotus(4, 'cover__mark')}
+    <div class="cover__body">
+      <div class="cover__chip">${lotus(2)} Product overview</div>
+      <h1>Thirteen modules.<br/>Thirteen <em>flows</em>.</h1>
+      <div class="cover__deva">कर्तव्य &nbsp;&middot;&nbsp; Kartavaya</div>
+      <p class="cover__lede">One place to run an Indian business — CRM, GST invoicing, sales orders,
+        signatures, HR, attendance, payroll, marketing, WhatsApp, messaging, AI and reporting.
+        This document shows, one page at a time, what actually happens inside each of them.</p>
+      <div class="cover__rule"></div>
+      <div class="cover__meta">
+        <b>How to read a page</b> &nbsp;·&nbsp; the flow runs left to right in five steps<br/>
+        <b>Families</b> &nbsp;·&nbsp; Revenue &nbsp; People &nbsp; Conversation &nbsp; Intelligence<br/>
+        <b>By</b> &nbsp;·&nbsp; Aekam Inc &nbsp;·&nbsp; built in India, hosted in Singapore
+      </div>
+    </div>
+    <div class="cover__foot">
+      <span>Aekam Inc</span><span>Kartavaya &middot; कर्तव्य</span><span>kartavaya.com</span>
+    </div>
+  </section>`;
+}
+
+function chain(items) {
+  return items.map(([n, d, w], i) => `
+    <div class="chain__item">
+      <span class="chain__dot"></span>
+      <span class="chain__name">${n}</span>
+      <span class="chain__deva">${d}</span>
+      <span class="chain__what">${w}</span>
+    </div>
+    ${i < items.length - 1 ? '<div class="chain__arrow"></div>' : ''}`).join('');
+}
+
+function mapPage() {
+  return `<section class="page map" data-code="_map">
+    <div class="eyebrow">How the thirteen connect <i></i> <span>The shape of the product</span></div>
+    <h2 style="font-family:var(--font-display);font-weight:400;font-size:34pt;line-height:1.05;letter-spacing:-.02em;margin-top:4mm">
+      Three spines, and two modules that cross all of them.</h2>
+    <div class="map__grid">
+      <div class="spine">
+        <div class="spine__label">Spine one</div>
+        <div class="spine__title">Money, end to end</div>
+        <div class="spine__chain">${chain([
+          ['Graha','ग्रह','the company'],
+          ['Vikray','विक्रय','what was agreed'],
+          ['Ganit','गणित','what was billed'],
+          ['E-Sign','प्रमाण','what was signed'],
+        ])}</div>
+        <p class="spine__note">A name becomes an order, an order becomes a GST-correct invoice, and the paperwork
+          is signed against the same record. <b>Kray क्रय</b> runs the same money the other
+          way, and settles in the same Ganit.</p>
+      </div>
+      <div class="spine">
+        <div class="spine__label">Spine two</div>
+        <div class="spine__title">People, end to end</div>
+        <div class="spine__chain">${chain([
+          ['Manav','मानव','who they are'],
+          ['Pahchan','पहचान','when they worked'],
+          ['Vetana','वेतन','what they are paid'],
+        ])}</div>
+        <p class="spine__note">The employee record feeds attendance; attendance totals the days; payroll computes
+          PF, ESI, PT and TDS from both — and a different role approves the run.</p>
+      </div>
+      <div class="spine">
+        <div class="spine__label">Spine three</div>
+        <div class="spine__title">Conversation, in and out</div>
+        <div class="spine__chain">${chain([
+          ['Prachar','प्रचार','the firm sends'],
+          ['Varta','वार्ता','the customer replies'],
+          ['Sanvaad','संवाद','the firm decides'],
+        ])}</div>
+        <p class="spine__note">Outbound campaigns, a WhatsApp thread that keeps both directions together, and
+          internal discussion anchored to the record it is about.</p>
+      </div>
+    </div>
+    <div class="map__across">
+      <div>
+        <div class="spine__label">Across all three</div>
+        <h3>Sahayak सहायक &nbsp;·&nbsp; Dristi दृष्टि</h3>
+      </div>
+      <p><b>Sahayak</b> generates against your own data and states its cost on every run.
+         <b>Dristi</b> reads across every module and writes to none of them.
+         Neither owns a spine — they are what you point at the rest.</p>
+    </div>
+    ${footer('The shape of the product', 'Page 2')}
+  </section>`;
+}
+
+function modulePage(m, index) {
+  const n = String(index + 1).padStart(2, '0');
+  const stages = m.flow.map(([title, body], i) => `
+    <div class="stage">
+      <div class="node">${String(i + 1).padStart(2, '0')}</div>
+      <h4>${title}</h4>
+      <p>${body}</p>
+    </div>`).join('');
+
+  return `<section class="page fam-${m.family}" data-code="${m.code}">
+    <header class="head">
+      ${lotus(4, 'head__mark')}
+      <div class="head__row">
+        <div class="head__left">
+          <div class="eyebrow">Module ${n} of ${MODULES.length} <i></i> <span>${FAMILY_LABEL[m.family]}</span> <i></i> <span>${m.kind}</span></div>
+          <h2>${m.name} <span class="deva">${m.deva}</span></h2>
+          <p class="promise">${m.promise}</p>
+        </div>
+        <div class="head__stats">
+          <div class="stat"><b>${m.screens}</b><span>Screens</span></div>
+          <div class="stat"><b>${m.routes}</b><span>Endpoints</span></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="flow">
+      <div class="section-label">The flow</div>
+      <div class="track">${stages}</div>
+
+      <div class="band">
+        <div class="col col--accent">
+          <div class="col__label">What you get</div>
+          <ul>${m.gives.map(g => `<li>${g}</li>`).join('')}</ul>
+        </div>
+        <div class="col">
+          <div class="col__label">Built in</div>
+          <ul>${m.built.map(b => `<li>${b}</li>`).join('')}</ul>
+        </div>
+        <div class="col">
+          <div class="col__label">Connects to</div>
+          <div class="chips">${m.to.map(([t, d]) => `<span class="chip">${t}${d ? ` <span class="d">${d}</span>` : ''}</span>`).join('')}</div>
+          <div class="col__place">${m.place}</div>
+        </div>
+      </div>
+    </div>
+
+    ${footer(`${m.name} ${m.deva}`, `Page ${index + 3}`)}
+  </section>`;
+}
+
+document.getElementById('deck').innerHTML =
+  coverPage() + mapPage() + MODULES.map(modulePage).join('');
+
+/* `?only=<code>` — the single-module export. Also accepts `_cover` and `_map`. */
+const only = new URLSearchParams(location.search).get('only');
+if (only) {
+  document.body.classList.add('only');
+  document.querySelectorAll(`.page[data-code="${only}"]`).forEach(el => el.classList.add('show'));
+}
+</script>
+</body>
+</html>
