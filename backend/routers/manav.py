@@ -8,7 +8,7 @@ from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -1024,6 +1024,33 @@ class CandidateCreate(BaseModel):
 class CandidateStageUpdate(BaseModel):
     stage: str
     rejection_reason: str = ""
+
+
+class CandidateHire(BaseModel):
+    """What is known about a hire at the moment it is made.
+
+    EVERY FIELD OPTIONAL, AND THE BODY ITSELF IS OPTIONAL. `RecruitmentTab.jsx`
+    posts to this route with no body at all, and a hire that names nothing must
+    keep working exactly as it did — same defaults, same result.
+
+    `date_of_joining` is the field this model was added for. It was hardcoded
+    `CURRENT_DATE` in the INSERT, so a person could only ever be hired as
+    starting TODAY. That is the wrong day for the case onboarding exists to
+    serve: a joiner is agreed in advance, and everything you want to happen
+    before they arrive — issue the laptop, raise the login, collect the signed
+    offer — has to be scheduled against a date that is not yet here. An empty
+    string keeps the old behaviour and lets the INSERT fall back to CURRENT_DATE.
+
+    The other three are here because the hire INSERT wrote a skeletal row and
+    `manav_candidates` has nowhere to carry them: the table is fourteen columns
+    and holds no department, designation or employment type. So they are not
+    being "dropped" by the hire — they never existed upstream, and this is the
+    first point in the product where anybody can state them.
+    """
+    date_of_joining: str = ""
+    employment_type: str = ""
+    department: str = ""
+    designation: str = ""
 
 
 # ── Employees ────────────────────────────────────────────────
@@ -4643,6 +4670,7 @@ async def update_candidate_stage(
 @router.post("/candidates/{candidate_id}/hire")
 async def hire_candidate(
     candidate_id: UUID,
+    body: CandidateHire | None = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
@@ -4650,6 +4678,7 @@ async def hire_candidate(
     pool = await get_pool()
     # Creates a personnel record.
     _require(levels, ADMIN)
+    body = body or CandidateHire()
     candidate = await pool.fetchrow(
         "SELECT * FROM public.manav_candidates WHERE id=$1::uuid AND org_id=$2::uuid",
         str(candidate_id), org_id,
@@ -4658,6 +4687,45 @@ async def hire_candidate(
         raise HTTPException(404, "Candidate not found")
     if candidate["converted_employee_id"]:
         raise HTTPException(400, "Candidate has already been converted to an employee")
+
+    # Same tuple `create_employee` checks against, and checked the same way. The
+    # two birth sites disagreeing about what an employment type is would put
+    # rows in this table that the payroll and attendance code cannot classify.
+    if body.employment_type:
+        valid_types = ("full_time", "part_time", "contract", "intern", "consultant")
+        if body.employment_type not in valid_types:
+            raise HTTPException(
+                400, f"employment_type must be one of: {', '.join(valid_types)}")
+
+    # Parsed here rather than left to the ::date cast in the INSERT. The cast
+    # would refuse a malformed date too, but as an asyncpg DataError surfacing
+    # as a 500 — and through PgBouncer, as a 500 with no useful log line. A
+    # typed date is a 400 that names the field.
+    if body.date_of_joining:
+        try:
+            _parse_date(body.date_of_joining)
+        except ValueError:
+            raise HTTPException(
+                400, "date_of_joining must be a date in YYYY-MM-DD form.")
+
+    # ── THE SEAT GATE THIS PATH WAS MISSING ─────────────────────────────────
+    #
+    # `create_employee` calls this and its comment claims the INSERT there is
+    # "the moment somebody joins the attendance roster — and it is the ONLY such
+    # moment. One admission, one gate."
+    #
+    # That was not true. THIS route births an employee row too — its own comment
+    # two blocks down says so, "THE SECOND PLACE AN EMPLOYEE ROW IS BORN" — and
+    # it did not call the gate. Two admissions, one gate: an org at its Pahchan
+    # cap could take on unlimited people by hiring them through recruitment
+    # instead of adding them directly.
+    #
+    # Latent rather than live, and it is worth saying which: no organisation has
+    # `max_pahchan_seats` set (the column waits on migration 109, applied by
+    # hand) and a NULL allowance is unlimited, so this refuses nobody today. It
+    # is fixed now because the cap is the kind of thing that gets switched on
+    # long after the second door was forgotten about.
+    await assert_pahchan_seat_available(pool, org_id)
 
     # THE SECOND PLACE AN EMPLOYEE ROW IS BORN — create_employee is the other.
     # One `employee.joined` per actual row creation: this INSERT is a genuinely
@@ -4669,10 +4737,22 @@ async def hire_candidate(
         async with _conn.transaction():
             emp = await _conn.fetchrow(
                 "INSERT INTO public.manav_employees "
-                "(org_id, name, email, phone, date_of_joining, employment_type, created_by) "
-                "VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE, 'full_time', $5) "
+                "(org_id, name, email, phone, date_of_joining, employment_type, "
+                " department, designation, created_by) "
+                # COALESCE, not a bare bind: an omitted date must still land on
+                # CURRENT_DATE, which is what every caller before today got and
+                # what `RecruitmentTab.jsx` still relies on by sending no body.
+                # NULLIF($5,'')::date turns "" into NULL and COALESCE then
+                # supplies today — so the default lives in one place instead of
+                # being computed in Python and diverging from the server's date.
+                "VALUES ($1::uuid, $2, $3, $4, "
+                "        COALESCE(NULLIF($5,'')::date, CURRENT_DATE), "
+                "        COALESCE(NULLIF($6,''), 'full_time'), "
+                "        NULLIF($7,''), NULLIF($8,''), $9) "
                 "RETURNING *",
-                org_id, candidate["full_name"], candidate["email"], candidate["phone"], user["user_id"],
+                org_id, candidate["full_name"], candidate["email"], candidate["phone"],
+                body.date_of_joining, body.employment_type,
+                body.department, body.designation, user["user_id"],
             )
             await _conn.execute(
                 "UPDATE public.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
@@ -5012,6 +5092,212 @@ async def employee_assets(
         org_id, employee_id,
     )
     return {"data": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Employee documents
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Manav had twenty tables and not one of them held a document. The only
+# document tables in the database were `graha_documents` (CRM),
+# `hub_kb_documents` and `sign_documents` (e-sign) — so the personnel file
+# could hold an ENCRYPTED AADHAAR NUMBER (`_ENCRYPTED_COLS`) and nothing that
+# proves it. A number cannot be handed to an auditor and does not expire.
+#
+# ⚠ THE GATE HERE IS ADMIN, NOT VIEWER, AND THAT IS THE DIFFERENCE FROM ASSETS.
+# `employee_assets` directly above settles for VIEWER because its rows describe
+# kit. These rows are scans of PAN cards, Aadhaar cards, signed contracts and
+# whatever else somebody files against a person. Self scope is kept — you may
+# always read your own — but reading anybody ELSE's needs admin on Manav.
+#
+# Storage follows `graha.py`'s upload route exactly: bytes are read with the cap
+# applied AS THEY READ, `upload_file` puts the object in R2, and the row keeps
+# BOTH `file_key` and `file_url`. The key is the durable one; the url is a
+# presigned link that dies in nine hours, which is why every read re-signs.
+
+#: Server-side allowlist, deliberately not a CHECK constraint — adding a kind of
+#: document should be a code change, not a production migration. Same stance as
+#: `employment_type` in `create_employee`.
+EMPLOYEE_DOC_TYPES = (
+    "aadhaar", "pan", "offer_letter", "contract", "education", "experience",
+    "bank", "photo", "police_verification", "medical", "other",
+)
+
+
+async def _doc_scope_or_403(pool, user, org_id, employee_id, levels):
+    """Admin reads anybody's; everybody reads their own. Nobody else reads.
+
+    Its own function because three routes ask the identical question, and the
+    one that forgets is the one that leaks a colleague's Aadhaar scan.
+    """
+    if _can(levels, ADMIN):
+        return
+    own = await _own_employee_id(pool, user, org_id)
+    if not own or str(employee_id) != own:
+        raise HTTPException(
+            403, "You can only see your own documents. Reading another "
+                 "employee's needs 'admin' on Manav.")
+
+
+@router.get("/employees/{employee_id}/documents")
+async def list_employee_documents(
+    employee_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    pool = await get_pool()
+    # Org check BEFORE the scope check. A uuid from another tenant must answer
+    # 404 rather than 403 — a 403 confirms the id names a real employee
+    # somewhere, which is the disclosure `_employee_in_org` exists to stop.
+    if not await _employee_in_org(pool, employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+    await _doc_scope_or_403(pool, user, org_id, employee_id, levels)
+
+    rows = await pool.fetch(
+        "SELECT id, employee_id, doc_type, name, file_key, file_size, mime_type, "
+        "       issued_on, expires_on, notes, uploaded_by, created_at "
+        "  FROM public.manav_employee_documents "
+        " WHERE org_id=$1::uuid AND employee_id=$2::uuid AND is_active=TRUE "
+        " ORDER BY created_at DESC",
+        org_id, employee_id,
+    )
+    from services.storage import sign_key
+    out = []
+    for r in rows:
+        d = dict(r)
+        # Re-signed on every read. A stored url is nine hours from useless, and
+        # `graha.py` learned the same thing — the key is the fact, the url is a
+        # temporary lease on it.
+        d["file_url"] = await sign_key(org_id, d.get("file_key") or "") or ""
+        # `uploaded_by` is a user id and NAMES, NEVER IDS is a ratchet in this
+        # product. The column stays in the row for audit, but nothing renders it
+        # — the UI shows `created_at` only. Dropped here so it cannot be.
+        d.pop("uploaded_by", None)
+        out.append(d)
+    return {"data": out}
+
+
+@router.post("/employees/{employee_id}/documents")
+async def upload_employee_document(
+    employee_id: str,
+    file: UploadFile = File(...),
+    doc_type: str = Form("other"),
+    name: str = Form(""),
+    issued_on: str = Form(""),
+    expires_on: str = Form(""),
+    notes: str = Form(""),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    pool = await get_pool()
+    # Filing a document against somebody is an admin act even for yourself:
+    # an employee who could upload their own "experience letter" could file
+    # anything into their own personnel record.
+    _require(levels, ADMIN)
+    if not await _employee_in_org(pool, employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+
+    if doc_type not in EMPLOYEE_DOC_TYPES:
+        raise HTTPException(
+            400, f"doc_type must be one of: {', '.join(EMPLOYEE_DOC_TYPES)}")
+
+    # Parsed here rather than left to the ::date casts below. Through PgBouncer
+    # an untyped parse error is an instant 500 with no useful log line.
+    for label, value in (("issued_on", issued_on), ("expires_on", expires_on)):
+        if value:
+            try:
+                _parse_date(value)
+            except ValueError:
+                raise HTTPException(
+                    400, f"{label} must be a date in YYYY-MM-DD form.")
+
+    from routers.uploads import MAX_BYTES as DOCUMENT_MAX_BYTES
+    from services.storage import read_capped, upload_file
+
+    # Capped AS IT READS. The alternative is buffering an arbitrarily large
+    # body and then declining it.
+    content = await read_capped(file, DOCUMENT_MAX_BYTES)
+    if not len(content):
+        raise HTTPException(400, "That file is empty.")
+
+    try:
+        stored = await upload_file(
+            file_bytes=content,
+            filename=file.filename or "document",
+            content_type=file.content_type or "application/octet-stream",
+            user_id=user["user_id"],
+            module="hr",
+            scope=[str(employee_id)],
+            org_id=org_id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        # `logging.getLogger(__name__)` inline, matching the one other log call
+        # in this file. There is NO module-level `log` here — a bare `log.…`
+        # would raise NameError inside the except block and replace a readable
+        # 503 with an unhandled 500, hiding the upload failure it was written
+        # to record.
+        #
+        # The employee id is NOT logged. This line would otherwise pair a person
+        # with the kind of document filed against them.
+        logging.getLogger(__name__).exception(
+            "employee document upload failed: size=%d type=%s", len(content), doc_type)
+        raise HTTPException(
+            503, "Upload service temporarily unavailable — please try again in a moment.")
+
+    row = await pool.fetchrow(
+        "INSERT INTO public.manav_employee_documents "
+        "(org_id, employee_id, doc_type, name, file_url, file_key, file_size, "
+        " mime_type, issued_on, expires_on, notes, uploaded_by) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8, "
+        "        NULLIF($9,'')::date, NULLIF($10,'')::date, $11, $12) "
+        "RETURNING id, doc_type, name, file_size, mime_type, issued_on, "
+        "          expires_on, notes, created_at",
+        org_id, employee_id, doc_type,
+        (name or "").strip() or (file.filename or "document"),
+        stored.get("url", ""), stored.get("key", ""), len(content),
+        stored.get("content_type") or file.content_type or "",
+        issued_on, expires_on, notes, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+@router.delete("/employees/{employee_id}/documents/{document_id}")
+async def delete_employee_document(
+    employee_id: str,
+    document_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    pool = await get_pool()
+    _require(levels, ADMIN)
+    if not await _employee_in_org(pool, employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+
+    # SOFT, and `employee_id` is in the WHERE as well as `id`. The document id
+    # alone would be enough to find the row, but pinning both means a mismatched
+    # pair answers 404 instead of deleting a document belonging to a different
+    # person in the same org.
+    #
+    # ⚠ THE R2 OBJECT SURVIVES. The database cannot reach it, and this is the
+    # same behaviour `graha_documents` has. A row marked inactive is invisible
+    # to every read above; the object behind it is not destroyed, which matters
+    # for anyone who reads this expecting a DPDP erasure.
+    row = await pool.fetchrow(
+        "UPDATE public.manav_employee_documents "
+        "   SET is_active=FALSE, updated_at=NOW() "
+        " WHERE id=$1::uuid AND employee_id=$2::uuid AND org_id=$3::uuid "
+        "   AND is_active=TRUE "
+        "RETURNING id",
+        document_id, employee_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Document not found")
+    return {"status": "deleted"}
 
 
 # ═════════════════════════════════════════════════════════════════════════════

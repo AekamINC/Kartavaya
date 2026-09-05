@@ -57,6 +57,7 @@ from .subjects import (
     DOCUMENT_SIGNED,
     EMPLOYEE_EXITED,
     EMPLOYEE_JOINED,
+    EMPLOYEE_JOINING_SOON,
     ENROLL_REQUESTED,
     EXPENSE_CLAIMED,
     EXPENSE_DECIDED,
@@ -426,6 +427,14 @@ REGISTRY: dict[str, tuple] = {
         Field("designation", "Designation", "text"),
         Field("employee_user_id", "Employee", "select"),
     ),
+    EMPLOYEE_JOINING_SOON: lambda: (
+        Field("department", "Department", "text"),
+        Field("designation", "Designation", "text"),
+        Field("employment_type", "Employment type", "text"),
+        # The severity number, same shape as `days_left` on
+        # document.expiring: 0 means they start today.
+        Field("days_until", "Days until joining", "number"),
+    ),
     EMPLOYEE_EXITED: lambda: (
         Field("department", "Department", "text"),
         # 083's CHECK on manav_offboarding.exit_type.
@@ -548,6 +557,7 @@ EVENT_META: dict[str, dict] = {
     DOCUMENT_SIGNED:     {"label": "A signer signs a document",      "family": "esign",    "temporal": False},
     DOCUMENT_DECLINED:   {"label": "A signer declines a document",   "family": "esign",    "temporal": False},
     DOCUMENT_EXPIRING:   {"label": "A signature request nears expiry", "family": "esign",  "temporal": True},
+    EMPLOYEE_JOINING_SOON: {"label": "An employee's joining date approaches", "family": "hr", "temporal": True},
     LEAVE_REQUESTED:     {"label": "Leave is requested",             "family": "hr",       "temporal": False},
     LEAVE_DECIDED:       {"label": "A leave request is decided",     "family": "hr",       "temporal": False},
     EMPLOYEE_JOINED:     {"label": "An employee joins",              "family": "hr",       "temporal": False},

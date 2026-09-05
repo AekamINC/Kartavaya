@@ -105,6 +105,12 @@ DOCUMENT_EXPIRING = "document.expiring"
 LEAVE_REQUESTED = "leave.requested"
 LEAVE_DECIDED = "leave.decided"
 EMPLOYEE_JOINED = "employee.joined"
+#: Temporal sibling of EMPLOYEE_JOINED. `employee.joined` fires when the ROW
+#: is created; this fires when the PERSON is about to start. They are the same
+#: instant only when somebody is hired on their first day, which is the case
+#: onboarding is least able to help with — everything you want done BEFORE a
+#: joiner arrives has to hang off a date that is still in the future.
+EMPLOYEE_JOINING_SOON = "employee.joining_soon"
 EMPLOYEE_EXITED = "employee.exited"
 EXPENSE_CLAIMED = "expense.claimed"
 EXPENSE_DECIDED = "expense.decided"

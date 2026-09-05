@@ -29,6 +29,7 @@ export default function RecruitmentTab() {
   const [activeOpening, setActiveOpening] = useState('');
   const [panel, setPanel] = useState(null);        // 'opening' | 'candidate' | 'edit' | null
   const [confirm, setConfirm] = useState(null);
+  const [hiring, setHiring] = useState(null);      // the candidate row being hired
 
   // The first opening becomes the selection once the list arrives, but only if
   // nothing is chosen yet — a reload must not yank the person back to the top.
@@ -48,9 +49,9 @@ export default function RecruitmentTab() {
     }
   }
 
-  async function hire(candidateId) {
+  async function hire(candidateId, body) {
     try {
-      await api.post(`/v1/manav/candidates/${candidateId}/hire`);
+      await api.post(`/v1/manav/candidates/${candidateId}/hire`, body || {});
       pushToast({ title: 'Candidate hired — employee record created', type: 'success' });
       candidates.reload();
     } catch (err) {
@@ -124,6 +125,18 @@ export default function RecruitmentTab() {
         />
       )}
 
+      {/* Full width, not inside the pipeline column the Hire button sits in —
+          `mn-pipe__col` is a narrow lane and a four-field form is unusable in
+          it. The form names the candidate so the panel is unambiguous when it
+          opens away from the card that opened it. */}
+      {hiring && (
+        <HireForm
+          candidate={hiring}
+          onClose={() => setHiring(null)}
+          onHired={async (body) => { await hire(hiring.id, body); setHiring(null); }}
+        />
+      )}
+
       {!current ? (
         <Empty
           icon="📋"
@@ -160,13 +173,12 @@ export default function RecruitmentTab() {
                               type="button"
                               className="mn-chip"
                               style={{ '--c': 'var(--ok)' }}
-                              onClick={() => setConfirm({
-                                title: `Hire ${c.full_name}?`,
-                                message: 'This creates an employee record in the personnel directory from this candidate. They will appear in the employee list, and can then be given attendance, leave and payroll.',
-                                confirmLabel: 'Hire',
-                                intent: 'neutral',
-                                onConfirm: () => hire(c.id),
-                              })}
+                              // Opens the hire panel rather than a confirm.
+                              // The joining date has to be ASKED for — see
+                              // HireForm — and ConfirmDialog is an alertdialog
+                              // with no slot for a field, which is right: it
+                              // should not grow one for this.
+                              onClick={() => setHiring(hiring?.id === c.id ? null : c)}
                             >
                               Hire
                             </button>
@@ -312,6 +324,99 @@ function CandidateForm({ openingId, onClose, onCreated, pushToast }) {
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
         <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
           {saving ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+
+/**
+ * Hire — the one screen in the product where a joining date can be a future one.
+ *
+ * The route used to hardcode `CURRENT_DATE`, so everybody hired through
+ * recruitment joined on the day the button was clicked. That is the wrong day
+ * for the thing onboarding is for: a joiner is agreed in advance, and the work
+ * that has to happen BEFORE they arrive — issue the laptop, raise the login,
+ * collect the signed offer — can only be scheduled against a date that is not
+ * yet here.
+ *
+ * Department and designation are here for a different reason. They are not
+ * being "carried over" from the candidate — `manav_candidates` is fourteen
+ * columns and holds neither — so this is simply the first point in the product
+ * at which anybody can state them, and stating them at the hire saves an edit
+ * of the personnel record five minutes later.
+ *
+ * EVERY FIELD OPTIONAL. Submitting the form untouched posts `{}` and behaves
+ * exactly as the old one-click Hire did, which is what keeps the confirm-free
+ * path honest for somebody who just wants the record made.
+ */
+function HireForm({ candidate, onClose, onHired }) {
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    date_of_joining: '', employment_type: '', department: '', designation: '',
+  });
+
+  async function submit(e) {
+    e.preventDefault();
+    setSaving(true);
+    // Only what was actually filled in. Sending "" for every untouched field
+    // would work — the server NULLIFs them — but it makes the request say
+    // things the person never said.
+    const body = Object.fromEntries(
+      Object.entries(form).filter(([, v]) => v !== ''),
+    );
+    try {
+      await onHired(body);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <form onSubmit={submit} className="k-formpanel">
+      <h4 className="k-section__title">Hire {candidate.full_name}</h4>
+      <p className="k-formpanel__note">
+        This creates an employee record in the personnel directory. They will
+        appear in the employee list, and can then be given attendance, leave and
+        payroll. Leave the joining date empty to start them today.
+      </p>
+      <div className="k-formpanel__grid k-formpanel__grid--2">
+        <label className="k-formpanel__label">
+          <span>Joining date</span>
+          {/* DateInput, never a native date input — house rule, and Playwright
+              drives it with setDate(). */}
+          <DateInput className="k-formpanel__input" type="date" value={form.date_of_joining}
+            onChange={e => setForm({ ...form, date_of_joining: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Employment type</span>
+          <select className="k-formpanel__input" value={form.employment_type}
+            onChange={e => setForm({ ...form, employment_type: e.target.value })}>
+            {/* The empty option is the default the server applies, named so
+                nobody has to guess what happens if they leave it alone. */}
+            <option value="">Full time (default)</option>
+            <option value="full_time">Full time</option>
+            <option value="part_time">Part time</option>
+            <option value="contract">Contract</option>
+            <option value="intern">Intern</option>
+            <option value="consultant">Consultant</option>
+          </select>
+        </label>
+        <label className="k-formpanel__label">
+          <span>Department</span>
+          <input className="k-formpanel__input" value={form.department}
+            onChange={e => setForm({ ...form, department: e.target.value })} />
+        </label>
+        <label className="k-formpanel__label">
+          <span>Designation</span>
+          <input className="k-formpanel__input" value={form.designation}
+            onChange={e => setForm({ ...form, designation: e.target.value })} />
+        </label>
+      </div>
+      <div className="k-formpanel__actions">
+        <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Cancel</button>
+        <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>
+          {saving ? 'Hiring…' : 'Hire'}
         </button>
       </div>
     </form>

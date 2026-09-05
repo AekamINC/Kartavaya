@@ -12,6 +12,80 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-05 — ONBOARDING: THREE OF FOUR ITEMS WERE THE FOURTH ONE'S PREREQUISITE
+
+Scoped as four gaps between "candidate accepted" and "employee exists". **One
+did not exist, one was mis-scoped, and the two real ones are shipped.**
+
+### ❌ RETRACTED — "`employee.joined` has no way in"
+
+Claimed from grepping `NiyamPage.jsx` for event literals and finding none. The
+builder does not hold any: it renders `catalog.events` from
+`GET /v1/niyam/catalog`, which serves `catalog_event_types()` = `REGISTRY` minus
+`UNWIRED`, and **`UNWIRED` is empty**. Executed rather than read:
+
+    41 events offerable, employee.joined among them
+    employee.joined -> {'label': 'An employee joins', 'family': 'hr'}
+    a 3-step task.create checklist on employee.joined VALIDATES
+
+**An onboarding checklist has been configurable the whole time** — a Niyam rule
+on "An employee joins" with `task.create` steps, no code required. Recorded
+because the grep-for-literals mistake is cheap to repeat.
+
+### ✅ A hire can name a joining date (`hire_candidate`)
+
+`date_of_joining` was hardcoded `CURRENT_DATE`, so everybody hired through
+recruitment started the day the button was clicked — and nothing could ever be
+scheduled AHEAD of a joiner, because no future date existed to schedule against.
+Optional body, `COALESCE(NULLIF($5,'')::date, CURRENT_DATE)` so the old
+no-body caller is untouched. Also carries `employment_type`, `department`,
+`designation`, which `manav_candidates` has nowhere to hold.
+
+⚠ **AND IT WAS THE SECOND UNGATED DOOR.** `create_employee` calls
+`assert_pahchan_seat_available` and its comment claims its INSERT is the ONLY
+moment somebody joins the attendance roster — *"One admission, one gate."*
+This route births an employee row too and did not call it. Latent (no org has
+`max_pahchan_seats`), fixed, pinned by a test.
+
+### ✅ Employee documents exist (migration 269)
+
+Manav had **twenty tables and no document among them**; the only document tables
+in the database were `graha_documents`, `hub_kb_documents` and `sign_documents`.
+The personnel file held an encrypted Aadhaar NUMBER and nothing that proves it.
+
+`manav_employee_documents`, RLS enabled in the same transaction as the CREATE.
+Verified live: `rls_on=true, policies=0, tables_without_rls=0` across `public`;
+advisor returns **zero** `rls_disabled_in_public`. Three routes (list/upload/
+soft-delete), gated **ADMIN** rather than the VIEWER `employee_assets` settles
+for — assets are kit, these are identity documents. `uploaded_by` is stripped
+on the way out. New `Documents` tab in Manav.
+
+### ✅ `employee.joining_soon` — the event that fires BEFORE somebody starts
+
+`employee.joined` fires at ROW creation. A sweep predicate on `date_of_joining`
+with a 7-day forward horizon is what lets a rule act ahead of a joiner. Boundaries
+verified live against the production schema (read-only, synthetic rows):
+
+    started yesterday  no   |  starts TODAY  YES  |  in 7 days  YES
+    in 8 days          no   |  inactive      no   |  no date    no
+
+### ⚠ TWO THINGS FOUND IN PASSING, NEITHER FIXED HERE
+
+- **`docs/MODULES.md` is a month stale.** The module `srijan` was renamed
+  `sahayak` by migration 108, applied **2026-08-06**, and the alias was
+  deliberately deleted. `ALL_MODULES` holds `sahayak` and `kray`; MODULES.md
+  still lists Srijan, omits both, and says twelve modules where the registry
+  says **thirteen**.
+- **`scripts/module-facts.mjs` cannot be safely re-run.** `new RegExp(mod, 'i')`
+  is unanchored, so `kray` matches `vikray.py` and reports Vikray's 19 routes as
+  its own; and the `hub*.py` special case is keyed to `mod === 'srijan'`, a code
+  that no longer exists, so `sahayak` reports **1 route** against a real 92.
+  Regenerating today replaces stale-but-coherent docs with fresh-but-wrong ones.
+  Fixed locally to measure with (`kray` → 0 routes, `sahayak` → 92); the fix
+  itself is raised separately.
+
+---
+
 ## 2026-09-01 LATE — CUSTOMER IS GONE, THE DATA IS ONE-OF-EACH, AND FOUR FLOWS ARE PROVEN
 
 ### ✅ `customer` no longer exists as a kind of person (migrations 254 + 255)

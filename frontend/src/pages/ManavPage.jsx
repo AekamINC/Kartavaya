@@ -26,6 +26,7 @@ import DepartmentsTab from './manav/DepartmentsTab';
 import HolidaysTab from './manav/HolidaysTab';
 import PerformanceTab from './manav/PerformanceTab';
 import AssetsTab from './manav/AssetsTab';
+import DocumentsTab from './manav/DocumentsTab';
 import ExitsTab from './manav/ExitsTab';
 import LinkAccountsTab from './manav/LinkAccountsTab';
 // The four custody registers. `services/custody/` has held all four since
@@ -53,7 +54,7 @@ import NoticesTab from './manav/NoticesTab';
 // that reaches a person through payroll rather than through the salary
 // structure. Both land in More for anyone who has already saved an
 // arrangement, per the compatibility promise above.
-const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'commission', 'bonus', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'custody', 'dsc', 'udin', 'notices', 'logins', 'analytics'];
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'commission', 'bonus', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'documents', 'exits', 'custody', 'dsc', 'udin', 'notices', 'logins', 'analytics'];
 
 export default function ManavPage() {
   // Tab prefs (proposal 67) still decide where the module opens by default.
@@ -192,6 +193,7 @@ export default function ManavPage() {
         {tab === 'holidays' && <HolidaysTab />}
         {tab === 'performance' && <PerformanceTab />}
         {tab === 'assets' && <AssetsTab />}
+        {tab === 'documents' && <DocumentsTab />}
         {tab === 'exits' && <ExitsTab onUpdate={loadStats} />}
         {tab === 'custody' && <CustodyTab />}
         {tab === 'dsc' && <DscTab />}

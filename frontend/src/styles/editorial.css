@@ -4061,6 +4061,17 @@ select.k-formpanel__input { appearance: none;
 .k-formpanel__actions {
   display: flex; gap: 8px; align-items: center; margin-top: 8px;
 }
+/* One sentence of explanation between a form panel's title and its fields.
+   Added for the hire panel, which has to say what pressing the button does to
+   the personnel directory and what an empty joining date means — the two facts
+   that used to live in a ConfirmDialog the panel replaced. `--t-body-sm` and
+   `--on-surface-3` are the pair every other secondary line in this file uses;
+   the bottom margin is the grid's own row gap so the note sits on the same
+   rhythm as the fields under it. */
+.k-formpanel__note {
+  margin: 0 0 12px; max-width: 68ch;
+  font-size: var(--t-body-sm); line-height: 1.5; color: var(--on-surface-3);
+}
 
 /* `.k-badge` DELETED here too — and this is the note that used to stand here
    getting its answer.

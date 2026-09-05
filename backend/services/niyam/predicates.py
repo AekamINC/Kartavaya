@@ -60,6 +60,7 @@ from typing import Any, NamedTuple
 
 from .subjects import (
     APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, DOCUMENT_EXPIRING,
+    EMPLOYEE_JOINING_SOON,
     INVOICE_OVERDUE, REPORT_DUE, STOCK_LOW, TASK_OVERDUE, temporal,
 )
 
@@ -422,6 +423,43 @@ PREDICATES: tuple = (
                AND d.expires_at < NOW() + ($1::int * INTERVAL '1 day')
              GROUP BY d.org_id, d.id, d.title, d.expires_at
              ORDER BY d.expires_at
+             LIMIT $2::int
+        """,
+    ),
+    Predicate(
+        name="employees_joining_soon",
+        event_type=EMPLOYEE_JOINING_SOON,
+        entity_type="employee",
+        label="An employee's joining date approaches",
+        # `once`: a person approaches their first day exactly one time, and the
+        # useful alert is the first one. If somebody edits `date_of_joining`
+        # forward and it approaches AGAIN, the `once` window suppresses the
+        # second approach — accepted, because the person who moved the date is
+        # the person the alert would have told.
+        window="once",
+        # $1 is a FORWARD horizon, as in `documents_expiring` — how many days
+        # BEFORE the joining date the fact becomes worth an event, not a
+        # lookback. Seven days because the work this exists to trigger has lead
+        # time: ordering a laptop, raising a login, getting a desk.
+        max_age_days=7,
+        sql="""
+            SELECT e.org_id                                AS org_id,
+                   e.id::text                              AS entity_id,
+                   COALESCE(e.department, '')              AS department,
+                   COALESCE(e.designation, '')             AS designation,
+                   COALESCE(e.employment_type, '')         AS employment_type,
+                   (e.date_of_joining - NOW()::date)::int  AS days_until
+              FROM public.manav_employees e
+             WHERE {anti_join:e.id::text}
+               AND e.is_active = TRUE
+               AND e.date_of_joining IS NOT NULL
+               -- FORWARD, and `>=` includes today: somebody starting this
+               -- morning is exactly who a "prepare for the joiner" rule is
+               -- about, and excluding them would make the event fire for
+               -- everyone except the person it matters most for.
+               AND e.date_of_joining >= NOW()::date
+               AND e.date_of_joining <= (NOW() + ($1::int * INTERVAL '1 day'))::date
+             ORDER BY e.date_of_joining
              LIMIT $2::int
         """,
     ),

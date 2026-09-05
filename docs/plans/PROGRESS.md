@@ -11277,3 +11277,52 @@ live — two of which were giving instructions that could no longer be acted on.
     CORS_ORIGINS staging                         2 origins, all kartavaya
     /docs + /openapi.json                        404 on BOTH doors
     schema count (live)                          15, no `staging` among them
+
+## 2026-09-05 — employee onboarding: the gap was two things, not four
+
+Four items were scoped. **Item 1 did not exist** — `employee.joined` has always
+been offerable in the Niyam builder (`UNWIRED` is empty; the builder renders
+`catalog.events` from the server, so grepping the JSX for event literals finds
+nothing and proves nothing). A `task.create` checklist on "An employee joins"
+validates today with no code. Recorded rather than quietly dropped, because the
+grep-for-literals mistake is cheap to repeat.
+
+The two real gaps, and one prerequisite between them:
+
+| | |
+|---|---|
+| `hire_candidate` | `date_of_joining` was hardcoded `CURRENT_DATE` — no joiner could start in the future, so nothing could be scheduled ahead of one |
+| | Also the SECOND ungated door: `create_employee` says "One admission, one gate" and this route births employee rows without calling `assert_pahchan_seat_available`. Latent, fixed |
+| migration 269 | `manav_employee_documents` — Manav had 20 tables and no document among them. RLS in the same transaction; advisor clean; live `tables_without_rls=0` |
+| `employee.joining_soon` | sweep predicate, 7-day FORWARD horizon. `employee.joined` fires at row creation; this fires before the person arrives |
+
+**Tests: 429 passed** across the touched suites (883 across all Niyam files).
+Two negative controls were run rather than assumed — swapping the 404/403 check
+order produces the cross-tenant disclosure the test claims to catch, and
+tightening `>=` to `>` on the joining date stops the event firing for somebody
+starting today. Both failed as intended, then were restored.
+
+Marketing collateral in `docs/marketing/` corrected in the same pass: the
+Sahayak page carried the retired name **Srijan** (migration 108, 2026-08-06) and
+every module's screen/endpoint figures came from a month-stale `docs/MODULES.md`.
+
+⚠ **`scripts/module-facts.mjs` cannot be re-run safely** — `new RegExp(mod, 'i')`
+is unanchored (`kray` matches `vikray.py`) and the `hub*.py` case is keyed to the
+retired `'srijan'` (so `sahayak` reports 1 route against a real 92). Measured
+with both fixed locally; the fix is raised separately.
+
+**Kray क्रय now has a page too** — the deck is thirteen, matching `ALL_MODULES`.
+Researched rather than assumed, because the generator could not be trusted for
+it: there is **no `kray_` table anywhere** (a naive grep finds fifteen, all of
+them the tail of `vikray_*` — the same substring trap as the generator's). Kray
+is `routers/procurement.py`, 21 routes, over Ganit's own `ganit_vendors`,
+`ganit_purchase_orders`, `ganit_po_*` and `ganit_vendor_bills`.
+
+⚠ **The page deliberately does NOT say a PO is sent to the supplier.**
+`/purchase-orders/{id}/issue` sets `status='issued'`, assigns a `po_number` and
+stamps `issued_at` — a state change inside the product. There is no PO PDF and
+no email anywhere in the codebase, and STATUS.md's own procurement row still
+reads "a PO cannot be sent". The flow is written around what is real: draft,
+approve against org thresholds, issue, receive, three-way match.
+
+Live rows today (post-reseed): vendors 2, vendor bills 3, purchase orders 0.
