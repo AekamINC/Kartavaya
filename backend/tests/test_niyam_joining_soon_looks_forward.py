@@ -84,7 +84,7 @@ class TestItLooksForwardNotBack:
 
 class TestItDoesNotSweepRowsItShouldNotSee:
     def test_inactive_employees_are_excluded(self):
-        assert "e.is_active = TRUE" in sql(), (
+        assert "emp.is_active = TRUE" in sql(), (
             "the sweep would announce the joining of somebody already off the rolls"
         )
 
@@ -95,11 +95,11 @@ class TestItDoesNotSweepRowsItShouldNotSee:
         but stating it keeps the intent readable and survives a rewrite of the
         comparison into something NULL-tolerant.
         """
-        assert "e.date_of_joining IS NOT NULL" in sql()
+        assert "emp.date_of_joining IS NOT NULL" in sql()
 
     def test_it_is_org_scoped_and_dedupes(self):
         s = sql()
-        assert "e.org_id" in s, "the event carries no org — it could not be routed"
+        assert "emp.org_id" in s, "the event carries no org — it could not be routed"
         assert "{anti_join:" in s, (
             "no anti-join: every tick would re-fetch the same rows for ever and "
             "starve anything past the LIMIT"
@@ -146,3 +146,60 @@ class TestTheEventIsUsable:
         """A field the builder offers but the event never carries is a condition
         that silently evaluates against nothing."""
         assert f"AS {key}" in sql(), f"{key} is offerable but never emitted"
+
+
+class TestNoPredicateShadowsTheAntiJoinAlias:
+    """SHIPPED TO PRODUCTION AND CAUGHT BY SENTRY, 2026-09-05.
+
+    `_anti_join` opens `NOT EXISTS (SELECT 1 FROM public.niyam_events e ...)`
+    and the entity expression is interpolated INSIDE that subquery. So a
+    predicate whose own FROM binds `e` is shadowed by it, and its entity
+    expression silently resolves against `niyam_events` instead:
+
+        FROM public.manav_employees e
+        WHERE NOT EXISTS (SELECT 1 FROM public.niyam_events e
+                          WHERE e.dedupe_key = $3::text || ':' || e.id::text)
+
+    `niyam_events` has `event_id` and no `id`, so every tick died with
+    `UndefinedColumnError: column e.id does not exist` — 22 events on
+    `/api/internal/niyam/sweep` before it was found.
+
+    ⚠ WHY THE PRE-DEPLOY CHECK MISSED IT. The SQL was validated with PREPARE
+    against the real schema, but with `{anti_join:…}` replaced by `TRUE` — so
+    the composed statement, which is the only one that ever runs, was never
+    the thing checked. Validating a fragment is not validating the query.
+
+    This runs over EVERY predicate, not just the one that broke.
+    """
+
+    @pytest.mark.parametrize("pred", PREDICATES, ids=lambda p: p.name)
+    def test_the_outer_query_does_not_bind_e(self, pred):
+        from services.niyam.predicates import resolved_sql
+        body = re.sub(r"--.*", "", pred.sql)
+        aliases = re.findall(r"FROM\s+public\.[a-z_]+\s+([a-z_]+)", body, re.I)
+        assert "e" not in aliases, (
+            f"{pred.name} binds `e` as a table alias. The anti-join subquery "
+            f"already uses `e` for niyam_events and is interpolated inside this "
+            f"query, so `e.<col>` resolves there instead — the sweep will die "
+            f"with `column e.<col> does not exist` every 15 minutes. "
+            f"Aliases found: {aliases}"
+        )
+
+    @pytest.mark.parametrize("pred", PREDICATES, ids=lambda p: p.name)
+    def test_the_entity_expression_uses_a_live_alias(self, pred):
+        """The expression handed to `{anti_join:…}` must name an alias the
+        OUTER query actually binds — otherwise it resolves to the subquery's
+        `e` or to nothing at all."""
+        from services.niyam.predicates import resolved_sql
+        m = re.search(r"\{anti_join:([^}]*)\}", pred.sql)
+        assert m, f"{pred.name} has no anti-join placeholder"
+        expr = m.group(1)
+        used = set(re.findall(r"\b([a-z_]+)\.", expr))
+        body = re.sub(r"--.*", "", pred.sql)
+        bound = set(re.findall(r"FROM\s+public\.[a-z_]+\s+([a-z_]+)", body, re.I))
+        bound |= set(re.findall(r"JOIN\s+public\.[a-z_]+\s+([a-z_]+)", body, re.I))
+        stray = used - bound
+        assert not stray, (
+            f"{pred.name}'s anti-join expression {expr!r} names {stray}, which "
+            f"the outer query never binds ({bound})"
+        )

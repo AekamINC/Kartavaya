@@ -443,23 +443,30 @@ PREDICATES: tuple = (
         # time: ordering a laptop, raising a login, getting a desk.
         max_age_days=7,
         sql="""
-            SELECT e.org_id                                AS org_id,
-                   e.id::text                              AS entity_id,
-                   COALESCE(e.department, '')              AS department,
-                   COALESCE(e.designation, '')             AS designation,
-                   COALESCE(e.employment_type, '')         AS employment_type,
-                   (e.date_of_joining - NOW()::date)::int  AS days_until
-              FROM public.manav_employees e
-             WHERE {anti_join:e.id::text}
-               AND e.is_active = TRUE
-               AND e.date_of_joining IS NOT NULL
+            -- `emp`, NEVER `e`. `_anti_join` opens
+            -- `NOT EXISTS (SELECT 1 FROM public.niyam_events e ...)` and the
+            -- entity expression is interpolated INSIDE that subquery, so an
+            -- outer alias of `e` is shadowed by it: `e.id` then resolves
+            -- against niyam_events, which has event_id and no id, and the
+            -- sweep dies with `column e.id does not exist` every 15 minutes.
+            -- Shipped exactly that way once — see the test that now pins it.
+            SELECT emp.org_id                                AS org_id,
+                   emp.id::text                              AS entity_id,
+                   COALESCE(emp.department, '')              AS department,
+                   COALESCE(emp.designation, '')             AS designation,
+                   COALESCE(emp.employment_type, '')         AS employment_type,
+                   (emp.date_of_joining - NOW()::date)::int  AS days_until
+              FROM public.manav_employees emp
+             WHERE {anti_join:emp.id::text}
+               AND emp.is_active = TRUE
+               AND emp.date_of_joining IS NOT NULL
                -- FORWARD, and `>=` includes today: somebody starting this
                -- morning is exactly who a "prepare for the joiner" rule is
                -- about, and excluding them would make the event fire for
                -- everyone except the person it matters most for.
-               AND e.date_of_joining >= NOW()::date
-               AND e.date_of_joining <= (NOW() + ($1::int * INTERVAL '1 day'))::date
-             ORDER BY e.date_of_joining
+               AND emp.date_of_joining >= NOW()::date
+               AND emp.date_of_joining <= (NOW() + ($1::int * INTERVAL '1 day'))::date
+             ORDER BY emp.date_of_joining
              LIMIT $2::int
         """,
     ),
