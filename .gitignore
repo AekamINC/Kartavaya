@@ -155,3 +155,11 @@ backend/coverage.xml
 # R2 (`aekaminc/shared/reference/pincode-boundaries/`), never in git. Rebuild a
 # local copy with backend/scripts/prepare_pincode_boundaries.py.
 backend/data/pincode_boundaries/
+
+# Rendered marketing PDFs. Build outputs, not sources: `build-pdf.mjs`
+# regenerates all fourteen from `module-flows.html` + `fonts.css`, and every
+# rebuild rewrites all of them with different bytes — ~2.9MB added to a PUBLIC
+# repo's history per edit, for files git cannot diff. The source and the fonts
+# ARE committed, so anyone can reproduce them exactly:
+#     node docs/marketing/build-pdf.mjs
+docs/marketing/pdf/

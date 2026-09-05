@@ -1,7 +1,8 @@
 # Marketing collateral — module flows
 
 A4 landscape, one page per module: what a customer actually does inside it,
-in five steps. Cover + ecosystem map + the twelve modules = 14 sheets.
+in five steps. Cover + ecosystem map + the thirteen modules of `ALL_MODULES`
+= 15 sheets.
 
 | File | What it is |
 |---|---|
@@ -9,12 +10,17 @@ in five steps. Cover + ecosystem map + the twelve modules = 14 sheets.
 | `fonts.css` | Generated. The four brand faces, inlined as base64. |
 | `build-fonts.mjs` | Regenerates `fonts.css`. Run only when a face changes. |
 | `build-pdf.mjs` | Renders the PDFs. |
-| `pdf/kartavaya-module-flows.pdf` | The 14-page deck. |
-| `pdf/modules/kartavaya-<code>.pdf` | Twelve single-page sheets, one per module. |
+| `pdf/` | **Not in git** — build output. Run the command below to produce it. |
 
 ```bash
 node docs/marketing/build-pdf.mjs
 ```
+
+`pdf/` is gitignored on purpose: every rebuild rewrites all fourteen files with
+different bytes, which is ~2.9MB of undiffable binary added to a PUBLIC repo's
+history per edit. The source and the embedded fonts are both committed, so the
+build is reproducible from a clean checkout with no network — that is what makes
+the outputs safe to leave out.
 
 The one-pagers are the *same* source as the deck — `?only=<code>` hides every
 other sheet — so a sheet handed to a prospect cannot drift from the deck.
