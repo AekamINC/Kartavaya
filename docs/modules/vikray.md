@@ -13,12 +13,13 @@ An order is drafted against a Graha client, priced line by line, then converted.
 - `backend/routers/vikray.py`
 
 
-**18 routes** — 9 GET, 3 POST, 4 PATCH, 2 DELETE
+**19 routes** — 9 GET, 4 POST, 4 PATCH, 2 DELETE
 
 <details><summary>All routes</summary>
 
 - `GET /orders`
 - `POST /orders`
+- `POST /orders/from-deal/{deal_id}`
 - `GET /orders/{order_id}`
 - `PATCH /orders/{order_id}`
 - `PATCH /orders/{order_id}/status`
@@ -40,12 +41,15 @@ An order is drafted against a Graha client, priced line by line, then converted.
 
 ## Database
 
-8 tables:
+11 tables:
 
 - `ganit_invoices`
 - `ganit_products`
+- `graha_clients`
 - `graha_contacts`
 - `graha_deals`
+- `organisations`
+- `users`
 - `vikray_orders`
 - `vikray_stock`
 - `vikray_stock_moves`
@@ -57,12 +61,21 @@ An order is drafted against a Graha client, priced line by line, then converted.
 - `frontend\src\pages\vikray\DashboardTab.jsx`
 - `frontend\src\pages\vikray\OrderDetail.jsx`
 - `frontend\src\pages\vikray\OrderForm.jsx`
+- `frontend\src\pages\vikray\OrderRoute.jsx`
 - `frontend\src\pages\vikray\OrderRows.jsx`
 - `frontend\src\pages\vikray\OrdersTab.jsx`
 - `frontend\src\pages\vikray\PipelineTab.jsx`
 - `frontend\src\pages\vikray\StockTab.jsx`
 - `frontend\src\pages\vikray\TargetsTab.jsx`
+- `frontend\src\pages\vikray\VikrayModule.jsx`
 - `frontend\src\pages\vikray\_shared.jsx`
+- `frontend\src\pages\vikray\__tests__\clientContactTabs.test.jsx`
+- `frontend\src\pages\vikray\__tests__\orderColumns.test.jsx`
+- `frontend\src\pages\vikray\__tests__\orderCustomerCreate.test.jsx`
+- `frontend\src\pages\vikray\__tests__\orderPathKeepsTab.test.jsx`
+- `frontend\src\pages\vikray\__tests__\orderRoute.test.jsx`
+- `frontend\src\pages\vikray\__tests__\stockThresholdSaved.test.jsx`
+- `frontend\src\pages\vikray\__tests__\targetsAttainment.test.jsx`
 - `frontend\src\pages\vikray\__tests__\vikrayTabStates.test.jsx`
 - `frontend\src\pages\VikrayPage.jsx`
 

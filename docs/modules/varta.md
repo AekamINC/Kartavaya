@@ -12,22 +12,24 @@ A send resolves a template, posts to the Cloud API and stores the message id. De
 
 - `backend/routers/whatsapp.py`
 
+**Services**
+- `backend/services/varta_consent.py`
 
-**13 routes** — 6 GET, 5 POST, 2 DELETE
+**13 routes** — 7 GET, 4 POST, 2 DELETE
 
 <details><summary>All routes</summary>
 
 - `GET /accounts`
 - `POST /accounts`
+- `DELETE /accounts/{account_id}`
 - `GET /conversations`
 - `GET /conversations/{conv_id}/messages`
+- `GET /conversations/{conv_id}/window`
 - `POST /conversations/{conv_id}/messages`
 - `GET /templates`
 - `POST /templates`
 - `DELETE /templates/{template_id}`
-- `GET /auto-replies`
-- `POST /auto-replies`
-- `DELETE /auto-replies/{rule_id}`
+- `GET /rate-card`
 - `GET /webhook`
 - `POST /webhook`
 
@@ -35,25 +37,32 @@ A send resolves a template, posts to the Cloud API and stores the message id. De
 
 ## Database
 
-6 tables:
+7 tables:
 
-- `varta_auto_replies`
+- `credit_prices`
 - `varta_business_accounts`
 - `varta_contacts`
 - `varta_conversations`
 - `varta_messages`
+- `varta_rate_card`
 - `varta_templates`
 
 ## Frontend
 
 - `frontend\src\pages\sanvaad\varta\TemplatePicker.jsx`
 - `frontend\src\pages\sanvaad\varta\WAChat.jsx`
+- `frontend\src\pages\sanvaad\varta\WAConnectAccount.jsx`
+- `frontend\src\pages\sanvaad\varta\WARateCard.jsx`
 - `frontend\src\pages\sanvaad\varta\WhatsAppTab.jsx`
 - `frontend\src\pages\sanvaad\varta\WindowBanner.jsx`
+- `frontend\src\pages\sanvaad\varta\__tests__\waConnect.test.jsx`
+- `frontend\src\pages\sanvaad\varta\__tests__\waRateCard.test.jsx`
+- `frontend\src\pages\sanvaad\varta\__tests__\waWindowAndDisconnect.test.jsx`
 
 
 ## Integrations
 
+- Google Gemini
 - WhatsApp Cloud API
 - AWS SES
 

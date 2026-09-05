@@ -10,18 +10,27 @@ A run is created for a month, pulls employees from Manav, computes gross then ea
 
 ## Backend
 
+- `backend/routers/income_tax_slabs.py`
 - `backend/routers/vetana.py`
 
 
-**19 routes** — 10 GET, 3 POST, 5 PATCH, 1 DELETE
+**27 routes** — 12 GET, 5 POST, 7 PATCH, 3 DELETE
 
 <details><summary>All routes</summary>
 
+- `GET /it-slabs`
+- `POST /it-slabs`
+- `PATCH /it-slabs/{slab_id}`
+- `DELETE /it-slabs/{slab_id}`
 - `GET /salary-structures`
 - `POST /salary-structures`
 - `GET /salary-structures/{sid}`
 - `PATCH /salary-structures/{sid}`
 - `DELETE /salary-structures/{sid}`
+- `GET /pt-slabs`
+- `POST /pt-slabs`
+- `PATCH /pt-slabs/{slab_id}`
+- `DELETE /pt-slabs/{slab_id}`
 - `POST /payroll/process`
 - `GET /payroll/runs`
 - `GET /payroll/runs/{run_id}`
@@ -41,17 +50,25 @@ A run is created for a month, pulls employees from Manav, computes gross then ea
 
 ## Database
 
-13 tables:
+21 tables:
 
+- `ganit_invoices`
 - `manav_attendance`
+- `manav_bonus_awards`
+- `manav_commission_bands`
+- `manav_commission_schemes`
 - `manav_departments`
 - `manav_employees`
 - `manav_expense_claims`
 - `manav_leave_balances`
 - `manav_leave_requests`
 - `manav_leave_types`
+- `manav_offboarding`
 - `org_member_modules`
 - `organisations`
+- `pay_income_tax_slabs`
+- `pay_professional_tax`
+- `statute_calendar`
 - `vetana_loans`
 - `vetana_payroll_runs`
 - `vetana_payslips`
@@ -60,12 +77,15 @@ A run is created for a month, pulls employees from Manav, computes gross then ea
 ## Frontend
 
 - `frontend\src\pages\vetana\DashboardTab.jsx`
+- `frontend\src\pages\vetana\ItLadderSection.jsx`
 - `frontend\src\pages\vetana\LoansTab.jsx`
 - `frontend\src\pages\vetana\PayrollTab.jsx`
 - `frontend\src\pages\vetana\PayslipsTab.jsx`
+- `frontend\src\pages\vetana\PtLadderSection.jsx`
 - `frontend\src\pages\vetana\StatutoryTab.jsx`
 - `frontend\src\pages\vetana\StructuresTab.jsx`
 - `frontend\src\pages\vetana\_shared.jsx`
+- `frontend\src\pages\vetana\__tests__\statutorySwitches.test.jsx`
 - `frontend\src\pages\VetanaPage.jsx`
 
 

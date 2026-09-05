@@ -14,8 +14,9 @@ A signature request stores the document in R2 and issues a tokenised link. The s
 
 **Services**
 - `backend/services/esign_service.py`
+- `backend/services/esign_signed_doc.py`
 
-**13 routes** — 4 GET, 9 POST
+**14 routes** — 4 GET, 10 POST
 
 <details><summary>All routes</summary>
 
@@ -31,14 +32,17 @@ A signature request stores the document in R2 and issues a tokenised link. The s
 - `POST /verify/{token}/decline`
 - `POST /documents/{doc_id}/cancel`
 - `POST /documents/{doc_id}/resend/{signer_id}`
+- `POST /documents/{doc_id}/rebuild`
 - `GET /documents/{doc_id}/audit`
 
 </details>
 
 ## Database
 
-3 tables:
+5 tables:
 
+- `organisations`
+- `outbound_log`
 - `sign_audit_log`
 - `sign_documents`
 - `sign_signers`
@@ -48,6 +52,7 @@ A signature request stores the document in R2 and issues a tokenised link. The s
 - `frontend\src\pages\esign\CreateTab.jsx`
 - `frontend\src\pages\esign\DetailTab.jsx`
 - `frontend\src\pages\esign\DocumentsTab.jsx`
+- `frontend\src\pages\esign\FieldPlacer.jsx`
 - `frontend\src\pages\EsignPage.jsx`
 - `frontend\src\pages\ganit\ESignTab.jsx`
 
