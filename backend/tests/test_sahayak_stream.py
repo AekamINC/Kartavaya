@@ -50,6 +50,7 @@ import ast
 import asyncio
 import inspect
 import json
+import re
 import textwrap
 import uuid
 
@@ -407,11 +408,17 @@ def test_one_function_writes_the_ai_log_row_and_both_paths_use_it():
     """
     for fn in (ai_router.generate, ai_router.generate_stream):
         src = textwrap.dedent(inspect.getsource(fn))
-        assert "hub_ai_logs" not in src, (
+        # The INSERT, not the table name. `not in src` read the COMMENTS too, so
+        # explaining in prose why the cost has to reach `hub_ai_logs` failed a
+        # test about SQL — and the repair a reader would reach for first is to
+        # delete the sentence. What must not appear here is a statement that
+        # writes the row; the word is welcome.
+        assert not re.search(r"INSERT\s+INTO\s+public\.hub_ai_logs", src), (
             f"{fn.__name__} writes its own log row; the two paths will drift")
         assert "_record_generation" in src, (
             f"{fn.__name__} does not record the call it made")
-    assert "hub_ai_logs" in inspect.getsource(ai_router._record_generation)
+    assert re.search(r"INSERT\s+INTO\s+public\.hub_ai_logs",
+                     inspect.getsource(ai_router._record_generation))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -491,10 +498,17 @@ async def test_an_abandoned_stream_still_records_what_we_were_billed(
     await agen.aclose()
     await asyncio.sleep(0)
 
-    inserts = [c.args[0] for c in mock_pool.execute.call_args_list]
-    logged = [q for q in inserts if "hub_ai_logs" in q]
+    logged = [c for c in mock_pool.execute.call_args_list
+              if "hub_ai_logs" in c.args[0] and "prompt_tokens" in c.args[0]]
     assert len(logged) == 1, "the abandoned generation was never accounted for"
-    assert "'success'" in logged[0], "an answer we were billed for logged as an error"
+    # The BOUND VALUE, not the SQL text. `status` used to be the literal
+    # 'success' inside the statement, so reading the query string was the same
+    # thing as reading what got written. It is a parameter now — `generate()`
+    # passes 'fallback' for a provider that answered 200 with no text — and a
+    # test that still greps the SQL would pass for a row that says anything at
+    # all. `$10` is the last argument; `c.args[0]` is the statement itself.
+    assert logged[0].args[10] == "success", (
+        f"an answer we were billed for was logged as {logged[0].args[10]!r}")
 
 
 @pytest.mark.asyncio

@@ -786,8 +786,30 @@ async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: s
 
     generation_id = data.get("id", "")
 
+    # `content` IS NULLABLE, AND THE NULL IS NOT AN ERROR ANYTHING UPSTREAM SEES.
+    #
+    # An OpenAI-compatible response carries `content: null` on several ordinary
+    # outcomes — a content filter, a tool call, and the one that reached
+    # production: a reasoning model that spends its whole completion budget
+    # thinking and emits no answer before `finish_reason: "length"` stops it.
+    # The HTTP status is 200 and `usage` reports the tokens as generated, so the
+    # call is indistinguishable from a good one until something reads the text.
+    #
+    # Measured 2026-08-31 15:35:48Z, `qwen/qwen3.6-flash` through OpenRouter:
+    # 153 prompt tokens, 2,050 completion tokens against the 2,048 ceiling this
+    # path sends, 16,812 ms, $0.0023 — and `content` null. It was handed back as
+    # the answer, and `re.findall(r'#\w+', None)` 39 ms later took down
+    # `POST /api/v1/hub/org/skills/{skill_id}/run` (Sentry PYTHON-FASTAPI-6).
+    # `findall` is only the tripwire: it runs for `social_media` alone. Every
+    # other agent_type carries the same None one line further, to
+    # `hub_content_items.body`, which is NOT NULL.
+    #
+    # So `text` is a `str` on every path out of here, and `finish_reason` rides
+    # along to say WHY it is empty — `generate()` reads it, and the next
+    # occurrence is a sentence in the log rather than a stack trace.
     return {
-        "text": choice["message"]["content"],
+        "text": choice["message"].get("content") or "",
+        "finish_reason": choice.get("finish_reason", ""),
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
         "cost_usd": cost_usd,
@@ -944,8 +966,20 @@ def _usage_to_result(model: str, text: str, system: str, prompt: str, usage: dic
 async def _record_generation(
     pool, *, code: str, model: str, client_id, org_id,
     result: dict, latency_ms: int, cost_usd: float,
+    status: str = "success",
 ) -> None:
     """The `hub_ai_logs` row, and the org's daily call counter.
+
+    `status` defaults to 'success' and every existing caller keeps it. The one
+    caller that passes anything else is `generate()`, for a provider that
+    answered 200 with no text: that call HAPPENED and was BILLED, so it is
+    recorded here and not by `_record_failure` — which carries no cost column
+    and would drop the charge on the floor. It is written as 'fallback', which
+    is what the `hub_ai_logs_status_check` constraint has always allowed and
+    nothing has ever used, and which is the literal truth about the call: it
+    cost money and the chain moved on. Calling it 'success' would be the same
+    shape of lie as a masked column — a report that reads clean over a call
+    that produced nothing.
 
     ONE function, called by both `generate()` and `generate_stream()`. They used
     to be one code path and are now two, and the invariant the streaming
@@ -970,10 +1004,11 @@ async def _record_generation(
         "INSERT INTO public.hub_ai_logs "
         "(client_id, org_id, provider, model, prompt_tokens, completion_tokens, "
         " latency_ms, status, cost_usd, generation_id) "
-        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'success', $8, $9)",
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $10, $8, $9)",
         client_id, org_id, code, model,
         result["prompt_tokens"], result["completion_tokens"],
         latency_ms, cost_usd, result.get("generation_id", ""),
+        status,
     )
     if client_id:
         _org_id = await pool.fetchval(
@@ -1260,6 +1295,17 @@ async def generate_stream(
     raise RuntimeError(f"All AI providers failed. Last error: {last_error}")
 
 
+class EmptyCompletion(RuntimeError):
+    """A provider answered 200 and produced no text.
+
+    Its own class rather than a bare RuntimeError because `generate()` handles
+    it differently from a transport failure: the call was already recorded, with
+    its cost, so the handler must NOT write a second `hub_ai_logs` row. Nothing
+    outside this module catches it — callers see the RuntimeError that the
+    exhausted chain raises, exactly as they do for a provider that 500s.
+    """
+
+
 async def generate(
     prompt: str,
     system: str = "",
@@ -1318,16 +1364,62 @@ async def generate(
 
             latency = int((time.monotonic() - start) * 1000)
             cost_usd = result.get("cost_usd", 0.0)
+            text = (result.get("text") or "").strip()
 
             # `_record_generation`, not an inline INSERT. `generate_stream()`
             # has to write the identical row for the identical answer, and two
             # copies of an INSERT is how the streaming half of the traffic ends
             # up missing from a spend report that the blocking half is right
             # about. The comment explaining what the row is for moved with it.
+            #
+            # Recorded BEFORE the emptiness check, and with a status that says
+            # which it was. An empty answer still consumed tokens we were
+            # charged for — 2,050 of them in the case below — and the rule this
+            # follows is the one `_record_abandoned` states for a reader who
+            # walks away mid-stream: cost we were charged has to reach
+            # `hub_ai_logs` or the spend report is wrong in the one direction
+            # that matters.
             await _record_generation(
                 pool, code=code, model=model, client_id=client_id, org_id=org_id,
                 result=result, latency_ms=latency, cost_usd=cost_usd,
+                status="success" if text else "fallback",
             )
+
+            # AN EMPTY ANSWER IS A PROVIDER FAILURE, AND THIS LOOP IS WHAT A
+            # PROVIDER FAILURE IS FOR.
+            #
+            # It did not used to be one. A 200 with no text returned from here
+            # as though it were an answer, so the chain below this provider was
+            # never consulted and every caller got the empty string — or, until
+            # the guard in `_call_openai_compat`, `None`. What that cost, on
+            # 2026-08-31: run 3db1905e of "Weekly Reel Scripts" was charged 2
+            # credits for step 3 at 15:35:31Z, `qwen/qwen3.6-flash` burned its
+            # whole 2,048-token budget on reasoning and emitted nothing, and
+            # `POST /api/v1/hub/org/skills/{skill_id}/run` 500'd 39 ms later
+            # (Sentry PYTHON-FASTAPI-6). The crash landed OUTSIDE the caller's
+            # refund window, so the 2 credits were kept for nothing, the run sat
+            # at 'running' for ten hours until the reaper in
+            # `routers/scheduler.py` closed it, and the two reel scripts that
+            # HAD been written were never shown to anyone.
+            #
+            # Raising here puts every one of those back on a path that already
+            # exists: the next provider gets its turn, and if none of them
+            # answers, `routers/hub.py::execute_org_skill` catches the
+            # RuntimeError below, refunds by transaction id, closes the run row
+            # honestly and returns the completed steps via `_with_partial`.
+            #
+            # ⚠ THE CHAIN BEHIND `qwen_flash` IS EMPTY IN PRODUCTION TODAY, so
+            # for English bulk this buys the refund and not a second answer:
+            # `_declared_chain` returns ["glm", "qwen_flash", "groq"], `glm`
+            # 400s on every call, and GROQ_API_KEY is not set on the Kartavaya
+            # service. Setting that key is what turns this into a recovery.
+            if not text:
+                raise EmptyCompletion(
+                    f"{code} ({model}) returned 200 with no text: "
+                    f"finish_reason={result.get('finish_reason') or 'unreported'!r}, "
+                    f"{result.get('completion_tokens', 0)} completion tokens "
+                    f"against a {max_tokens}-token ceiling"
+                )
 
             return {
                 "text": result["text"],
@@ -1352,6 +1444,14 @@ async def generate(
                 # caller has to branch on which provider answered.
                 "grounding_sources": result.get("grounding_sources", []),
             }
+
+        except EmptyCompletion as e:
+            # No `_record_failure` — the row is already written, as 'fallback',
+            # WITH the cost. Recording it a second time here would put a second
+            # row against one call and understate nothing but confuse everyone.
+            last_error = e
+            log.warning("AI provider %s answered with nothing: %s", code, e)
+            continue
 
         except Exception as e:
             latency = int((time.monotonic() - start) * 1000)

@@ -11326,3 +11326,59 @@ reads "a PO cannot be sent". The flow is written around what is real: draft,
 approve against org thresholds, issue, receive, three-way match.
 
 Live rows today (post-reseed): vendors 2, vendor bills 3, purchase orders 0.
+
+---
+
+## 2026-09-06 — Sentry PYTHON-FASTAPI-6: the AI router returned nothing and called it an answer
+
+`POST /api/v1/hub/org/skills/{skill_id}/run`, `TypeError: expected string or
+bytes-like object, got 'NoneType'`, 4 events. Traced to a provider response
+three functions upstream, not to the line that raised.
+
+**The measurement that named it**, `hub_ai_logs` at 2026-08-31 15:35:48.795Z,
+39 ms before the exception: `qwen/qwen3.6-flash`, 153 prompt tokens, **2,050
+completion tokens against a 2,048 ceiling**, 16,812 ms, $0.0023, status
+`success`. A reasoning model spent its whole budget thinking, stopped at
+`finish_reason: "length"` with `content: null`, and the 200 made it
+indistinguishable from a good call until something read the text.
+
+**Three defects, of which the 500 was the smallest.** `findall` runs for
+`social_media` only — every other agent_type carried the same `None` to
+`hub_content_items.body`, which is NOT NULL. The provider loop never fell
+through, because an empty answer was not an exception. And the crash landed one
+line outside `execute_org_skill`'s refund window, so run `3db1905e` holds three
+debits and no refund, sat at `'running'` for ten hours until the reaper closed
+it blaming a process restart, and never showed the customer the two reel scripts
+it had already written.
+
+**Fixed** in `services/ai_router.py`: `text` is a `str` on every path out of
+`_call_openai_compat`; `finish_reason` is carried (it was read nowhere in the
+codebase); an empty answer raises `EmptyCompletion` inside the loop so the chain
+moves on, and an exhausted chain raises — which is what puts the caller back on
+its existing refund / `_fail_run` / `_with_partial` path. The call is still
+recorded once, with its cost, as `'fallback'`.
+
+**Tests: 3,595 passed** across the hub/skill/AI/credit suites. 15 new, in
+`tests/test_an_empty_answer_is_not_an_answer.py`. **Five negative controls run
+rather than assumed** — reverting the `None` guard, removing the raise, forcing
+`status='success'`, giving `generate()` an inline INSERT, and defaulting
+`_record_generation` to `'error'`. Each failed the intended tests and only
+those, then was restored.
+
+⚠ **Two tests in `test_sahayak_stream.py` had to be repaired, and both had
+stopped checking what they meant.** One asserted `"hub_ai_logs" not in
+inspect.getsource(generate)` — so explaining in a COMMENT why the cost must
+reach that table failed a test about SQL. It now matches
+`INSERT\s+INTO\s+public\.hub_ai_logs`. The other asserted `"'success'" in` the
+query string, which stopped meaning anything the moment status became a bind; it
+now reads the bound value. Both were negative-controlled after the repair.
+
+⚠ **Not fixed, and both owner decisions.** `GROQ_API_KEY` is unset on the
+Kartavaya service and `glm` 400s on every call, so `qwen_flash` is the sole
+answerer for English bulk and this change buys a refund rather than a recovery.
+And 7 of 42 `qwen_flash` successes since 08-01 sit exactly at the 2,048 ceiling
+— 17% truncation — which is a `max_tokens` / reasoning-suppression cost call,
+not an agent's.
+
+Credits kept by the bug: 4, across 2 runs, all `UK AekamINC` — a test org. Rows
+left in place; they are the evidence.

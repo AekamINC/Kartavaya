@@ -12,6 +12,75 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-06 — AN EMPTY ANSWER WAS BEING SOLD AS AN ANSWER (Sentry PYTHON-FASTAPI-6)
+
+`POST /api/v1/hub/org/skills/{skill_id}/run` 500'd on
+`TypeError: expected string or bytes-like object, got 'NoneType'` — 4 events,
+2026-08-21 to 08-31. The crash site was
+`re.findall(r'#\w+', result["text"])`, but the defect is three functions
+upstream and is not really a crash.
+
+### What the provider actually returned
+
+One `hub_ai_logs` row, 2026-08-31 15:35:48.795Z, 39 ms before the exception:
+
+    qwen_flash / qwen/qwen3.6-flash   status success   $0.0023349375
+    prompt_tokens 153   completion_tokens 2050   latency_ms 16812
+
+2,050 completion tokens against the **2,048-token ceiling** this path sends
+(`max_tokens=4096 if agent_type in ("blog","seo","campaign") else 2048`).
+Qwen3.6 is a reasoning model and OpenRouter counts reasoning against
+`max_tokens`, so a step whose thinking runs long stops at
+`finish_reason: "length"` having emitted **no answer at all** — `content: null`,
+HTTP 200, tokens reported as generated and billed.
+`_call_openai_compat` took `choice["message"]["content"]` unguarded and
+`generate()` returned it as the answer.
+
+### The three consequences, of which the 500 is the smallest
+
+- **`findall` is a tripwire, not the bug.** It runs for `social_media` alone.
+  Every other agent_type carries the same `None` one line further, to
+  `hub_content_items.body`, which is **NOT NULL**.
+- **The chain was never consulted.** An empty answer was not an exception, so
+  the provider loop that exists to fall through never ran.
+- **The charge was kept.** `execute_org_skill` refunds inside its `try` around
+  `generate`; the crash landed one line outside it. The run then sat at
+  `'running'` for ten hours until `_reap_abandoned_runs` closed it — telling the
+  customer the process had probably restarted, which it had not — and the steps
+  that HAD succeeded were never shown, because `_with_partial` only runs on a
+  caught exception.
+
+### Fixed
+
+`text` is a `str` on every path out of `_call_openai_compat`, and
+`finish_reason` is carried (it was read nowhere in the codebase). An empty
+answer now raises `EmptyCompletion` inside the provider loop, so the chain moves
+on and an exhausted chain raises — which puts the caller back on its existing
+refund / `_fail_run` / `_with_partial` path. The call is still recorded with its
+cost, once, as `'fallback'` — a value `hub_ai_logs_status_check` has always
+allowed and nothing had ever used. 15 new tests, 5 negative controls,
+3,595 passed across the related suites.
+
+### ⚠ Two things this does NOT fix, both measured
+
+- **There is no chain behind `qwen_flash` in production.** English bulk is
+  `["glm", "qwen_flash", "groq"]`; `glm` 400s on every call (87 rejections since
+  08-25, `thudm/glm-4.5-air:free is not a valid model ID`) and **`GROQ_API_KEY`
+  is not set on the Kartavaya service**. So today this buys a clean refund, not
+  a second answer. Setting that key turns it into a recovery — owner action.
+- **17% of `qwen_flash` calls are being truncated.** 7 of 42 successes since
+  08-01 sit exactly at the 2,048 ceiling; no other model comes close
+  (`gemini_flash_or` maxes at 630). The ones that do not return null return
+  content cut off mid-sentence. Raising `max_tokens` or suppressing reasoning
+  for short-form agents is a cost decision, deliberately left to the owner —
+  lifetime AI spend across every call ever made is $2.19.
+
+**Credits kept by this bug: 4, across 2 runs, all of them `UK AekamINC`** — a
+designated test org. No customer was out of pocket. The rows are left as they
+are: they are the evidence.
+
+---
+
 ## 2026-09-05 — ONBOARDING: THREE OF FOUR ITEMS WERE THE FOURTH ONE'S PREREQUISITE
 
 Scoped as four gaps between "candidate accepted" and "employee exists". **One
