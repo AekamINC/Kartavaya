@@ -743,6 +743,104 @@ def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
     return (prompt_tokens * prices["prompt"]) + (completion_tokens * prices["completion"])
 
 
+def _reasoning_allowance(max_tokens: int) -> int:
+    """How many tokens a reasoning model may think for, on top of its answer.
+
+    ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+
+    `max_tokens` is one number covering two different jobs on a reasoning model:
+    the thinking and the answer. Callers pass it meaning "how long may the
+    answer be" — and on `qwen/qwen3.6-flash` the thinking ate it first.
+
+    MEASURED, `hub_ai_logs` since 2026-08-01: 7 of 42 successful `qwen_flash`
+    calls stopped at exactly 2,050 completion tokens against the 2,048 ceiling
+    — 17%. No other model comes near it (`gemini_flash_or` peaks at 630). The
+    content those calls produced is in `hub_content_items`, and five of six end
+    mid-sentence:
+
+        "...remain focused on delivering consistent service standards through
+         the seasonal transition"                          437 chars
+        "...As these figures are absent"                    519 chars
+        "...Provide the missing inputs so the"              918 chars
+        "...*Audio:* “"                                     953 chars
+
+    227 to 953 characters of visible text — call it 60 to 250 tokens — out of
+    2,050 billed. The rest was reasoning, which OpenRouter returns under its own
+    key and not in `content`, so it is charged for and thrown away.
+
+    ── WHY A BUDGET AND NOT A BIGGER CEILING ──────────────────────────────────
+
+    Raising `max_tokens` alone trades truncation for latency, which is the wrong
+    trade in this chain. Those 7 ceiling calls averaged 14,912 ms against the
+    20,000 ms bulk budget in `LATENCY_BUDGET_MS`; at the ~138 tokens/sec they
+    ran at, another 1,024 tokens of thinking is another 7 seconds and puts them
+    over it. The 4 calls that finished at 422 tokens averaged 2,916 ms — a
+    fifth of the time, for output nobody has complained about. Capping the
+    thinking is the only lever here that removes tokens rather than adding them.
+
+    Half the answer budget, floored and capped, so a 512-token reranker call is
+    not handed a 2,048-token think and a 4,096-token blog is not handed an
+    unbounded one.
+    """
+    return min(1024, max(256, max_tokens // 2))
+
+
+def _apply_token_budget(payload: dict, base_url: str, max_tokens: int) -> None:
+    """Give the answer its whole budget and the thinking a bounded one.
+
+    ONE WRITER, TWO CALLERS — `_call_openai_compat` and `_stream_openai_compat`
+    build different payloads for the same call, and both were handing a
+    reasoning model a single number to split between thinking and answering.
+    Fixing one and not the other is how the streaming half of the traffic ends
+    up with a defect the blocking half is fixed for; `_record_generation` above
+    exists for the same reason and says so.
+
+    ── THE GATE IS THE URL, NOT THE MODEL NAME ────────────────────────────────
+
+    Both callers also serve GROQ (`https://api.groq.com/openai/v1`), which has
+    no `reasoning` object in its API. Groq is the EMERGENCY provider — last in
+    every chain in `_declared_chain` — so a 400 here would land at the moment
+    everything else has already failed. Keying on the model name would send the
+    parameter to whichever host happened to be serving a name that looks like a
+    reasoning model; keying on the URL sends it only to the API whose contract
+    was actually read.
+
+    ── WHAT IS VERIFIED, AND WHAT IS NOT ──────────────────────────────────────
+
+    VERIFIED 2026-09-06 against `GET https://openrouter.ai/api/v1/models`:
+    `qwen/qwen3.6-flash` lists both `reasoning` and `max_tokens` in
+    `supported_parameters`, and reports `max_completion_tokens: 65536` against a
+    1,000,000-token context — so the 2,048 that truncated 17% of its calls was
+    entirely self-imposed, not a provider limit. Every OpenRouter model this
+    product actually reaches (`qwen3.6-plus`, `gemini-2.5-flash`,
+    `gemini-2.5-pro`) lists `reasoning` as well.
+
+    ⚠ NOT VERIFIED, and not verifiable from here: whether Alibaba HONOURS
+    `reasoning.max_tokens` as a hard cap. OpenRouter documents that field for
+    "Anthropic, Gemini, and some Alibaba models" and states that the gateway
+    ignores reasoning parameters a model does not support rather than rejecting
+    them — but "some" is not "this one", and there is no OpenRouter key on this
+    machine to settle it with a live call.
+
+    SO IT FAILS SAFE IN BOTH DIRECTIONS. `max_tokens` is raised by the allowance
+    whether or not the cap is honoured, so the worst case of the unverified half
+    is a slower call rather than a truncated one. And if OpenRouter rejected the
+    field outright, that provider 400s into `_record_failure` and the chain
+    moves on — the path `EmptyCompletion` restored.
+
+    HOW TO SETTLE IT AFTER A DEPLOY, in one query: `completion_tokens` for
+    `provider='qwen_flash'` in `hub_ai_logs` clustered at 2,050 seven times.
+    If the cap is honoured that cluster disappears. If it is ignored the cluster
+    simply moves to 3,074 — and that is the signal to reach for `effort`
+    instead, which OpenRouter documents for OpenAI and Grok models.
+    """
+    if "openrouter.ai" not in base_url:
+        return
+    allowance = _reasoning_allowance(max_tokens)
+    payload["max_tokens"] = max_tokens + allowance
+    payload["reasoning"] = {"max_tokens": allowance}
+
+
 async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
     """OpenAI-compatible API call (works for Groq, OpenRouter, and all OR-hosted models).
     Extracts actual USD cost from OpenRouter response headers when available."""
@@ -762,6 +860,8 @@ async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: s
         "max_tokens": max_tokens,
         "temperature": 0.7,
     }
+
+    _apply_token_budget(payload, base_url, max_tokens)
 
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(f"{base_url}/chat/completions", json=payload, headers=headers)
@@ -885,6 +985,7 @@ async def _stream_openai_compat(
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    _apply_token_budget(payload, base_url, max_tokens)
 
     usage: dict = {}
     generation_id = ""
@@ -1384,6 +1485,21 @@ async def generate(
                 result=result, latency_ms=latency, cost_usd=cost_usd,
                 status="success" if text else "fallback",
             )
+
+            # A TRUNCATED ANSWER IS SAID OUT LOUD. It is still returned — half a
+            # blog post is worth more than none, and refusing it would throw
+            # away work the customer has already paid for — but it stopped being
+            # silent. Every one of the 17% that hit the ceiling was written to
+            # `hub_content_items` mid-sentence with nothing anywhere to say so,
+            # and the only reason the rate is known at all is that one of them
+            # happened to come back empty and crashed.
+            if text and result.get("finish_reason") == "length":
+                log.warning(
+                    "AI answer TRUNCATED: %s (%s) stopped at the token ceiling "
+                    "— %s completion tokens for %s characters of text. Raise "
+                    "the caller's max_tokens or lower _reasoning_allowance.",
+                    code, model, result.get("completion_tokens", 0), len(text),
+                )
 
             # AN EMPTY ANSWER IS A PROVIDER FAILURE, AND THIS LOOP IS WHAT A
             # PROVIDER FAILURE IS FOR.

@@ -68,12 +68,53 @@ allowed and nothing had ever used. 15 new tests, 5 negative controls,
   08-25, `thudm/glm-4.5-air:free is not a valid model ID`) and **`GROQ_API_KEY`
   is not set on the Kartavaya service**. So today this buys a clean refund, not
   a second answer. Setting that key turns it into a recovery — owner action.
-- **17% of `qwen_flash` calls are being truncated.** 7 of 42 successes since
-  08-01 sit exactly at the 2,048 ceiling; no other model comes close
-  (`gemini_flash_or` maxes at 630). The ones that do not return null return
-  content cut off mid-sentence. Raising `max_tokens` or suppressing reasoning
-  for short-form agents is a cost decision, deliberately left to the owner —
-  lifetime AI spend across every call ever made is $2.19.
+- ~~17% of `qwen_flash` calls are being truncated~~ — **FIXED the same day, see
+  below.**
+
+### ✅ The thinking no longer eats the answer
+
+`max_tokens` was ONE budget doing TWO jobs on a reasoning model. 7 of 42
+`qwen_flash` successes since 08-01 stopped at exactly 2,050 tokens against the
+2,048 sent; no other model comes close (`gemini_flash_or` maxes at 630). The
+content is in `hub_content_items` and **five of six end mid-sentence** —
+"...through the seasonal transition", "...As these figures are absent",
+"...*Audio:* “" — at 227–953 characters of visible text out of 2,050 billed.
+OpenRouter returns the thinking under its own key and not in `content`, so it
+was charged for and thrown away, and the answer got whatever was left. When
+nothing was left, `content` came back null and the run crashed.
+
+**A budget, not a bigger ceiling.** Raising `max_tokens` alone buys room by
+making the call slower, and this chain has no room: those 7 calls averaged
+14,912 ms against the 20,000 ms bulk budget in `LATENCY_BUDGET_MS`, at ~138
+tokens/sec — another 1,024 tokens of thinking is another 7 seconds. The 4 calls
+that finished at 422 tokens averaged 2,916 ms. So the answer keeps the full
+budget its caller asked for and the thinking gets a bounded allowance on top
+(half the answer, floored 256, capped 1024), via `reasoning.max_tokens`.
+
+⚠ **The gate is the URL, not the model name** — `_call_openai_compat` and
+`_stream_openai_compat` both serve Groq, which has no `reasoning` object, and
+Groq is the emergency provider standing last in every chain. Both go through one
+writer, `_apply_token_budget`, so the streaming half cannot drift from the
+blocking half. The **streaming path had the identical defect** and is fixed in
+the same change.
+
+**Verified 2026-09-06** against `GET https://openrouter.ai/api/v1/models`:
+`qwen/qwen3.6-flash` lists `reasoning` in `supported_parameters` and reports
+`max_completion_tokens: 65536` against a 1,000,000-token context — the 2,048
+was entirely self-imposed, not a provider limit.
+
+⚠ **NOT verified, and not verifiable from this machine:** whether Alibaba
+honours `reasoning.max_tokens` as a hard cap (there is no OpenRouter key here).
+It fails safe either way — `max_tokens` is raised regardless, so the worst case
+is a slower call rather than a truncated one, and an outright rejection 400s
+into the chain that `EmptyCompletion` just restored. **Settle it after deploy in
+one query**: `completion_tokens` for `provider='qwen_flash'` clustered at 2,050
+seven times. If the cap is honoured that cluster disappears; if it is ignored it
+moves to 3,074, and the next lever is `effort`.
+
+A truncated answer is also **no longer silent** — it is still returned (half a
+blog post is worth more than none, and it was paid for) but logs a warning with
+the token count and character count. 20 more tests, 5 more negative controls.
 
 **Credits kept by this bug: 4, across 2 runs, all of them `UK AekamINC`** — a
 designated test org. No customer was out of pocket. The rows are left as they

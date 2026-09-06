@@ -11382,3 +11382,45 @@ not an agent's.
 
 Credits kept by the bug: 4, across 2 runs, all `UK AekamINC` — a test org. Rows
 left in place; they are the evidence.
+
+### Same day — the truncation behind it
+
+The 17% flagged above as an owner cost decision, fixed once the owner called it.
+
+`max_tokens` was one budget doing two jobs. 7 of 42 `qwen_flash` successes since
+08-01 stopped at exactly 2,050 tokens against the 2,048 sent; the content is in
+`hub_content_items` and **five of six end mid-sentence**, at 227–953 characters
+of visible text out of 2,050 billed. OpenRouter returns reasoning under its own
+key and not in `content`, so it was charged for and discarded and the answer got
+the remainder.
+
+**Why a budget rather than a bigger ceiling.** Raising `max_tokens` alone buys
+room by making the call slower, and there is none to spend: those 7 calls
+averaged 14,912 ms against the 20,000 ms bulk budget, at ~138 tokens/sec. The 4
+calls that finished at 422 tokens averaged 2,916 ms. Capping the thinking is the
+only lever that removes tokens instead of adding them. The answer now keeps the
+whole budget its caller asked for; the thinking gets half of it on top, floored
+at 256 and capped at 1024 — sized against the real call sites, including
+`services/ai/reranker.py`'s `max_tokens=512`, which asks for a JSON array and
+would get nothing from an unbounded think.
+
+⚠ **The gate is the URL, not the model name.** Both callers also serve Groq,
+which has no `reasoning` object and is the emergency provider standing last in
+every chain — keying on the model name would send it to whichever host happened
+to be serving a reasoning-looking name. **The streaming path had the identical
+defect**; both now go through one writer, `_apply_token_budget`, so they cannot
+drift the way `_record_generation` exists to prevent.
+
+Verified against `GET https://openrouter.ai/api/v1/models`: `qwen/qwen3.6-flash`
+lists `reasoning` in `supported_parameters` and allows 65,536 completion tokens
+against a 1,000,000 context — the 2,048 was self-imposed. ⚠ **Not verified:**
+whether Alibaba honours `reasoning.max_tokens` as a hard cap; there is no
+OpenRouter key on this machine. It fails safe either way, and the deploy settles
+it — the 2,050 cluster in `hub_ai_logs` either disappears or moves to 3,074.
+
+**Tests: 3,652 passed** across the hub/skill/AI/credit/chat suites; 20 new in
+`tests/test_the_thinking_does_not_eat_the_answer.py`. Five more negative
+controls: dropping the OpenRouter gate (3 Groq tests fail), adding `reasoning`
+without raising the ceiling (3 fail), removing the truncation warning (1),
+making the allowance unbounded (8), and stripping the budget from the streaming
+path (2). Each failed only its intended tests, then was restored.
