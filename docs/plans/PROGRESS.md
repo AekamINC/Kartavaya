@@ -11854,3 +11854,59 @@ the hook navigating instead of setting params (1), and a screen reverted to
 app, so this is verified by the real link resolver and the type-checker, not by a
 build. A cold-restart check on a dev build or APK is still owed — and per
 CLAUDE.md, hot reload lies about this kind of change.
+
+## 2026-09-07 (marketing, last) — the Vetana drift was not unique: three more module docs were false
+
+`docs/modules/<code>.md` carries two hand-written paragraphs — Purpose and Flow
+— and everything else in those files is generated. After Vetana turned out to be
+wrong in both, all thirteen were read against the routers.
+
+**Three more were false, and all three had been copied into the collateral.**
+
+- **Sanvaad — "a thread belongs to a channel OR A RECORD".** There is no record
+  anchoring in the module. `samvada_channels` has no entity column and `type` is
+  CHECK-constrained to `public`/`private`/`dm`; threading is `parent_message_id`,
+  a reply inside a channel. This was the expensive one: an entire Proof card, the
+  promise line, the five-step flow, two `gives`/`built` bullets, three scenario
+  beats and the ecosystem-map note were built on it.
+- **Manav — "a request row, then an approval row".** One row, updated in place.
+  No `manav_leave_approvals` table exists or ever did. `PATCH /leaves/{id}/action`
+  is a single `UPDATE ... SET status, approved_by, approved_at ... WHERE
+  status='pending'`. The collateral's Proof card had gone further than the doc and
+  asserted "never a single field flipped from pending to approved" — which is
+  exactly what happens.
+- **Graha — "may fire a rule in `graha_automations`".** The table exists in
+  `public`; it is referenced **nowhere** in `backend/routers/` or
+  `backend/services/`. Orphaned — and that is why it does not appear in the
+  generated table list for the module, which was the tell.
+
+### The shape to watch for
+
+In Manav's case and Vetana's, the **guarantee** the sentence reached for is real:
+a granted leave does name its approver (`approved_by`, `approved_at`, and the
+`status='pending'` predicate refuses a second decision rather than overwriting
+the first), and nothing is payable before approval. **It was the mechanism that
+was invented** — "a second row", "payslips created by approval" — because a
+mechanism makes a better sentence than a column does. The rewritten copy states
+the guarantee and names the actual column.
+
+### Nine verified TRUE, so this is drift and not rot
+
+Vikray `vikray_orders.invoice_id` written and read back · Ganit `UPDATE
+ganit_invoices SET amount_paid, balance_due` · Kray `SET status='issued',
+po_number, issued_at=now()` and a three-way match with no path to an approval ·
+E-Sign `sign_documents.source_module`/`source_id` writing back to the originator ·
+Varta storing `wa_message_id` with the webhook matching on it · Prachar's
+per-recipient `prachar_campaign_contacts` insert and status updates · Sahayak
+calling `credits.refund(tx_id)` on failure · Dristi writing nothing outside
+`dristi_` tables · Vetana reading `manav_attendance`.
+
+🟡 Not settled: Pahchan's "matched to a shift policy to decide lateness".
+`grace_minutes` and `shift_start_time` are real scoped policy fields returned to
+the client, but no server-side lateness computation was found. Recorded as
+unproven rather than asserted either way.
+
+All four corrections are made **at the root** as well as on the sheets — each
+module doc carries the struck-through claim and the reason, because
+`routers/vetana.py:2554` had named `vetana.md` as wrong for weeks and nobody
+read it. Build green: 54 + 15 + 13x4 sheets, none clipped, no wrapped heading.

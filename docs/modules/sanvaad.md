@@ -6,7 +6,9 @@ Internal conversations — threads, mentions and attachments — between people 
 
 ## Flow
 
-A thread belongs to a channel or a record; messages append to it and mentions raise notifications. Read state is per person, so an unread count means unread by you.
+A thread belongs to a **channel** — public, private or a DM; messages append to it, a side discussion becomes a threaded reply (`parent_message_id`), and mentions raise notifications. Read state is per person, so an unread count means unread by you.
+
+⚠ **"or a record" was wrong until 2026-09-07, and it had been copied into customer-facing collateral.** There is no record anchoring in this module: `samvada_channels` has no entity column, and `type` is CHECK-constrained to `public` / `private` / `dm`. A conversation gets its context from the **channel** it is in, not from a deal, invoice or task. Recorded rather than deleted because a whole page of sales copy was built on the deleted sentence.
 
 ## Backend
 

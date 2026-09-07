@@ -102,6 +102,44 @@ are all user-triggered, so "unattended" remains unproven.
 
 `outbound_log`: **718 sent**, 115 suppressed, 1,142 total — mail genuinely leaves.
 
+### ⚠ THE VETANA DRIFT WAS NOT UNIQUE — ALL 13 MODULE DOCS CHECKED AGAINST THE CODE
+
+`docs/modules/<code>.md` **Purpose and Flow are hand-written**; everything else
+is generated. Those paragraphs were read against the routers. **Three more were
+false**, and all three had been copied into the collateral:
+
+| Module | The claim | What is actually there |
+|---|---|---|
+| **Sanvaad** | *"A thread belongs to a channel **or a record**"* | **No record anchoring exists.** `samvada_channels` has no entity column, and `type` is CHECK'd to `public`/`private`/`dm`. Threading is `parent_message_id` — a reply inside a channel. |
+| **Manav** | *"a request row, **then an approval row**"* | **One row, updated in place.** No `manav_leave_approvals` table exists. `PATCH /leaves/{id}/action` is a single `UPDATE … SET status, approved_by, approved_at … WHERE status='pending'`. |
+| **Graha** | *"may fire a rule in **`graha_automations`**"* | The table exists in `public` but is referenced **nowhere** in `backend/routers/` or `backend/services/` — orphaned, which is why it is absent from the generated table list. |
+
+**Sanvaad was the expensive one**: an entire Proof card, the promise line, the
+flow, two `gives`/`built` bullets, three scenario beats and the ecosystem-map
+note were all built on record-anchored threads. Rewritten around what exists —
+channels, threaded replies, pins, search, per-person read state — and the
+commercial argument that survived is a better one anyway ("the inside line is
+not a separate subscription").
+
+In Manav's and Vetana's case the **guarantee** the sentence reached for is real
+(a granted leave names its approver; nothing is payable before approval) — it
+was the **mechanism** that was invented. That is the shape to watch for.
+
+**Nine verified TRUE against the code**, so the drift is not general:
+Vikray order↔invoice link (`vikray_orders.invoice_id` written and read back) ·
+Ganit balance falls (`UPDATE ganit_invoices SET amount_paid, balance_due`) ·
+Kray issue (`SET status='issued', po_number, issued_at=now()`) and a match that
+approves nothing · E-Sign writes back via `sign_documents.source_module`/
+`source_id` · Varta stores `wa_message_id` and the webhook matches on it ·
+Prachar writes per-recipient `prachar_campaign_contacts` · Sahayak calls
+`credits.refund(tx_id)` on failure · Dristi writes **nothing** outside `dristi_`
+tables · Vetana reads `manav_attendance`, so attendance does roll up.
+
+🟡 **One not settled:** Pahchan's *"matched to a shift policy to decide
+lateness"*. `grace_minutes` and `shift_start_time` are real, scoped policy
+fields returned to the client, but no server-side lateness computation was
+located. Not called false — not proven either.
+
 ---
 
 ## 2026-09-07 (mobile) — ✅ THE NATIVE APP'S TABS ARE ADDRESSABLE — and it is NOT "the same"

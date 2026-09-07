@@ -6,7 +6,9 @@ Contacts, clients, deals and the pipeline. The largest module by route count, an
 
 ## Flow
 
-A deal moves through stages held in `graha_deals`; each stage change writes `graha_activities` and may fire a rule in `graha_automations`. Approval-gated stages raise a `graha_approval_requests` row rather than moving directly.
+A deal moves through stages held in `graha_deals`; each stage change writes `graha_activities`. Approval-gated stages raise a `graha_approval_requests` row rather than moving directly.
+
+⚠ **"may fire a rule in `graha_automations`" was removed on 2026-09-07.** The table exists in `public`, but `graha_automations` is referenced **nowhere** in `backend/routers/` or `backend/services/` — it is orphaned, which is also why it does not appear in the generated table list above. Nothing in a stage change fires it.
 
 ## Backend
 

@@ -6,7 +6,9 @@ Employees, leave, documents and the joiner-to-leaver lifecycle. Sensitive: it ho
 
 ## Flow
 
-An employee record anchors everything — leave requests, documents, appraisals and the exit interview all reference it. Leave approval is a two-step: a request row, then an approval row, so a granted leave always records who granted it.
+An employee record anchors everything — leave requests, documents, appraisals and the exit interview all reference it. A leave request is a row, and the decision stamps `approved_by` and `approved_at` onto **that row**, so a granted leave always records who granted it.
+
+⚠ **"a request row, then an approval row" was wrong until 2026-09-07.** There is no `manav_leave_approvals` table and there never was; `PATCH /leaves/{id}/action` is a single `UPDATE ... SET status, approved_by, approved_at ... WHERE status='pending'`. The *guarantee* the sentence was reaching for is real — a granted leave names its approver, and the `status='pending'` predicate means a second decision is refused rather than silently overwriting the first — but the mechanism was not two rows. Same defect shape as `vetana.md`; see that file.
 
 ## Backend
 

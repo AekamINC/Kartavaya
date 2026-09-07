@@ -559,7 +559,7 @@ const MODULES = [
       ['Capture',  'A web form, an inbound email or an import lands as a contact against a <b>company</b> — because the company is the customer, and people come and go.'],
       ['Score',    'Scoring rules rank it without anyone deciding by feel. Duplicates surface on their own, and a merge can be <b>undone</b>.'],
       ['Work',     'Calls, notes and follow-ups append to one timeline. <i>Today</i> shows what is owed today, per person.'],
-      ['Advance',  'The deal moves stage by stage on the pipeline. Each move writes an activity and can fire a rule automatically.'],
+      ['Advance',  'The deal moves stage by stage on the pipeline, and each move writes an activity — so the history is the record, not somebody’s memory.'],
       ['Win',      'A stage that needs sign-off raises an <b>approval request</b> instead of moving. A won deal hands over to Vikray as an order.'],
     ],
     gives: [
@@ -680,12 +680,12 @@ const MODULES = [
       ['Join',     'One employee record anchors everything that follows. Nothing about a person lives in a second place.'],
       ['Hold',     'Documents are filed against that record — PAN, contracts, police verification — while the Aadhaar number itself is <b>encrypted at rest</b> and masked on read.'],
       ['Request',  'Leave is asked for as a row — not a message that can be missed, forgotten or denied later.'],
-      ['Approve',  'Approval is a <b>separate row</b>. A granted leave therefore always records <b>who granted it</b>.'],
+      ['Approve',  'The decision stamps <b>who granted it and when</b> onto the request, and only a <i>pending</i> request can be decided.'],
       ['Leave',    'Appraisals and the exit interview reference the same record, so the file is complete on the day someone goes.'],
     ],
     gives: [
       'A single record per person, from candidate through to exit interview.',
-      '<b>Two-step leave</b>, so entitlement disputes have a name and a date attached.',
+      '<b>Leave is asked for and decided as a record</b>, so entitlement disputes have a name and a date attached.',
       'Documents filed against the person, and Aadhaar stored encrypted and masked — never a shared drive.',
     ],
     built: [
@@ -794,23 +794,23 @@ const MODULES = [
   },
   {
     code: 'sanvaad', family: 'conversation', name: 'Sanvaad', deva: 'संवाद', kind: 'Messaging',
-    promise: 'Talk about the record, on the record.',
+    promise: 'The firm’s inside line, in the same product as the work.',
     screens: 24, routes: 27,
-    place: 'The inward half — the firm talking to itself, against the record.',
+    place: 'The inward half — the firm talking to itself, where Varta is the outside line.',
     flow: [
-      ['Open',     'A thread belongs to a <b>channel or a record</b> — a deal, an invoice, a task. Context is structural.'],
-      ['Say',      'Messages append with attachments. The discussion lives where the work is, not in a parallel app.'],
+      ['Open',     'A <b>channel</b> for a team, a project or a topic — public or private — or a direct message between two people.'],
+      ['Say',      'Messages append with attachments. A side discussion becomes a <b>threaded reply</b> rather than derailing the channel.'],
       ['Mention',  'A mention raises a notification for that person, so being needed is explicit.'],
       ['Read',     'Read state is <b>per person</b>. An unread count means unread <b>by you</b>.'],
-      ['Keep',     'The conversation stays attached to the thing it was about, for whoever opens it in a year.'],
+      ['Keep',     '<b>Pin</b> what was decided and <b>search</b> across every channel you are in, so the history is a resource rather than a scroll.'],
     ],
     gives: [
-      'The decision and the record it changed are <b>in the same place</b>.',
+      'Internal discussion in the <b>same product as the work</b>, rather than a subscription that knows nothing about it.',
       'New joiners read the history instead of asking for it.',
       'Internal talk stays internal — Varta is the outside line, this is not.',
     ],
     built: [
-      'Threads anchor to records, which is what makes the history worth keeping.',
+      'Threaded replies and per-channel pins, so a long channel stays readable a year later.',
       'Per-person read state, so a shared channel does not lie about what you have seen.',
       'Attachments live in object storage with the thread holding the reference.',
     ],
@@ -1309,7 +1309,7 @@ manav: {
     ]],
     ['Leave and holidays', 'two steps, always', [
       'Leave types you define, with balances tracked per person.',
-      'A leave <b>request</b> is a row. The <b>approval</b> is a second, separate row — so a granted leave always records <b>who granted it</b>.',
+      'A leave <b>request</b> is a row, and the decision writes <b>who approved it and when</b> onto that row — a granted leave always names its approver.',
       '<b>Conflict checking</b> before approval: who else is already off that week.',
       'A holiday calendar per organisation, because the holidays differ by state and by firm.',
     ]],
@@ -1337,9 +1337,9 @@ manav: {
     ]],
   ],
   proof: [
-    ['Two rows to grant leave, and that is the point.',
-     'A request is one row. The approval is a <b>separate</b> row. So an entitlement dispute six months later has a name and a date attached to it, rather than a recollection of a conversation. This is the control an HR audit asks about first.',
-     'A row in <b>manav_leave_requests</b>, then an action that writes the approval — never a single field flipped from pending to approved.'],
+    ['A granted leave always names who granted it.',
+     'Leave is requested as a record and decided by a named person, so an entitlement dispute six months later has an approver and a timestamp attached rather than a recollection of a conversation. This is the control an HR audit asks about first.',
+     'The decision writes <b>approved_by</b> and <b>approved_at</b> onto the request, and only from <b>pending</b> — a second decision on the same request is refused rather than silently overwriting the first.'],
     ['Your vendor cannot read your employee records.',
      'Manav is <b>excluded from platform staff</b> by the role tiers. Aekam’s own support people cannot open your HR module. Inside your organisation, reading a colleague’s documents requires admin — and Aadhaar is encrypted at rest and masked on read.',
      'Enforced in the role tier registry, not by policy. <b>Data residency: Singapore, permanently.</b>'],
@@ -1366,7 +1366,7 @@ manav: {
     ['A candidate becomes an employee', 'Hired from the candidate pipeline. The record created that day is the one that will hold their exit interview years later.'],
     ['They are equipped', 'A laptop is assigned from the asset register. It is now against their name, and it will be on the offboarding list without anyone writing it down.'],
     ['They ask for leave', 'A request row. Their manager sees <b>who else is already off</b> that week before deciding.'],
-    ['It is granted — by someone', 'The approval is a separate row. In March, when it is disputed, the answer has a name and a date on it.'],
+    ['It is granted — by someone', 'The decision stamps the approver and the time onto the request. In March, when it is disputed, the answer has a name and a date on it.'],
     ['A shift needs covering', 'The shift is opened for bids. Three people apply, one is accepted, and the schedule updates. Coverage is answered before the day arrives.'],
     ['They leave properly', 'Offboarding runs as steps. The laptop comes back, the exit interview records a structured reason, and the final payroll run reads the same record.'],
   ],
@@ -1710,7 +1710,7 @@ varta: {
 /* ───────────────────────────────────────────────────────── sanvaad ── */
 sanvaad: {
   counts: [['27', 'Endpoints'], ['11', 'Data tables'], ['24', 'Screens'],
-           ['1', 'Place the decision lives', 'On the record it changed']],
+           ['1', 'Inside line', 'Separate from Varta by construction']],
   caps: [
     ['Channels and DMs', 'samvada_channels', [
       'Channels for a team, a project or a topic, with members you manage.',
@@ -1736,8 +1736,8 @@ sanvaad: {
     ['Finding it again', 'in a year', [
       '<b>Search</b> across messages.',
       '<b>Pin</b> the messages that matter to a channel, and read the pins as a list.',
-      'A thread anchored to a <b>record</b> — a deal, an invoice, a task — so the conversation is where the work is.',
       'Search runs across every channel you are a member of, and only those.',
+      '<b>Threaded replies</b> keep a long channel readable — the side discussion is attached to the message it is about.',
     ]],
     ['Sahayak in the channel', 'the AI, in context', [
       'Ask <b>Sahayak</b> inside a channel, against the organisation’s own data.',
@@ -1751,12 +1751,12 @@ sanvaad: {
     ]],
   ],
   proof: [
-    ['The decision and the record it changed are in the same place.',
-     'A thread belongs to a <b>channel or a record</b>. So the argument about the discount is attached to the deal, and the question about the invoice is attached to the invoice — not in a chat tool that knows nothing about either.',
-     'Threads anchor to a record. Context is structural, not a pasted link that will rot.'],
+    ['The inside line is not a separate subscription.',
+     'Internal discussion happens in the same product as the invoices, the payroll and the pipeline — under the same logins, the same org boundary and the same data residency. Nothing has to be provisioned twice, and nobody has to be off-boarded twice.',
+     'One <b>samvada_</b> surface inside the product, on the org’s own users. No second tenant, no second identity system.'],
     ['A new joiner reads the history instead of asking for it.',
-     'The reason a discussion is worth keeping is that somebody will need it in a year. Anchored to the record, searchable, with the important messages pinned — the history is a resource rather than a scroll.',
-     'Search across messages, pins per channel, and every thread attached to the thing it was about.'],
+     'The reason a discussion is worth keeping is that somebody will need it in a year. Searchable across every channel you are in, with the decisions pinned — the history is a resource rather than a scroll.',
+     'Search across messages, threaded replies, and pins per channel.'],
     ['Read state is per person, so the count does not lie.',
      'A shared inbox where “read” means somebody read it is worse than no signal at all. Here unread means unread <b>by you</b>, which is the only version of that number that is any use.',
      'Read state stored per user per channel, not a flag on the message.'],
@@ -1764,28 +1764,28 @@ sanvaad: {
      'The single most expensive messaging mistake is an internal note reaching a customer. Sanvaad and Varta are separate modules with separate data — the boundary is architectural, not a habit of being careful.',
      'Separate tables, separate surfaces. <b>samvada_</b> is inside; <b>varta_</b> is outside.'],
   ],
-  india: 'Runs alongside WhatsApp rather than trying to replace it: <b>Varta</b> is the outside line and Sanvaad is the inside one, so what a firm says to itself and what it says to a customer are structurally different things. Attachments and message history stay in <b>Singapore</b> under the product’s residency rule.',
+  india: 'Runs alongside WhatsApp rather than trying to replace it: <b>Varta</b> is the outside line and Sanvaad is the inside one, so what a firm says to itself and what it says to a customer are structurally different things — separate modules, separate tables. Attachments and message history stay in <b>Singapore</b> under the product’s residency rule.',
   replaces: ['A WhatsApp group for work, and the history that leaves with whoever set it up.',
-             'A Slack subscription for a firm that mostly needs to talk about records.',
+             'A second messaging subscription, with its own logins to provision and revoke.',
              'An email thread with eleven people, four of whom stopped reading.',
              '“Why did we agree to that?” asked about a decision made two years ago.'],
   roles: [
     ['Everyone', 'Talks about the work, on the work. Sees what they were mentioned in. Reacts instead of replying “ok”.'],
     ['Team lead', 'Runs channels, pins what matters, and knows a mention will actually reach someone.'],
-    ['New joiner', 'Reads a record’s history and understands the decision without asking four people.'],
-    ['Partner', 'Finds the discussion behind a decision by opening the record, not by searching an inbox.'],
+    ['New joiner', 'Reads the channel history and the pins, and understands a decision without asking four people.'],
+    ['Partner', 'Finds the discussion behind a decision by searching one place, not four inboxes.'],
   ],
   scenario: [
-    ['A question is raised on the invoice', 'Not in an email. The thread is anchored to the invoice, which is what the question is about.'],
+    ['A question is raised in the channel', 'Not in an email, and not in a group chat that leaves with whoever set it up. It is in the finance channel, where the people who can answer it are.'],
     ['The right person is pulled in', 'A mention raises a notification for them. They were needed explicitly, not copied hopefully.'],
-    ['The answer arrives with a file', 'An attachment goes into object storage; the thread keeps the reference. The channel is not clogged with a side discussion, because that is a threaded reply.'],
+    ['The answer arrives with a file', 'An attachment goes into object storage; the message keeps the reference. The back-and-forth is a <b>threaded reply</b>, so the channel is not clogged with it.'],
     ['Sahayak is asked in the channel', 'A grounded question about the client’s history. The answer lands in the thread — and states what it cost.'],
     ['The decision is pinned', 'One message says what was decided. It is pinned, so it is findable without reading the scroll.'],
-    ['A year later', 'Someone new opens the invoice and reads why. Nobody has to remember, and nobody has to be asked.'],
+    ['A year later', 'Someone new searches the channel, finds the pin, and reads why. Nobody has to remember, and nobody has to be asked.'],
   ],
   owns: ['samvada_channels', 'samvada_channel_members', 'samvada_messages', 'samvada_mentions',
          'samvada_message_reactions', 'samvada_presence', 'samvada_typing', 'notifications'],
-  ownsNote: 'Eleven tables, all internal. There is deliberately <b>no overlap</b> with the <b>varta_</b> tables that hold customer conversations — which is the architecture that stops an internal note reaching a customer.',
+  ownsNote: 'Eleven tables, all internal. There is deliberately <b>no overlap</b> with the <b>varta_</b> tables that hold customer conversations — which is the architecture that stops an internal note reaching a customer. ⚠ A channel is <b>not</b> anchored to a business record; context comes from the channel it is in.',
 },
 
 /* ───────────────────────────────────────────────────────── sahayak ── */
@@ -2047,7 +2047,8 @@ function mapPage() {
           ['Sanvaad','संवाद','the firm decides'],
         ])}</div>
         <p class="spine__note">Outbound campaigns, a WhatsApp thread that keeps both directions together, and
-          internal discussion anchored to the record it is about.</p>
+          internal discussion in the same product as the work — with the outside line and the
+          inside line kept structurally apart.</p>
       </div>
     </div>
     <div class="map__across">
