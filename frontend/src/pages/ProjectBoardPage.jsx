@@ -25,6 +25,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import useUrlView from '../hooks/useUrlView';
+import { VIEW_IDS } from '../components/views/viewDefs';
 
 import { api }         from '../lib/api';
 import { currentUser } from '../lib/auth';
@@ -88,7 +90,12 @@ export default function ProjectBoardPage() {
   const [columns,       setColumns]       = useState([]);
   const [rawTasks,      setRawTasks]      = useState([]);   // seeds useRealtimeTasks
   const [teamMembers,   setTeamMembers]   = useState([]);
-  const [view,          setView]          = useState('kanban');
+  /* Which of the six views is showing lives in the URL — see
+     `hooks/useUrlView.js`. Board and Timeline are two ways to look at the same
+     project and the reader often wants both at once; held in state neither had
+     an address, and a refresh always came back to the board. */
+  const { value: view, select: setView, linkProps: viewLink } =
+    useUrlView('view', VIEW_IDS, 'kanban');
   const [loading,       setLoading]       = useState(true);
   // A failed load left `columns` and `tasks` empty, which renders exactly like
   // a project nobody has put work in yet — and there was no way back short of a
@@ -259,6 +266,7 @@ export default function ProjectBoardPage() {
       <BoardToolbar
         view={view}
         onView={setView}
+        viewLink={viewLink}
         board={board}
         end={
           <>

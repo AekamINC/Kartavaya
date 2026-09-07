@@ -46,6 +46,7 @@
 // register in this product has been genuinely empty and "no rows" is a sentence
 // a reader believes.
 import React, { useEffect, useState } from 'react';
+import useUrlView from '../../hooks/useUrlView';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
@@ -137,6 +138,9 @@ const VIEWS = [
   ['overdue', 'Overdue'],
   ['types', 'Catalogue'],
 ];
+/* Derived from VIEWS so the allow-list and the strip cannot drift — see
+   `hooks/useUrlView.js`. */
+const VIEW_IDS = VIEWS.map(([id]) => id);
 
 const BLANK = {
   client_id: '',
@@ -205,7 +209,10 @@ export default function NoticesTab() {
   });
   const { pushToast } = useToast();
 
-  const [view, setView] = useState('open');
+  /* The sub-view is in the URL — see `hooks/useUrlView.js`. Held in state it
+     could not be opened in a second tab beside another view of the same list,
+     and a refresh dropped the reader back on the default. */
+  const { value: view, linkProps } = useUrlView('view', VIEW_IDS, 'open');
   const [asOf, setAsOf] = useState(today());
 
   const [showForm, setShowForm] = useState(false);
@@ -303,16 +310,18 @@ export default function NoticesTab() {
     <div>
       <div className="mn-sub" role="tablist" aria-label="Notice views">
         {VIEWS.map(([id, label]) => (
-          <button
+          /* An anchor, so the view can be ctrl-clicked into a second tab.
+             A bare block comment, not the braced JSX form: this is the arrow
+             function's expression position, where braces parse as a block. */
+          <a
             key={id}
-            type="button"
+            {...linkProps(id)}
             role="tab"
             aria-selected={view === id}
             className={`mn-sub__b${view === id ? ' on' : ''}`}
-            onClick={() => setView(id)}
           >
             {label}
-          </button>
+          </a>
         ))}
       </div>
 

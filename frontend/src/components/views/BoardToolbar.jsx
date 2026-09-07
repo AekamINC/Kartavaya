@@ -27,7 +27,7 @@ import { GROUPS } from './useBoardView';
  * State lives in `useBoardView`, so the page can pass the same filtered task
  * set to whichever view is showing.
  */
-export default function BoardToolbar({ view, onView, board, end }) {
+export default function BoardToolbar({ view, onView, viewLink, board, end }) {
   const isTable = view === 'table';
 
   return (
@@ -35,6 +35,7 @@ export default function BoardToolbar({ view, onView, board, end }) {
       views={VIEWS}
       view={view}
       onView={onView}
+      viewLink={viewLink}
       search={board.search}
       onSearch={board.setSearch}
       searchPlaceholder="Search tasks…"

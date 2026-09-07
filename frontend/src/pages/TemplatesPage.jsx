@@ -25,6 +25,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import useUrlView from '../hooks/useUrlView';
 import { api, rows as asRows, body } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader } from '../components/editorial';
@@ -82,7 +83,12 @@ export default function TemplatesPage() {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState(null);
-  const [tab, setTab] = useState('project');
+  /* Which template kind is showing lives in the URL — see
+     `hooks/useUrlView.js`. Project and task templates are two separate
+     libraries; held in state neither could be linked to or opened beside the
+     other, and a refresh always came back on Project. */
+  const { value: tab, linkProps: tabLink } =
+    useUrlView('kind', ['project', 'task'], 'project');
   // ONE LABEL SHAPE — `.k-tmpl-tab__sans` is not in `[data-language="en"]`'s
   // six-name list. Read once because TABS is mapped.
   const lang = useLanguage();
@@ -233,18 +239,19 @@ export default function TemplatesPage() {
 
       <div className="k-tmpl-tabs" role="tablist" aria-label="Template type">
         {TABS.map(([id, label, hi, n]) => (
-          <button
+          /* An anchor: a template library is a destination. Bare block
+             comment, not the braced JSX form — expression position. */
+          <a
             key={id}
-            type="button"
+            {...tabLink(id)}
             role="tab"
             aria-selected={tab === id}
             className={`k-tmpl-tab${tab === id ? ' is-active' : ''}`}
-            onClick={() => setTab(id)}
           >
             {label}
             <TabIn hi={hi} lang={lang} />
             <span className="k-tmpl-tab__count">{n}</span>
-          </button>
+          </a>
         ))}
       </div>
 

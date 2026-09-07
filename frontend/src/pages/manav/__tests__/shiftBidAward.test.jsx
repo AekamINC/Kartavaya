@@ -25,6 +25,7 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../lib/api', () => ({
@@ -88,7 +89,12 @@ afterEach(() => {
   container = null;
 });
 
-const mount = (ui) => act(() => root.render(<ToastProvider>{ui}</ToastProvider>));
+/* MemoryRouter: these sub-view strips keep the open view in the URL now, so
+   a person can hold two of them open side by side (see `hooks/useUrlView.js`).
+   The components read the location to build those addresses. */
+const mount = (ui) => act(() => root.render(
+  <MemoryRouter><ToastProvider>{ui}</ToastProvider></MemoryRouter>,
+));
 const settle = async (rounds = 5) => {
   for (let i = 0; i < rounds; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -97,7 +103,11 @@ const settle = async (rounds = 5) => {
 };
 const text = () => container.textContent;
 const buttons = () => [...container.querySelectorAll('button')];
-const byLabel = (label) => buttons().find(b => b.textContent.trim().startsWith(label));
+/* Buttons AND anchors. The bid-state strip is `<a href="?bids=…">` now, so a
+   person can hold Open in one tab and Filled in another — see
+   `hooks/useUrlView.js`. Everything else on this screen is still a button. */
+const byLabel = (label) => [...container.querySelectorAll('button, a')]
+  .find(b => b.textContent.trim().startsWith(label));
 
 /** The two lists the tab loads on mount, plus the applicants for one bid. */
 function wire({ bids = [OPEN_BID], applicants = APPLICANTS } = {}) {
@@ -182,6 +192,10 @@ describe('Manav shift bids — a bid can be awarded', () => {
 
     const filled = byLabel('Filled');
     expect(filled).toBeTruthy();
+    /* A LINK, and that is the assertion worth making: a button would behave
+       identically until somebody tried to ctrl-click it. */
+    expect(filled.tagName).toBe('A');
+    expect(filled.getAttribute('href')).toContain('bids=filled');
 
     wire({ bids: [{ ...OPEN_BID, status: 'filled' }] });
     await act(async () => { filled.click(); });

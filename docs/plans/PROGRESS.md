@@ -11581,3 +11581,74 @@ and each failed only its intended tests before being restored: a list reverted t
 `close()` always calling `navigate(-1)` (2). `npm run check` exit 0;
 `npm run build` exit 0. The CSS parity was measured in a browser, not asserted
 from the source.
+
+## 2026-09-07 (last) — the view strips, and the lesson about how they were found
+
+The fourth pass at one complaint, and the only one that was not asked for by
+name. Verifying the `?open=` deploy meant grepping the SHIPPED bundle for
+`role="tab"` — and that turned up **eleven more tab strips nobody had looked
+at**. Three earlier passes had each gone looking for the surface it already knew
+about (the shell, then the module strip, then the drawers), so each one found
+exactly what it went looking for and nothing else. The grep that found these was
+a verification step, not a search.
+
+`hooks/useUrlView.js` completes the set. Three URL concerns now exist and they
+are different things: `?tab=` (which module section), `?open=` (which record is
+open on a list), `?view=` (which shape the same content is in).
+
+⚠ **`?open=` pushes and the other two replace, and that asymmetry is the whole
+design.** Entering a record is somewhere you go, so Back should close it. A view
+switch is not: these strips carry roving tabindex, so ←/→ moves between them and
+a push would leave one history entry PER ARROW KEY — Back would walk the strip
+instead of leaving the page. Same reasoning that keeps `pahchan/Register` out of
+`useOpenRecord`. The ratchet asserts it: select a view, press Back, and the view
+must not change, which is only true if the switch replaced its entry.
+
+**Nine strips converted.** `ApprovalsPage` (?queue=), `TemplatesPage` (?kind=),
+`sanvaad/MessagingTabs` (?side=), `manav/{Dsc,Notices,Shifts}Tab` (?view=),
+`manav/ShiftBids` (?bids= — NOT ?view=, because it renders inside `ShiftsTab`
+which already owns that name, and reusing it would make choosing "Filled" also
+switch the tab out from under it), and `ProjectBoardPage` + `BoardsPage`
+(?view=). The last two are the ones that matter most: Board, List, Calendar,
+Timeline, Workload and Priority are six ways of looking at one project, and
+holding two of them at once is the entire ask.
+
+`ViewToolbar` gained an optional `viewLink` — an anchor when the caller has an
+address, a button when it does not. Not a fallback: `<Link to="">` renders an
+anchor that goes nowhere, and a wrong link is followed where a missing one is
+only missed.
+
+⚠ **`.m2tabs button` was ELEMENT-scoped, four rules deep.** Sanvaad's tabs would
+have lost padding, colour, the flex row AND the active underline as anchors,
+with nothing to error on. This is the THIRD time this trap has appeared in one
+day, after `a.gn-row` and the `.chip` precedent it was fixed against — an
+element-scoped rule is invisible to every check the repo has, and only shows up
+if somebody renders the other element and looks. `.mn-sub__b` declared no
+`display` either, so "The firm's own" wrapped mid-label as an inline box.
+
+Seven control classes measured in a browser against the built stylesheet: five
+byte-identical, and the two Sanvaad ones differing only in
+`border-bottom-color` — on a border measured at 0px on all four sides, so
+nothing paints.
+
+`__tests__/sanvaadV2Layer` enforces that `sanvaad.css` ports the `messaging.css`
+prototype rule-for-rule, so widening those selectors is a genuine deviation from
+it. The four are named in that test's DEVIATIONS list with the reason, which is
+the mechanism it provides — and it is self-policing: it also fails on an entry
+that has STOPPED deviating, so reverting the widening turns the exemption into a
+failure rather than into silence.
+
+🟡 **Three deliberately NOT converted**, all asserted in the test so they read as
+decisions: `components/ui/Tabs.jsx` (the drawer's internal notebook — it swaps a
+panel inside a record `?open=` already addresses), `components/skills/SkillDock`
+(an overlay that closes on Escape; a dock with a URL is one you can land in with
+nothing behind it), and `pages/PayPage` ("Choose where to pay" is a
+payment-method form control on a public page, and a URL there would let a payer
+be linked straight into a method they did not choose).
+
+**Tests: 3,578 frontend passed** across 224 files, 37 new in
+`hooks/__tests__/viewIsInTheUrl.test.jsx`. Four negative controls run, each
+failing only its intended test: `select` pushing instead of replacing, `hrefFor`
+dropping the other parameters, the allow-list ignored so any `?view=` value
+renders, and a strip reverted to a button. `npm run check` exit 0;
+`npm run build` exit 0.

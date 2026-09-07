@@ -250,6 +250,12 @@
   border-bottom: 1px solid var(--rule-soft); flex-wrap: wrap;
 }
 .mn-sub__b {
+  /* `display: inline-block` is a NO-OP for a button — that is already its UA
+     default — and the fix for the anchors these became on 2026-09-07, when the
+     sub-view moved into `?view=` so two of them could be held open at once. An
+     anchor is `display: inline`, and an inline box breaks at word boundaries,
+     so "The firm's own" wrapped where the button ran on. */
+  display: inline-block;
   padding: 6px 14px; font-size: max(12px, calc(var(--font-size-base) * .93));
   font-weight: 400; color: var(--on-surface-3);
   background: none; border: none; cursor: pointer;

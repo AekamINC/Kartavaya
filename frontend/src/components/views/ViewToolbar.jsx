@@ -22,10 +22,26 @@ import { Secondary } from '../Bilingual';
  * disabled — a dead control is a question the user has to answer every time
  * they look at it.
  */
+/*
+ * `viewLink` — the view switch is a real link when the caller has an address
+ * for it.
+ *
+ * Board, Table, Calendar, Timeline, Workload and Priority are six ways to look
+ * at the same project, and which one you are in is exactly the thing somebody
+ * wants in a second tab — the board in one, the timeline in the other. Every
+ * one of them was a `<button onClick={onView}>`, so there was no href for
+ * ctrl-click, middle-click or "Open link in new tab" to act on.
+ *
+ * Optional, and `onView` still works alone: a caller that keeps the view in
+ * component state gets exactly what it had. `ProjectBoardPage` and `BoardsPage`
+ * pass `useUrlView(...).linkProps`, which carries the href, the plain-click
+ * interception and the Space key together.
+ */
 export default function ViewToolbar({
   views = [],
   view,
   onView,
+  viewLink,
   search,
   onSearch,
   searchPlaceholder = 'Search…',
@@ -64,21 +80,32 @@ export default function ViewToolbar({
             <div className="k-segctrl" role="tablist" aria-label="View">
               {views.map(v => {
                 const { secondary, script } = secondaryOf(v.k, lang);
-                return (
-                  <button
-                    key={v.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={view === v.id}
-                    className={['k-segctrl__btn', 'vtb__ico', view === v.id && 'is-active'].filter(Boolean).join(' ')}
-                    onClick={() => onView?.(v.id)}
-                  >
+                const cls = ['k-segctrl__btn', 'vtb__ico', view === v.id && 'is-active']
+                  .filter(Boolean).join(' ');
+                const inner = (
+                  <>
                     {v.icon}
                     {v.label}
                     {/* aria-hidden: the same word in a second script is not more
-                        information, and this button already announces its
+                        information, and this control already announces its
                         English label and its selected state. */}
                     {secondary && <Secondary className="bi__in" value={secondary} script={script} />}
+                  </>
+                );
+                /* An anchor only when the caller supplied an address. A
+                   `<Link to="">` renders an `<a>` that goes nowhere, and a
+                   view held in component state has nowhere to go — so the
+                   button is the honest element there, not a fallback. */
+                return viewLink ? (
+                  <a key={v.id} {...viewLink(v.id)} role="tab"
+                    aria-selected={view === v.id} className={cls}>
+                    {inner}
+                  </a>
+                ) : (
+                  <button key={v.id} type="button" role="tab"
+                    aria-selected={view === v.id} className={cls}
+                    onClick={() => onView?.(v.id)}>
+                    {inner}
                   </button>
                 );
               })}

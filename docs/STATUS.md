@@ -12,6 +12,84 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-07 (last) — ✅ THE VIEW STRIPS TOO (`?view=`), AND HOW THEY WERE FOUND
+
+Verifying the `?open=` deploy on the live site meant grepping the shipped bundle
+for `role="tab"`, and that turned up **eleven more tab strips nobody had
+looked at** — none of them the module strip, all of them missed by three
+previous passes because each pass went looking for the surface it already knew
+about. The useful half had the identical defect one level down.
+
+`hooks/useUrlView.js` is the third and last of the three URL concerns:
+
+| parameter | what it says | history |
+| --- | --- | --- |
+| `?tab=` | which module section | replace |
+| `?open=` | which RECORD is open on a list | **push** |
+| `?view=` | which SHAPE the same content is in | replace |
+
+⚠ **The middle one is the odd one out, and deliberately.** Entering a record is
+somewhere you go, so Back should close it. A view switch is not: these strips
+carry roving tabindex, so ←/→ moves between them and a push would leave one
+history entry **per arrow key** — Back would walk the strip instead of leaving
+the page. That is the same reasoning that keeps `pahchan/Register` out of
+`useOpenRecord`, and the ratchet asserts it directly.
+
+### Nine strips converted
+
+`ApprovalsPage` (`?queue=` — task requests vs work approvals) ·
+`TemplatesPage` (`?kind=`) · `sanvaad/MessagingTabs` (`?side=` — internal vs
+WhatsApp) · `manav/DscTab`, `manav/NoticesTab`, `manav/ShiftsTab` (`?view=`) ·
+`manav/ShiftBids` (`?bids=`, **not** `?view=` — it renders inside `ShiftsTab`,
+which already owns that name) · **`ProjectBoardPage` and `BoardsPage`
+(`?view=`)** — Board, List, Calendar, Timeline, Workload and Priority are six
+ways to look at one project, and holding two at once is the whole ask.
+
+`ViewToolbar` gained an optional `viewLink`: an anchor when the caller has an
+address, a button when it does not. `<Link to="">` renders an anchor that goes
+nowhere, and a wrong link is followed where a missing one is only missed.
+
+### ⚠ `.m2tabs button` was ELEMENT-scoped — four rules
+
+Sanvaad's tabs would have lost their padding, colour, flex row **and their
+active underline** as anchors, with nothing to error on. Widened to
+`.m2tabs a`, the third time this exact trap has appeared (after `a.gn-row` and
+`.chip`). `.mn-sub__b` also declared no `display`, so "The firm's own" wrapped
+mid-label as an inline box. Seven control classes were then measured in a
+browser against the built stylesheet: five byte-identical, and the two Sanvaad
+ones differing only in `border-bottom-color` **on a 0px border** — measured all
+four sides at 0px, so nothing paints.
+
+`__tests__/sanvaadV2Layer` enforces that `sanvaad.css` ports the `messaging.css`
+prototype rule-for-rule, and the widening is a real deviation from it — so the
+four selectors are named in that test's own DEVIATIONS list with the reason.
+That list is self-policing: it also fails on an entry that has stopped
+deviating, so reverting the widening turns the exemption into a failure.
+
+### 🟡 Three NOT converted
+
+- **`components/ui/Tabs.jsx`** — the drawer's internal notebook (Comments /
+  Attachments on a task, sections of an invoice). It swaps a panel inside a
+  record `?open=` already addresses; it goes nowhere.
+- **`components/skills/SkillDock.jsx`** — an overlay that closes on Escape. A
+  dock with a URL is a dock you can land in with nothing behind it.
+- **`pages/PayPage.jsx`** — "Choose where to pay" on the public payment page: a
+  payment-method form control. A URL there would also let a payer be linked
+  straight into a method they did not choose.
+
+### The ratchet, with four negative controls
+
+`hooks/__tests__/viewIsInTheUrl.test.jsx`, 37 assertions, including the three
+exclusions so they read as decisions. Four controls run, each failing only its
+intended test: `select` pushing instead of replacing, `hrefFor` dropping the
+other parameters, the allow-list ignored (so `?view=<anything>` renders), and a
+strip reverted to a button.
+
+**Frontend: 3,578 tests pass** across 224 files. `npm run check` exit 0,
+`npm run build` exit 0.
+
+---
+
 ## 2026-09-07 (later) — ✅ A RECORD THAT IS OPEN NOW HAS AN ADDRESS (`?open=<id>`)
 
 The third and largest pass at the owner's complaint. The shell was made linkable

@@ -4,6 +4,8 @@
  */
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link } from 'react-router-dom';
+import useUrlView from '../hooks/useUrlView';
+import { VIEW_IDS } from '../components/views/viewDefs';
 import { api }          from '../lib/api';
 import { currentUser }  from '../lib/auth';
 import { navContext }   from '../components/layout/navConfig';
@@ -47,7 +49,12 @@ export default function BoardsPage() {
   const [teamMembers, setTeamMembers] = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [loadError,   setLoadError]   = useState(null);
-  const [view,        setView]        = useState('kanban');
+  /* Which of the six views is showing lives in the URL — see
+     `hooks/useUrlView.js`. Board and Timeline are two ways to look at the same
+     project and the reader often wants both at once; held in state neither had
+     an address, and a refresh always came back to the board. */
+  const { value: view, select: setView, linkProps: viewLink } =
+    useUrlView('view', VIEW_IDS, 'kanban');
   // The Archived filter existed on `/projects/:id` and not here, so the same
   // seven views over the same task set could reach archived work on one route
   // and not the other. It is a filter over whichever view is showing — not an
@@ -242,6 +249,7 @@ export default function BoardsPage() {
       <BoardToolbar
         view={view}
         onView={setView}
+        viewLink={viewLink}
         board={board}
         end={
           <>

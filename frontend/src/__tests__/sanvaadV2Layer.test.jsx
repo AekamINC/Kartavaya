@@ -149,6 +149,15 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
    *     token is declared FIXED (kartavaya-design.css §5) because it offsets an
    *     infinite loop — so the resolved timing is byte-identical to the
    *     prototype's and only the spelling differs.
+   *   · the four `.m2tabs button` rules each gained `, .m2tabs a`. The tabs are
+   *     LINKS as of 2026-09-07 — `?side=` — because internal messages and the
+   *     WhatsApp inbox are two conversations to be in and somebody working both
+   *     wants one in each browser tab; a button has no href for ctrl-click or
+   *     "Open link in new tab" to act on. These four are ELEMENT-scoped, so an
+   *     anchor tab would otherwise get no padding, no colour, no flex row and
+   *     no active underline, with nothing to error on. The declarations are
+   *     unchanged — only the selector widened — and the prototype predates the
+   *     tabs having addresses at all.
    */
   const DEVIATIONS = new Set([
     '.m2',
@@ -176,6 +185,10 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
     '.m2dots i',
     '.m2dots i:nth-child(2)',
     '.m2dots i:nth-child(3)',
+    '.m2tabs button',
+    '.m2tabs button:hover',
+    '.m2tabs button.on',
+    '.m2tabs button.on::after',
   ]);
 
   it('ports every rule block messaging.css states, declaration for declaration', () => {

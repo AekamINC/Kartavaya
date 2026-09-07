@@ -34,6 +34,7 @@
  * previously inlined `Array.isArray(r.data) ? r.data : []` at three call sites.
  */
 import React, { useState, useEffect, useCallback } from 'react';
+import useUrlView from '../hooks/useUrlView';
 import { api, rows as asRows, body } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { navContext } from '../components/layout/navConfig';
@@ -63,7 +64,12 @@ export default function ApprovalsPage() {
   const [statsErr, setStatsErr] = useState(false);
 
   const [deciding, setDeciding] = useState({});
-  const [adminTab, setAdminTab] = useState('requests'); // 'requests' | 'work'
+  /* Which queue is showing lives in the URL — see `hooks/useUrlView.js`.
+     Task requests and work approvals are two different piles of decisions, and
+     somebody clearing both wants one in each tab; held in state, neither had an
+     address and a refresh always came back on Task requests. */
+  const { value: adminTab, linkProps: tabLink } =
+    useUrlView('queue', ['requests', 'work'], 'requests');
 
   const [clientModal, setClientModal] = useState(null);
   const [clientList, setClientList] = useState([]);
@@ -265,18 +271,20 @@ export default function ApprovalsPage() {
       {!isClient && (
         <div className="apv-seg" role="tablist" aria-label="Approval type">
           {TABS.map(([id, label, hi, n]) => (
-            <button
+            /* An anchor: the two queues are destinations, not a filter.
+               A bare block comment, not the braced JSX form — this is the arrow
+               function's expression position, where braces parse as a block. */
+            <a
               key={id}
-              type="button"
+              {...tabLink(id)}
               role="tab"
               aria-selected={adminTab === id}
               className={`apv-seg__btn${adminTab === id ? ' is-active' : ''}`}
-              onClick={() => setAdminTab(id)}
             >
               {label}
               {n > 0 && <span className="apv-seg__n">{n}</span>}
               <Secondary className="apv-seg__hi" value={hi} />
-            </button>
+            </a>
           ))}
         </div>
       )}

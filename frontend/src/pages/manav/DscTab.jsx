@@ -51,6 +51,7 @@
 // "Not with us", because the row the server returns is shaped by the same code
 // that shapes a list row.
 import React, { useEffect, useState } from 'react';
+import useUrlView from '../../hooks/useUrlView';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
@@ -162,6 +163,10 @@ const VIEWS = [
   ['unusable', 'Cannot sign'],
   ['firm-own', "The firm's own"],
 ];
+/* The allow-list `useUrlView` resolves `?view=` against — derived from VIEWS so
+   the two cannot drift. A URL is user input: an unknown value has to fall back
+   to the default rather than render an empty panel. */
+const VIEW_IDS = VIEWS.map(([id]) => id);
 
 const BLANK = {
   client_id: '',
@@ -219,7 +224,10 @@ export default function DscTab() {
   });
   const { pushToast } = useToast();
 
-  const [view, setView] = useState('register');
+  /* The sub-view is in the URL — see `hooks/useUrlView.js`. Held in state it
+     could not be opened in a second tab beside another view of the same list,
+     and a refresh dropped the reader back on the default. */
+  const { value: view, linkProps } = useUrlView('view', VIEW_IDS, 'register');
   // ONE date for the whole screen, and it is a real parameter rather than the
   // browser's clock read repeatedly. A filing-day check is asked ABOUT the
   // filing date, which is usually not today. It is a READ parameter only: every
@@ -321,16 +329,18 @@ export default function DscTab() {
     <div>
       <div className="mn-sub" role="tablist" aria-label="DSC views">
         {VIEWS.map(([id, label]) => (
-          <button
+          /* An anchor, so the view can be ctrl-clicked into a second tab.
+             A bare block comment, not the braced JSX form: this is the arrow
+             function's expression position, where braces parse as a block. */
+          <a
             key={id}
-            type="button"
+            {...linkProps(id)}
             role="tab"
             aria-selected={view === id}
             className={`mn-sub__b${view === id ? ' on' : ''}`}
-            onClick={() => setView(id)}
           >
             {label}
-          </button>
+          </a>
         ))}
       </div>
 

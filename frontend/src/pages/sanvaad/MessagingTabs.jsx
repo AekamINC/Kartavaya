@@ -45,6 +45,7 @@
  * height. Each tab spells its own two attributes; there are exactly two.
  */
 import React, { useCallback, useEffect, useState } from 'react';
+import useUrlView from '../../hooks/useUrlView';
 import { api } from '../../lib/api';
 import { SvIcons } from './icons';
 import ChannelsTab from './ChannelsTab';
@@ -63,7 +64,11 @@ import { Secondary } from '../../components/Bilingual';
 const UNREAD_POLL_MS = 20000;
 
 export default function MessagingTabs() {
-  const [tab, setTab] = useState('msg');
+  /* Which side of the messaging boundary is showing lives in the URL — see
+     `hooks/useUrlView.js`. Internal messages and the WhatsApp inbox are two
+     different conversations to be in, and somebody working both wants one in
+     each tab; held in state, neither had an address. */
+  const { value: tab, linkProps: tabLink } = useUrlView('side', ['msg', 'wa'], 'msg');
   const [unread, setUnread] = useState(0);
   /**
    * The connected WhatsApp business number, or null.
@@ -129,15 +134,16 @@ export default function MessagingTabs() {
     <div className="m2mod">
       <div className="m2tabs" role="tablist" aria-label="Messaging">
         {TABS.map(t => (
-          <button
+          /* An anchor: each side is a destination. Bare block comment, not
+             the braced JSX form — this is the expression position. */
+          <a
             key={t.id}
-            type="button"
+            {...tabLink(t.id)}
             role="tab"
             id={`m2tab-${t.id}`}
             aria-selected={tab === t.id}
             aria-controls={`m2panel-${t.id}`}
             className={tab === t.id ? 'on' : undefined}
-            onClick={() => setTab(t.id)}
           >
             {/* The brand mark on the WhatsApp tab only — the one label on this
                 strip a reader recognises before they read it, and the whole
@@ -155,7 +161,7 @@ export default function MessagingTabs() {
                 {t.n > 99 ? '99+' : t.n}
               </span>
             )}
-          </button>
+          </a>
         ))}
         <span className="m2tabs__sp" />
         {/* Only when a number is genuinely connected AND active. `i` is the dot

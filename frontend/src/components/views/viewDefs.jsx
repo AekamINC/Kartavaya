@@ -42,6 +42,9 @@ const ico = (children) => (
   </svg>
 );
 
+/* The allow-list `useUrlView` resolves `?view=` against, derived below from
+   VIEWS itself so the two cannot drift. A URL is user input: an unknown value
+   falls back to the default rather than rendering an empty board. */
 export const VIEWS = [
   {
     id: 'kanban',
@@ -86,6 +89,9 @@ export const VIEWS = [
     icon: ico(<><circle cx="8" cy="5" r="3" /><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" /><path d="M6 10.5l1.5 1.5 3-3" strokeWidth="1.8" /></>),
   },
 ];
+
+/** Derived from VIEWS, so the allow-list and the strip cannot disagree. */
+export const VIEW_IDS = VIEWS.map(v => v.id);
 
 /** The archive filter. Not a view — it filters whichever view is showing. */
 export const IcArchive = (

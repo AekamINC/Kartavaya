@@ -30,7 +30,8 @@
 // filled bid leaves that list — and with no way to view the other two states,
 // awarding a shift would make the record of who got it disappear. So the three
 // states 027's CHECK allows are all reachable here.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import useUrlView from '../../hooks/useUrlView';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { useList, ErrorNote, Shim, errText, today } from './_shared';
@@ -43,6 +44,7 @@ const STATES = [
   { value: 'filled', label: 'Filled' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
+const STATE_IDS = STATES.map(s => s.value);
 
 const EMPTY_BY_STATE = {
   open: {
@@ -169,7 +171,10 @@ function Applicants({ bid, pushToast, onAwarded }) {
 export default function ShiftBids({ pushToast }) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change HR records' });
-  const [status, setStatus] = useState('open');
+  /* `?bids=`, NOT `?view=`. This component renders INSIDE `ShiftsTab`, which
+     already owns `?view=` for its four sub-views — reusing the name would make
+     choosing "Filled" here also switch the tab out from under it. */
+  const { value: status, select: setStatus, linkProps } = useUrlView('bids', STATE_IDS, 'open');
   const bidsUrl = `/v1/manav/shift-bids?status=${status}`;
   // `[bidsUrl]` — `useList` builds its fetch in a `useCallback` over the deps it
   // is given, so a list with no deps never re-runs when the url changes. The
@@ -179,6 +184,11 @@ export default function ShiftBids({ pushToast }) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [openBid, setOpenBid] = useState('');
+  /* Collapse the applicant list whenever the bid state changes. It was cleared
+     in the strip's own onClick; the state lives in the URL now, so it also
+     changes on Back and on a cold arrival, and an effect is the only place
+     that sees all three. */
+  useEffect(() => { setOpenBid(''); }, [status]);
   const [form, setForm] = useState({ shift_id: '', date: today(), slots_needed: 1 });
 
   async function save(e) {
@@ -223,17 +233,21 @@ export default function ShiftBids({ pushToast }) {
 
       <div className="mn-sub" role="tablist" aria-label="Which bids to show">
         {STATES.map(s => (
-          <button
+          /* An anchor, so a bid state can be ctrl-clicked into a second tab.
+             The expanded applicant list is cleared by an effect on `status`
+             rather than here: the state can now also change by Back, by a
+             pasted link or by a second tab, and a handler on this control
+             would only catch the one route through it. */
+          <a
             key={s.value}
-            type="button"
+            {...linkProps(s.value)}
             role="tab"
             aria-selected={status === s.value}
             tabIndex={status === s.value ? 0 : -1}
             className={`mn-sub__b${status === s.value ? ' on' : ''}`}
-            onClick={() => { setStatus(s.value); setOpenBid(''); }}
           >
             {s.label}
-          </button>
+          </a>
         ))}
       </div>
 

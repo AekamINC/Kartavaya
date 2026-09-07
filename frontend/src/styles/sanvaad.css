@@ -2256,10 +2256,15 @@
   box-shadow: var(--shadow-1), var(--shadow-2);
   overflow: hidden; }
 .m2tabs { display: flex; align-items: center; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--outline-variant); background: var(--s-lowest); flex-shrink: 0; }
-.m2tabs button { position: relative; display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface-3); white-space: nowrap; transition: color var(--dur-fast); }
-.m2tabs button:hover { color: var(--on-surface-2); }
-.m2tabs button.on { color: var(--on-surface); font-weight: 600; }
-.m2tabs button.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 1px 1px 0 0; background: var(--primary); }
+/* ⚠ ELEMENT-scoped, so `.m2tabs a` had to be named the moment these tabs
+   became links (2026-09-07, `?side=` — each side of the messaging boundary is
+   a destination somebody holds in its own tab). Without it an anchor tab gets
+   no padding, no colour, no flex row and no active underline, and nothing
+   errors. `ganit.css`'s `a.gn-row` is the same fix for the same reason. */
+.m2tabs button, .m2tabs a { position: relative; display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface-3); white-space: nowrap; transition: color var(--dur-fast); }
+.m2tabs button:hover, .m2tabs a:hover { color: var(--on-surface-2); }
+.m2tabs button.on, .m2tabs a.on { color: var(--on-surface); font-weight: 600; }
+.m2tabs button.on::after, .m2tabs a.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 1px 1px 0 0; background: var(--primary); }
 .m2tabs .hi { font-family: var(--font-indic); font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
 .m2tabs__n { min-width: 17px; height: 17px; padding: 0 5px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
 .m2tabs__sp { flex: 1; }

@@ -30,6 +30,7 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../lib/api', () => ({
@@ -67,7 +68,12 @@ afterEach(() => {
   container = null;
 });
 
-const mount = (ui) => act(() => root.render(<ToastProvider>{ui}</ToastProvider>));
+/* MemoryRouter: these sub-view strips keep the open view in the URL now, so
+   a person can hold two of them open side by side (see `hooks/useUrlView.js`).
+   The components read the location to build those addresses. */
+const mount = (ui) => act(() => root.render(
+  <MemoryRouter><ToastProvider>{ui}</ToastProvider></MemoryRouter>,
+));
 
 const settle = async (rounds = 6) => {
   for (let i = 0; i < rounds; i += 1) {
