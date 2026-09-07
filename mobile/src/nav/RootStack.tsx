@@ -75,7 +75,12 @@ export type RootStackParamList = {
    */
   Main:         NavigatorScreenParams<MainTabParamList> | undefined;
   TaskDetail:   { taskId: string };
-  Board:        { projectId?: string; projectName?: string } | undefined;
+  /**
+   * `view` — Board / List / Schedule / Tracker. A param rather than state so a
+   * link can name the SHAPE as well as the project; the screen resolves an
+   * unknown value against its own list. See `hooks/useRouteTab.ts`.
+   */
+  Board:        { projectId?: string; projectName?: string; view?: 'Board' | 'List' | 'Schedule' | 'Tracker' } | undefined;
   /**
    * One channel.
    *
@@ -101,7 +106,13 @@ export type RootStackParamList = {
   Mentions:     undefined;
   /** Pre-scoped from the ChatScreen header; undefined from a global entry. */
   Search:       { channelId?: string; channelName?: string } | undefined;
-  Approvals:    undefined;
+  /**
+   * `tab` so a push can land on the half it is about — "a leave request needs
+   * approving" opens Pending, not whatever the screen defaults to. Optional: an
+   * entry from the More grid names no tab and gets Pending.
+   * See `hooks/useRouteTab.ts` for why this is a param and not state.
+   */
+  Approvals:    { tab?: 'pending' | 'history' } | undefined;
   Time:         undefined;
   Inbox:        undefined;
   Reminders:    undefined;
@@ -127,12 +138,16 @@ export type RootStackParamList = {
    *  throw and take the whole signed-in app down with it. */
   SahayakContent: undefined;
   Prachar:      undefined;
-  /** Vikray · विक्रय — Sales. Takes no params: the order detail, the deal
-   *  conversion and the stock adjustment all present as sheets from this one
-   *  screen rather than as routes of their own. That is an ownership boundary
-   *  rather than a design preference — see `screens/vikray/OrderDetailSheet.tsx`
-   *  — and it costs a deep link to an order, which is worth promoting later. */
-  Vikray:       undefined;
+  /** Vikray · विक्रय — Sales. The order detail, the deal conversion and the
+   *  stock adjustment all present as sheets from this one screen rather than as
+   *  routes of their own. That is an ownership boundary rather than a design
+   *  preference — see `screens/vikray/OrderDetailSheet.tsx` — and it still
+   *  costs a deep link to an ORDER, which is worth promoting later.
+   *
+   *  `tab` is carried as of 2026-09-07: the three surfaces above the sheets do
+   *  have addresses now, so a push about stock lands on Stock rather than on
+   *  Orders. See `hooks/useRouteTab.ts`. */
+  Vikray:       { tab?: 'orders' | 'stock' | 'targets' } | undefined;
   /** Sahayak · सहायक. Takes no params: the client it reads is a stored
    *  preference (`sahayak_client_id` in MMKV), not a route argument, so
    *  returning to it lands on the client you were last asking about. */
@@ -156,7 +171,9 @@ export type RootStackParamList = {
  */
 export type MainTabParamList = {
   Today:    undefined;
-  Tasks:    undefined;
+  /** `segment` — Open / Today / Done. A param rather than state so a reminder
+   *  push can land on the day rather than on everything open. */
+  Tasks:    { segment?: 'open' | 'today' | 'done' } | undefined;
   Create:   undefined;
   Messages: undefined;
   More:     undefined;

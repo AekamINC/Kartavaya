@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import useRouteTab from '../hooks/useRouteTab';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   FlatList, TextInput, ActivityIndicator,
@@ -324,7 +325,10 @@ export default function BoardScreen() {
     routeParams.projectId ?? null
   );
   const [showPicker, setShowPicker] = useState(false);
-  const [view, setView] = useState<ViewMode>('Board');
+  /* A ROUTE PARAM, so a link can name the shape as well as the project:
+     `kartavaya://board/<id>/Tracker` opens the tracker rather than the board.
+     See `hooks/useRouteTab.ts`. */
+  const [view, setView] = useRouteTab<ViewMode>('view', VIEWS, 'Board');
   const platform = devicePlatform();
   const { cls, width: winW, height: winH } = useWindowClass(platform);
   /**

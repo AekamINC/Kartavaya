@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import useRouteTab from '../hooks/useRouteTab';
 import {
   View, Text, FlatList, Pressable, StyleSheet, ActivityIndicator,
 } from 'react-native';
@@ -42,6 +43,9 @@ const SEGMENTS: { id: Segment; en: string; hi: string }[] = [
   { id: 'today', en: 'Today', hi: 'आज' },
   { id: 'done',  en: 'Done',  hi: 'पूर्ण' },
 ];
+/* The allow-list `useRouteTab` resolves the route param against — derived from
+   SEGMENTS so the two cannot drift. */
+const SEGMENT_IDS = SEGMENTS.map(x => x.id);
 
 const isDone = (task: Task) =>
   String(task.status ?? '').toLowerCase() === 'done' ||
@@ -61,7 +65,10 @@ export default function TasksScreen() {
   const { t } = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
-  const [segment, setSegment] = useState<Segment>('open');
+  /* A ROUTE PARAM, so `kartavaya://tasks/today` opens the day rather than the
+     open list — a reminder push is about today, not about everything. See
+     `hooks/useRouteTab.ts`. */
+  const [segment, setSegment] = useRouteTab<Segment>('segment', SEGMENT_IDS, 'open');
   const platform = devicePlatform();
   const { split } = useWindowClass(platform);
   /**

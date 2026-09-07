@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import useRouteTab from '../hooks/useRouteTab';
 import {
   View, Text, FlatList, Pressable, ScrollView, StyleSheet, TextInput, ActivityIndicator, Alert,
 } from 'react-native';
@@ -42,6 +43,9 @@ import { devicePlatform } from '../nav/platform';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Approvals'>;
 type Tab = 'pending' | 'history';
+/* The allow-list `useRouteTab` resolves the param against. A deep link is user
+   input: `kartavaya://approvals/nonsense` opens Pending, not an empty screen. */
+const TABS = ['pending', 'history'] as const;
 
 export default function ApprovalsScreen() {
   const { t, scheme } = useTheme();
@@ -51,7 +55,12 @@ export default function ApprovalsScreen() {
   const platform = devicePlatform();
   const { stacked } = useWindowClass(platform);
 
-  const [tab, setTab] = useState<Tab>('pending');
+  /* The open tab is a ROUTE PARAM, so a push about a leave request can open
+     this screen on Pending instead of leaving the reader to find it — see
+     `hooks/useRouteTab.ts`. Approvals had no deep link at ALL before today;
+     `group: 'work'` put it outside the rule `__tests__/linking.test.ts`
+     enforces, so nothing was looking. */
+  const [tab, setTab] = useRouteTab<Tab>('tab', TABS, 'pending');
   /** Batch selection. Empty set = normal mode; non-empty = batch mode. */
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [declining, setDeclining] = useState<PendingApproval[] | null>(null);
@@ -291,7 +300,7 @@ export default function ApprovalsScreen() {
       </View>
 
       <View style={[s.tabs, { backgroundColor: t.surface3 }]} accessibilityRole="tablist">
-        {(['pending', 'history'] as Tab[]).map(id => {
+        {TABS.map(id => {
           const active = tab === id;
           return (
             <Pressable

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import useRouteTab from '../../hooks/useRouteTab';
 import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -69,6 +70,9 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: 'stock',   label: 'Stock' },
   { id: 'targets', label: 'Targets' },
 ];
+/* The allow-list `useRouteTab` resolves the route param against. A deep link is
+   user input: `kartavaya://sales/nonsense` opens Orders rather than nothing. */
+const TAB_IDS = TABS.map(x => x.id);
 
 /** Order status → semantic token. Never a private hex. */
 function statusTone(t: ReturnType<typeof useTheme>['t'], s: string | null | undefined): string {
@@ -86,7 +90,9 @@ export default function VikrayScreen() {
   const { t } = useTheme();
   const online = useOnline();
 
-  const [tab, setTab] = useState<Tab>('orders');
+  /* A ROUTE PARAM, so a push about a dispatched order can open this screen on
+     Stock rather than on Orders — see `hooks/useRouteTab.ts`. */
+  const [tab, setTab] = useRouteTab<Tab>('tab', TAB_IDS, 'orders');
   const [openOrder, setOpenOrder]   = useState<{ id: string; number: string } | null>(null);
   const [orderVisible, setOrderVisible] = useState(false);
   const [convertVisible, setConvertVisible] = useState(false);

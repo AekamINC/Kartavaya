@@ -26,13 +26,18 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Main: {
         screens: {
           Today:    'today',
-          Tasks:    'tasks',
+          // The optional segment is which slice — `tasks/today` opens the day.
+          // Optional, so `tasks` keeps working exactly as it did.
+          Tasks:    'tasks/:segment?',
           Messages: 'messages',
           More:     'more',
         },
       },
       TaskDetail: 'task/:taskId',
-      Board:      'board/:projectId',
+      // `board/<id>` opens the board; `board/<id>/Tracker` opens the tracker.
+      // The view segment is optional, so every link already in circulation
+      // keeps working and lands on Board exactly as before.
+      Board:      'board/:projectId/:view?',
       // ── Sanvaad ───────────────────────────────────────────────────────────
       // The RN URL form is `kartavaya://sanvaad/<channelId>?message=…&thread=…`.
       // React Navigation maps the path segment onto `:channelId` and passes
@@ -54,6 +59,14 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Mentions:   'sanvaad/mentions',
       Search:     'sanvaad/search',
       Chat:       'sanvaad/:channelId',
+      /* Approvals had NO path at all until 2026-09-07 — `group: 'work'` put it
+         outside the module rule `__tests__/linking.test.ts` enforces, so
+         nothing was looking, and it is one of the likeliest things for a push
+         to be about. The optional segment carries the tab:
+         `kartavaya://approvals` opens Pending, `…/history` opens History, and
+         an unknown value falls back rather than rendering nothing — the screen
+         resolves it against its own allow-list. */
+      Approvals:  'approvals/:tab?',
       // Inbox lost its tab to Messages and is now a stack screen reached from
       // More. Its link keeps working because it moved rather than disappearing —
       // push notifications already in flight point at `inbox`.
@@ -86,7 +99,10 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Prachar:    'marketing',
       // Vikray · विक्रय — Sales. Added tonight with a route, a screen and a
       // More tile, and no deep link, which is the gap the test above now closes.
-      Vikray:     'sales',
+      // The optional segment is the tab — `sales/stock` opens Stock. The ORDER
+      // itself is still unaddressable: it presents as a sheet rather than a
+      // route (see RootStack's note), so this is as deep as a link goes here.
+      Vikray:     'sales/:tab?',
     },
   },
 };
