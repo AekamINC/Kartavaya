@@ -32,6 +32,10 @@ Widening the CHECK to admit `'incomplete'` was the other candidate and was **not
 
 Pinned by `tests/test_attendance_bridge_writable_status.py` (9 tests), each proved against a mutation: re-adding `'incomplete'` to the set kills 4, making the partition write everything kills 1, making it drop the withheld side kills 2.
 
+**The screen shows them (2026-09-07).** `PublishPayroll` renders `incomplete_days` in its own table with its own count, deliberately apart from `withheld_days`: the two have different remedies — a withheld day needs a **review** on the Register, an incomplete one needs a **regularisation** on Corrections — and one combined list would send half the operators to the wrong screen. Pinned by `frontend/src/pages/pahchan/__tests__/publishIncompleteDays.test.jsx` (6 tests; deleting the section kills 4, dropping the figure kills 2, feeding the table the withheld rows kills 2).
+
+⚠ Those tests were **hollow in their first draft** and the mutations are what showed it: asserting against `container.textContent`, deleting the entire table still passed four of six, because the figure's label and hint satisfied the section's assertions — and deleting the figure passed all six, because the section heading contains the figure's label as a substring. Each half stood in for the other. Scoping every assertion to `section.k-section` / `.ph__fig` is what made them independently falsifiable.
+
 ## Backend
 
 - `backend/routers/pahchan.py`

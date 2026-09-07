@@ -20,7 +20,7 @@ import { apiErrorText } from '../../lib/apiError';
  * be written without writing it, so the button that writes is the second button
  * a person presses, never the first.
  *
- * Three results have to be readable, because each one means a person's pay is
+ * Four results have to be readable, because each one means a person's pay is
  * different from what the operator assumed:
  *
  *   withheld    A day whose punches are flagged and unreviewed. The bridge
@@ -28,10 +28,23 @@ import { apiErrorText } from '../../lib/apiError';
  *               not work, on the strength of a punch nobody has looked at, is
  *               the same manufactured verification 07 §3 is written against.
  *               The fix is the register, not this screen.
+ *   incomplete  A day with ONE punch and no pair — clocked in, never out — or
+ *               an out before an in. The bridge answers 'incomplete', which is
+ *               not a status `manav_attendance` accepts, so the day is withheld
+ *               rather than written. ⚠ ITS REMEDY IS DIFFERENT FROM WITHHELD'S
+ *               AND THAT IS WHY IT IS ITS OWN TABLE: withheld needs a REVIEW on
+ *               the Register, this needs a REGULARISATION on Corrections. One
+ *               list conflating them would send half the operators to the wrong
+ *               screen.
  *   skipped     A day HR typed by hand. Never overwritten by a re-run.
  *   overtime    Computed, or not computed. "0.0 overtime" and "overtime was
  *               never computed" look identical on a payslip and mean opposite
  *               things, so the endpoint says which, and so does this.
+ *
+ * Until 2026-09-07 `incomplete` had no table here because the endpoint did not
+ * return one: it inserted those rows instead, and the CHECK on
+ * `manav_attendance.status` refused them, so a single forgotten clock-out 500'd
+ * the whole publish. Never seen, because `pahchan_punches` held zero rows.
  */
 
 const iso = d => d.toISOString().slice(0, 10);
@@ -97,12 +110,18 @@ export default function PublishPayroll() {
       const out = body(r);
       setResult({ ...out, __from: range.from, __to: range.to });
       if (!dryRun) {
+        // Incomplete outranks skipped in this message, because the two mean
+        // opposite things to the operator: a skipped day was deliberately left
+        // alone, an incomplete one is a day somebody WILL be short for unless a
+        // regularisation is filed. The consequential number goes first.
         pushToast({
           type: 'success',
           title: `${out.rows_written} attendance rows written`,
-          message: out.skipped_manual_rows
-            ? `${out.skipped_manual_rows} days HR entered by hand were left alone.`
-            : 'Payroll can now price this period.',
+          message: out.incomplete_rows
+            ? `${out.incomplete_rows} days had a punch but no pair and were not priced — see Incomplete below.`
+            : out.skipped_manual_rows
+              ? `${out.skipped_manual_rows} days HR entered by hand were left alone.`
+              : 'Payroll can now price this period.',
         });
       }
     } catch (err) {
@@ -185,6 +204,16 @@ export default function PublishPayroll() {
               tone={result.days_withheld_pending_review ? 'var(--warn)' : undefined}
               hint="Flagged punches nobody has cleared. Clear them on the Register."
             />
+            {/* Its own figure, beside withheld rather than folded into it. Both
+                mean "no row was built", but they are fixed on different screens
+                — a review on the Register, a regularisation on Corrections — so
+                one combined count would be a number nobody can act on. */}
+            <Figure
+              label="Incomplete — no pair"
+              value={result.incomplete_rows ?? 0}
+              tone={result.incomplete_rows ? 'var(--warn)' : undefined}
+              hint="Clocked in and never out. Fix with a regularisation on Corrections."
+            />
             <Figure
               label="Rows written"
               value={result.dry_run ? '—' : (result.rows_written ?? 0)}
@@ -223,6 +252,34 @@ export default function PublishPayroll() {
                         pahchan_attendance.py:_name_employees); this column is
                         headed "Employee" and drew a uuid until it did. Not
                         `mono` any more — a name is prose. */}
+                    <Td>{d.employee_name || 'A removed employee'}</Td>
+                    <Td mono>{d.date}</Td>
+                  </tr>
+                ))}
+              </DataTable>
+            </Section>
+          )}
+
+          {!!(result.incomplete_days || []).length && (
+            <Section title="Incomplete — no pair to price" hi="अपूर्ण दिन">
+              <Note variant="warn">
+                These days have a punch but not a pair — clocked in and never out, or an
+                out recorded before its in. No attendance row was built, because the
+                honest answer is &ldquo;unknown hours&rdquo; and there is no such
+                attendance status: writing &ldquo;absent&rdquo; would assert somebody did
+                not work, when a punch says they did, and &ldquo;half day&rdquo; would
+                invent a number payroll then multiplies.
+                {' '}
+                <b>These are not the same as withheld days.</b> A withheld day needs a
+                review on the Register; this needs a <b>regularisation</b> on Corrections
+                — somebody supplying the missing time. Then run this again.
+              </Note>
+              <DataTable arrange="pahchan.publish_incomplete_days" columns={['Employee', 'Day']}>
+                {result.incomplete_days.map(d => (
+                  <tr key={`${d.employee_id}-${d.date}`}>
+                    {/* The NAME, for the same reason as the two tables around
+                        it: `_name_employees` resolves it server-side and a
+                        column headed "Employee" must never draw a uuid. */}
                     <Td>{d.employee_name || 'A removed employee'}</Td>
                     <Td mono>{d.date}</Td>
                   </tr>

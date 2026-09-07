@@ -12055,3 +12055,45 @@ survived. Re-run with a CRLF-aware edit before the result was believed.
 LF, the working tree was CRLF, `core.autocrlf=false` and `.gitattributes` has no
 `*.py` rule — so a straight `git add` would have stored a **706-line** diff for
 a 44-line change. Caught by staging it and reading `git diff --cached --stat`.
+
+## 2026-09-07 (fix, ui) — the incomplete days now have a table, and the first tests for it were hollow
+
+`POST /attendance/publish` returns `incomplete_days` / `incomplete_rows` since
+this morning's fix, and nothing rendered them: no 500, and no way for an
+operator to learn that somebody's month is short. Closed.
+
+`PublishPayroll` gains a figure and a table, **deliberately apart from
+`withheld_days`**. Both mean "no attendance row was built", but the remedies are
+different screens — a withheld day needs a **review** on the Register, an
+incomplete one needs a **regularisation** on Corrections — so one combined list
+or one combined count would send half the operators to the wrong place. The
+toast now leads with the incomplete count too, because a skipped day was left
+alone deliberately while an incomplete one is pay somebody will not receive.
+
+### ⚠ The first draft of the tests was hollow, and only mutation showed it
+
+Six tests, all green, all asserting against `container.textContent`. Then:
+
+| Mutation | Killed (text-scoped) | Killed (element-scoped) |
+|---|---|---|
+| the whole section deleted | **1** of 6 | **4** of 6 |
+| the count figure dropped | **0** of 6 | **2** of 6 |
+| table fed the withheld rows | — | **2** of 6 |
+
+Deleting the entire table passed four of six because the FIGURE's label
+("Incomplete — no pair") and its hint ("…a regularisation on Corrections")
+satisfied the section's assertions on their own. Deleting the figure passed
+**all six**, because the section heading "Incomplete — no pair to price"
+contains the figure's label as a substring. **Each half was standing in for the
+other**, and a global text assertion cannot tell them apart.
+
+Rescoped to `section.k-section` and `.ph__fig`, with the rows read out of
+`tbody tr` rather than matched in prose. That is the difference between "the
+words appear somewhere on the page" and "this element renders this data".
+
+This is the sharpest instance yet of the rule the repo already carries: a green
+test proves nothing until it has been seen to fail, and *the mutation has to be
+one that could actually happen* — deleting a component you just added is the
+first thing a careless refactor does.
+
+`npm run check` exit 0, `npm run build` exit 0, 33 pahchan vitest pass.
