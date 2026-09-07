@@ -327,6 +327,176 @@ body.only .page.show { display: flex; }
   line-height: 1.45; color: var(--ink-3);
 }
 
+/* ═══ DEPTH SHEETS ════════════════════════════════════════════════════════
+   Sheets 2-4 of every module. The overview sheet answers "what is this"; these
+   answer the three questions a buyer asks next — what is actually IN it, why
+   it holds up, and what a Tuesday looks like.
+
+   They carry a SLIM run-head rather than a second masthead: the full head band
+   costs 40mm, which on a sheet whose whole job is density is 20% of the page
+   spent restating the name. The family tint stays, so the four sheets of a
+   module still read as one set. */
+.rhead {
+  flex: none; position: relative; overflow: hidden;
+  padding: 9mm 16mm 5.5mm; border-bottom: 1px solid var(--outline-var);
+  display: flex; align-items: baseline; gap: 6mm;
+}
+.fam-revenue      .rhead { background: var(--s-low); }
+.fam-people       .rhead { background: var(--s-container); }
+.fam-conversation .rhead { background: var(--bg); }
+.fam-intelligence .rhead { background: var(--s-high); }
+.rhead__name {
+  font-family: var(--font-display); font-size: 20pt; font-weight: 400;
+  line-height: 1; letter-spacing: -.015em; color: var(--ink); flex: none;
+}
+.rhead__name .deva { font-family: var(--font-hindi); font-size: 14pt; color: var(--ink-3); }
+.rhead__title {
+  font-family: var(--font-display); font-style: italic; font-size: 14pt;
+  line-height: 1.2; color: var(--ink-2); flex: 1; min-width: 0;
+}
+.rhead__tag {
+  flex: none; font-family: var(--font-mono); font-size: 7.4pt; font-weight: 500;
+  letter-spacing: .17em; text-transform: uppercase; color: var(--primary-text);
+}
+/* The hairline that ties the run-head to the masthead on sheet 1. */
+.rhead::after {
+  content: ''; position: absolute; left: 16mm; bottom: -1px;
+  width: 24mm; height: 2px; background: var(--primary);
+}
+
+.sheet { padding: 8mm 16mm 0; flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* ── Sheet 2 · the capability grid ─────────────────────────────────────── */
+/* Six groups, three across. `align-content: start` rather than stretch: with
+   stretch, a short group's rule floated to the bottom of an over-tall row and
+   the two rows read as four unrelated blocks. */
+.caps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5.5mm 6mm; align-content: start; }
+.cap__label {
+  font-family: var(--font-mono); font-size: 7.4pt; font-weight: 500;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--primary-text);
+  padding-bottom: 2.4mm; margin-bottom: 3mm; border-bottom: 1px solid var(--outline-var);
+  display: flex; align-items: baseline; gap: 7px;
+}
+.cap__label i { font-style: normal; color: var(--ink-3); letter-spacing: .1em; margin-left: auto; }
+.cap ul { list-style: none; display: flex; flex-direction: column; gap: 2mm; }
+.cap li { font-size: 8.5pt; line-height: 1.42; color: var(--ink-2); position: relative; padding-left: 10px; }
+.cap li::before {
+  content: ''; position: absolute; left: 0; top: 4.6px;
+  width: 3.4px; height: 3.4px; border-radius: 999px; background: var(--primary);
+}
+.cap li b { font-weight: 600; color: var(--ink); }
+
+/* The count strip under the grid — the surface figures, stated rather than
+   implied, because "how much of this is real" is the question behind the page. */
+.counts {
+  margin-top: auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--gap);
+  border-top: 1px solid var(--outline-var); padding: 5mm 0 0;
+}
+.count b {
+  display: block; font-family: var(--font-display); font-size: 19pt; font-weight: 400;
+  line-height: 1; color: var(--primary-text); font-variant-numeric: tabular-nums;
+}
+.count span {
+  display: block; font-family: var(--font-mono); font-size: 7pt; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ink-3); margin-top: 1.8mm;
+}
+.count i { display: block; font-style: normal; font-size: 8.6pt; color: var(--ink-2); margin-top: 1.6mm; line-height: 1.4; }
+
+/* ── Sheet 3 · the proof cards ─────────────────────────────────────────── */
+.proof { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+.pcard {
+  border: 1px solid var(--outline-var); border-radius: var(--r-lg);
+  background: var(--surface); padding: 4.4mm 5.2mm 4.6mm;
+  display: flex; flex-direction: column;
+}
+.pcard__n {
+  font-family: var(--font-mono); font-size: 7pt; font-weight: 600; letter-spacing: .16em;
+  color: var(--primary-text); margin-bottom: 1.8mm;
+}
+.pcard h4 {
+  font-family: var(--font-display); font-size: 13pt; font-weight: 400; line-height: 1.2;
+  letter-spacing: -.012em; color: var(--ink); margin-bottom: 2.4mm;
+}
+.pcard p { font-size: 8.7pt; line-height: 1.48; color: var(--ink-2); }
+.pcard p b { font-weight: 600; color: var(--ink); }
+/* The mechanism line: WHY the claim above is true, in the product's own terms.
+   A claim without one is a slogan, and a buyer's technical reviewer reads this
+   line first. */
+.pcard__how {
+  margin-top: auto; padding-top: 2.8mm; border-top: 1px solid var(--outline-var);
+  font-family: var(--font-mono); font-size: 7.3pt; line-height: 1.48; color: var(--ink-3);
+}
+.pcard__how b { color: var(--primary-text); font-weight: 500; }
+
+.strip { margin-top: auto; padding-top: 4.5mm; display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+.strip__box {
+  border: 1px solid var(--primary); border-radius: var(--r-lg);
+  background: var(--primary-cont); padding: 4.2mm 5.2mm 4.4mm;
+}
+.strip__box--plain { border-color: var(--outline-var); background: var(--s-low); }
+.strip__label {
+  font-family: var(--font-mono); font-size: 7pt; font-weight: 500; letter-spacing: .16em;
+  text-transform: uppercase; color: #00201D; margin-bottom: 2.4mm;
+}
+.strip__box--plain .strip__label { color: var(--primary-text); }
+.strip__box p, .strip__box li { font-size: 8.5pt; line-height: 1.48; color: #00201D; }
+.strip__box--plain p, .strip__box--plain li { color: var(--ink-2); }
+.strip__box b { font-weight: 600; }
+.strip__box ul { list-style: none; display: flex; flex-direction: column; gap: 1.6mm; }
+.strip__box li { position: relative; padding-left: 10px; }
+.strip__box li::before {
+  content: ''; position: absolute; left: 0; top: 4.4px;
+  width: 3.4px; height: 3.4px; border-radius: 999px; background: var(--primary);
+}
+
+/* ── Sheet 4 · in practice ─────────────────────────────────────────────── */
+.practice { display: grid; grid-template-columns: 1.06fr 1fr; gap: 8mm; flex: 1; min-height: 0; }
+.subhead {
+  font-family: var(--font-mono); font-size: 7.4pt; font-weight: 500; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-3);
+  display: flex; align-items: center; gap: 9px; margin-bottom: 4.5mm;
+}
+.subhead::after { content: ''; flex: 1; height: 1px; background: var(--outline-var); }
+
+/* The scenario runs DOWN, where the overview flow runs across — the same
+   five-beat grammar turned ninety degrees, so a reader who has seen sheet 1
+   recognises it without being told it is the same thing at a finer grain. */
+.beat { position: relative; padding: 0 0 4.4mm 12mm; }
+.beat:last-child { padding-bottom: 0; }
+.beat::before {
+  content: ''; position: absolute; left: 3.1mm; top: 5.4mm; bottom: 0;
+  width: 1px; background: var(--outline-var);
+}
+.beat:last-child::before { display: none; }
+.beat__n {
+  position: absolute; left: 0; top: 0; width: 6.4mm; height: 6.4mm; border-radius: 999px;
+  background: var(--s-lowest); border: 1.2px solid var(--primary);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 7pt; font-weight: 600; color: var(--primary-text);
+}
+.beat h5 { font-size: 10pt; font-weight: 600; color: var(--ink); line-height: 1.25; margin-bottom: 1.6mm; }
+.beat p { font-size: 8.8pt; line-height: 1.48; color: var(--ink-2); }
+.beat p b { font-weight: 600; color: var(--ink); }
+.beat em { font-style: italic; color: var(--ink-3); }
+
+.who { display: flex; flex-direction: column; gap: 3.2mm; margin-bottom: 6mm; }
+.who__row {
+  display: grid; grid-template-columns: 34mm 1fr; gap: 5mm; align-items: baseline;
+  padding-bottom: 3.2mm; border-bottom: 1px solid var(--outline-var);
+}
+.who__row:last-child { border-bottom: 0; padding-bottom: 0; }
+.who__role { font-size: 9.6pt; font-weight: 600; color: var(--ink); line-height: 1.25; }
+.who__does { font-size: 8.8pt; line-height: 1.46; color: var(--ink-2); }
+
+.owns { margin-top: auto; }
+.owns__grid { display: flex; flex-wrap: wrap; gap: 4px 5px; }
+.owns__t {
+  font-family: var(--font-mono); font-size: 7.4pt; color: var(--ink-2);
+  border: 1px solid var(--outline-var); border-radius: var(--r-sm);
+  padding: 2.2px 6px; background: var(--s-lowest); white-space: nowrap;
+}
+.owns__note { font-size: 8.6pt; line-height: 1.46; color: var(--ink-3); margin-top: 3.4mm; }
+
 /* ── Footer ────────────────────────────────────────────────────────────── */
 .foot {
   flex: none; padding: 5mm 16mm 6mm; display: flex; justify-content: space-between; align-items: center;
@@ -383,7 +553,7 @@ const MODULES = [
   {
     code: 'graha', family: 'revenue', name: 'Graha', deva: 'ग्रह', kind: 'CRM',
     promise: 'Every rupee starts as a name. This is where the name is kept.',
-    screens: 34, routes: 99,
+    screens: 25, routes: 99,
     place: 'The head of the revenue spine. Everything downstream resolves back to a company held here.',
     flow: [
       ['Capture',  'A web form, an inbound email or an import lands as a contact against a <b>company</b> — because the company is the customer, and people come and go.'],
@@ -407,7 +577,7 @@ const MODULES = [
   {
     code: 'vikray', family: 'revenue', name: 'Vikray', deva: 'विक्रय', kind: 'Sales orders',
     promise: 'Agree the number before you ask for it.',
-    screens: 20, routes: 19,
+    screens: 13, routes: 19,
     place: 'Between a won deal and an invoice — the step where the number is agreed.',
     flow: [
       ['Draft',    'An order opens against a Graha client — usually the deal that was just won, so nothing is re-typed.'],
@@ -431,7 +601,7 @@ const MODULES = [
   {
     code: 'ganit', family: 'revenue', name: 'Ganit', deva: 'गणित', kind: 'Finance and invoicing',
     promise: 'GST-correct, or it does not leave the building.',
-    screens: 26, routes: 51,
+    screens: 23, routes: 51,
     place: 'The end of the revenue spine, and the only place the tax treatment is decided.',
     flow: [
       ['Raise',    'An invoice opens against a client. Every invoice belongs to a company — there is no such thing as an invoice attached to nobody.'],
@@ -479,7 +649,7 @@ const MODULES = [
   {
     code: 'esign', family: 'revenue', name: 'E-Sign', deva: 'प्रमाण', kind: 'Electronic signatures',
     promise: 'A signature with an address, a time, and a trail behind it.',
-    screens: 4, routes: 14,
+    screens: 6, routes: 14,
     place: 'Attaches to whatever needs signing, and files the signed copy back onto it.',
     flow: [
       ['Prepare',  'Pick the document against the record it belongs to — a contract on a deal, an engagement letter on a client.'],
@@ -504,7 +674,7 @@ const MODULES = [
   {
     code: 'manav', family: 'people', name: 'Manav', deva: 'मानव', kind: 'HR / HRMS',
     promise: 'Joiner to leaver, on one record.',
-    screens: 34, routes: 85,
+    screens: 26, routes: 85,
     place: 'The head of the people spine. Attendance and payroll both read from this record.',
     flow: [
       ['Join',     'One employee record anchors everything that follows. Nothing about a person lives in a second place.'],
@@ -528,7 +698,7 @@ const MODULES = [
   {
     code: 'pahchan', family: 'people', name: 'Pahchan', deva: 'पहचान', kind: 'Attendance',
     promise: 'A punch that still works where the signal does not.',
-    screens: 15, routes: 32,
+    screens: 13, routes: 32,
     place: 'Between the employee record and the payroll run — it supplies the days.',
     flow: [
       ['Enrol',    'An employee enrols a face template <b>once</b>. Everything after that is a match against it.'],
@@ -558,18 +728,18 @@ const MODULES = [
       ['Open',     'A run is created for a month. It is a record with a state, not a spreadsheet with a filename.'],
       ['Pull',     'Employees come from Manav, and days worked from Pahchan. Nothing is re-keyed between the three.'],
       ['Compute',  'Gross, then each statutory deduction — <b>PF, ESI, PT, TDS</b> — to reach net, per employee, on the correct state slab.'],
-      ['Approve',  'A <b>second, separate action</b>. The role that runs payroll <b>cannot approve it</b>.'],
-      ['Issue',    'Payslips are released only after approval. Before that there is nothing to send by accident.'],
+      ['Approve',  'A <b>second, separate action</b>, on its own permission and written to the audit log with a name on it.'],
+      ['Issue',    'The run computes the payslips, but <b>nothing can be disbursed</b> until it is approved. The money waits.'],
     ],
     gives: [
       'Statutory Indian deductions computed rather than looked up.',
-      '<b>Separated duty</b> built into the roles, which is the control an auditor asks about first.',
+      '<b>Separated duty</b> where a second approver exists, and a named, audited release where one does not.',
       'A run you can re-open and re-check before anybody is paid.',
     ],
     built: [
       '<b>PF on the statutory ceiling</b>, PT on the state slab — the arithmetic your CA would redo by hand.',
-      '<b>Run and approve are different roles</b>, enforced by the product, not by trust.',
-      'No payslip exists until approval, so a draft cannot escape.',
+      '<b>Run and approve are different actions</b> on different permissions, and the release carries a name.',
+      '<b>Nothing can be disbursed</b> until the run is approved, so a calculation cannot pay anybody.',
     ],
     to: [['Manav','मानव'],['Pahchan','पहचान'],['Ganit','गणित']],
   },
@@ -577,7 +747,7 @@ const MODULES = [
   {
     code: 'prachar', family: 'conversation', name: 'Prachar', deva: 'प्रचार', kind: 'Marketing',
     promise: 'Send it, then find out whether it worked.',
-    screens: 10, routes: 53,
+    screens: 11, routes: 53,
     place: 'The outbound half of the conversation spine.',
     flow: [
       ['Audience', 'Built from Graha contacts — the CRM you already keep, not a list exported six weeks ago.'],
@@ -601,7 +771,7 @@ const MODULES = [
   {
     code: 'varta', family: 'conversation', name: 'Varta', deva: 'वार्ता', kind: 'WhatsApp',
     promise: 'One thread, both directions.',
-    screens: 9, routes: 13,
+    screens: 6, routes: 13,
     place: 'The channel Prachar sends through, and the one replies arrive on.',
     flow: [
       ['Template', 'A business-initiated message must use an <b>approved template</b> — which is why templates are first-class here rather than an afterthought.'],
@@ -625,7 +795,7 @@ const MODULES = [
   {
     code: 'sanvaad', family: 'conversation', name: 'Sanvaad', deva: 'संवाद', kind: 'Messaging',
     promise: 'Talk about the record, on the record.',
-    screens: 26, routes: 27,
+    screens: 24, routes: 27,
     place: 'The inward half — the firm talking to itself, against the record.',
     flow: [
       ['Open',     'A thread belongs to a <b>channel or a record</b> — a deal, an invoice, a task. Context is structural.'],
@@ -650,7 +820,7 @@ const MODULES = [
   {
     code: 'sahayak', family: 'intelligence', name: 'Sahayak', deva: 'सहायक', kind: 'AI assistant and skills',
     promise: 'Every run says what it cost. Nothing is silently billed.',
-    screens: 25, routes: 92,
+    screens: 16, routes: 92,
     place: 'On no spine. It is what you point at every other module.',
     flow: [
       ['Ask',      'A skill — social post, ad copy, an email campaign, a GST question — or a grounded chat against <b>your own data</b>.'],
@@ -674,7 +844,7 @@ const MODULES = [
   {
     code: 'dristi', family: 'intelligence', name: 'Dristi', deva: 'दृष्टि', kind: 'Analytics and reports',
     promise: 'Reads everything. Writes nothing.',
-    screens: 14, routes: 19,
+    screens: 15, routes: 19,
     place: 'On no spine. It reads every other module and writes to none of them.',
     flow: [
       ['Fan out',  'One request reaches across <b>every other module</b> — revenue, pipeline, HR and sales — rather than a nightly copy.'],
@@ -697,16 +867,1108 @@ const MODULES = [
   },
 ];
 
+/* ══ Depth ══════════════════════════════════════════════════════════════
+   Three further sheets per module. The overview sheet says what a module is;
+   these say what is IN it, why it holds up, and what a Tuesday looks like.
+
+   ⚠ EVERY `caps` line below corresponds to a route or a table in
+   docs/modules/<code>.md. That is the rule this block is written under, and it
+   is the reason it is worth handing to a prospect: the feature list is the
+   product's own surface, restated for a buyer, not a wish list. A capability
+   that is built but NOT yet proven end to end by a customer is marked in
+   docs/STATUS.md — check the module's row there before promising a date.
+
+   `owns` names real tables. It is on the page deliberately: a buyer evaluating
+   a system of record is buying the schema, and the shape of it is the honest
+   answer to "what happens when we outgrow you". */
+
+const DEEP = {
+
+/* ─────────────────────────────────────────────────────────── graha ── */
+graha: {
+  counts: [['99', 'Endpoints'], ['25', 'Data tables'], ['25', 'Screens'],
+           ['5', 'Reports built in', 'Velocity, conversion, forecast, source, rep']],
+  caps: [
+    ['The company record', 'graha_clients', [
+      'A <b>client</b> is the company you sell to; contacts are the people at it. Both carry addresses, labels and your own custom fields.',
+      'Promote a contact to a client in one action when a lead turns out to be the buyer.',
+      '<b>Custom fields</b> you define — PO number, client code, account manager — appear on the record and travel onto the invoice.',
+      'Documents filed in folders against the company, held in object storage rather than a shared drive.',
+      'A map coordinate on the client or the contact, which is what makes territories work.',
+    ]],
+    ['Getting leads in', 'four intake paths', [
+      '<b>Hosted web forms</b> with a public URL. Paste it on your site; a submission arrives as a scored contact.',
+      '<b>IndiaMART</b> — pull leads directly, rather than exporting a CSV from the portal each morning.',
+      '<b>JustDial</b> — a per-org webhook URL the portal posts to as leads arrive.',
+      '<b>Inbound email</b> captured and readable against the record, so the sales mailbox stops being a second system.',
+      'An open endpoint for your own website or a partner to post a lead into.',
+    ]],
+    ['Scoring and routing', 'rules, not instinct', [
+      'Scoring <b>rules you write</b>, over signals the system already collects — source, activity, company size, whatever you define.',
+      'Re-score one contact, or the whole book, after a rule changes. The old scores do not quietly persist.',
+      '<b>Territories</b> with real geometry, drawn on a map rather than typed as a list of pincodes.',
+      'Round-robin assignment inside a territory, so the next lead has an owner before anyone reads it.',
+      'Route the entire unassigned backlog in one pass.',
+    ]],
+    ['Duplicates', 'find, merge, undo', [
+      'Duplicate detection <b>across the whole book</b>, not only when you happen to open a record.',
+      'Per-contact suspects, so a rep can clear their own list.',
+      'Merge keeps the survivor and folds in the history of the other.',
+      '<b>Every merge is a row, and every merge can be undone.</b> A wrong merge is a click, not an archaeology project.',
+    ]],
+    ['Deals and the day', 'the working surface', [
+      '<b>Multiple pipelines</b> — a services pipeline and a product pipeline do not have to share stages.',
+      'Kanban board, list, and a deal page. Archive and unarchive rather than delete.',
+      'Activities and follow-ups append to one timeline per contact — calls, notes, meetings, the lot.',
+      '<b>Today</b> — what is owed today, per person, without building a report to find out.',
+      'A lost deal records <b>why</b> it was lost, which is the field every post-mortem wants and nobody captures.',
+    ]],
+    ['Approvals and reporting', 'and obligations', [
+      '<b>Approval rules</b> on a stage: the deal raises a request and waits, instead of moving because someone was in a hurry.',
+      'Approve or reject with the decision recorded against the deal.',
+      'Five reports as standard: <b>pipeline velocity, conversion, forecast, source analysis, rep performance</b> — plus download.',
+      '<b>Statutory obligations per client</b> — which returns and filings this customer owes you, on the customer record.',
+    ]],
+  ],
+  proof: [
+    ['The customer is a company. Not a person.',
+     'Contacts leave, get promoted, change their number. The company keeps buying. Kartavaya holds the <b>company</b> as the record everything resolves to, so history survives the person who happened to be the contact.',
+     'One <b>graha_clients</b> row. Invoices, sales orders and signature requests all carry a foreign key to it — not to a contact.'],
+    ['A merge you can take back.',
+     'Deduplication is the one cleanup everybody puts off, because a wrong merge used to be permanent. Here it is not: the merge is stored as an event, and one action reverses it.',
+     '<b>graha_contact_merges</b> records each merge; <b>POST /contacts/merges/{id}/undo</b> reverses it.'],
+    ['A stage that waits for a person.',
+     'Discount approval, credit terms, a deal over a threshold — the control that usually lives in someone’s head, or in a WhatsApp message to a partner. Here the deal <b>cannot advance</b> until the approval row exists.',
+     '<b>graha_approval_rules</b> gates the stage; the move raises a <b>graha_approval_requests</b> row rather than writing the stage.'],
+    ['Leads from where Indian leads actually come from.',
+     'A CRM built elsewhere assumes your leads arrive from a website form and a trade show. A great many Indian leads arrive from <b>IndiaMART and JustDial</b>. Both are first-class intake here, not an integration you build later.',
+     'IndiaMART pull, a per-org JustDial webhook, hosted forms at <b>/f/{slug}</b>, and inbound email capture.'],
+  ],
+  india: 'Leads pull from <b>IndiaMART</b> and arrive by <b>JustDial</b> webhook — the two channels an Indian SMB actually buys leads through. <b>Statutory obligations sit on the client record</b>: which GST returns, TDS filings and ROC dates this customer owes, against the customer. Territories are drawn as geometry on an Indian map, not approximated from a pincode list.',
+  replaces: ['The lead spreadsheet, and the second lead spreadsheet somebody keeps privately.',
+             'A shared sales inbox nobody can report on.',
+             'A separate form tool, and the export step between it and the CRM.',
+             'The morning CSV download from a lead portal.',
+             'The recurring argument about who owns which lead.'],
+  roles: [
+    ['Sales executive', 'Opens <b>Today</b>, works the follow-ups, logs the calls, moves their deals. Never builds a report.'],
+    ['Sales manager', 'Lives on the kanban and the pipeline reports; clears approval requests; sets territories and scoring rules.'],
+    ['Operations', 'Defines the custom fields, the web forms and the pipelines. Runs the duplicate sweep.'],
+    ['Partner / owner', 'Reads forecast and rep performance. Sees which source is actually paying for itself.'],
+  ],
+  scenario: [
+    ['A lead arrives at 06:40', 'A JustDial enquiry posts to the org’s webhook. It lands as a contact with its source recorded — nobody is awake, and nothing is lost.'],
+    ['It is scored, then routed', 'Scoring rules rank it against every other open lead. Its address falls inside a territory, so round-robin gives it an owner before the office opens.'],
+    ['The duplicate is caught', 'The same company enquired in March. Detection surfaces the pair; the rep merges them and the March history comes with it — <b>and the merge can be undone</b> if it was wrong.'],
+    ['It becomes a deal', 'Converted to a deal on the services pipeline. Calls and notes append to one timeline; the follow-up shows on the rep’s <b>Today</b> until it is done.'],
+    ['The discount needs a partner', 'Moving to <em>Negotiation</em> at 22% raises an approval request. The deal <b>does not move</b>. The partner approves from their queue and the decision is on the record.'],
+    ['Won — and it hands over', 'The won deal opens a Vikray sales order with the client already attached, and Ganit will bill against the same company. Nothing is re-typed, and the forecast updates itself.'],
+  ],
+  owns: ['graha_clients', 'graha_contacts', 'graha_deals', 'graha_pipelines', 'graha_activities',
+         'graha_follow_ups', 'graha_territories', 'graha_scoring_rules', 'graha_contact_merges',
+         'graha_approval_requests', 'graha_web_forms', 'graha_inbound_emails', 'graha_documents',
+         'graha_custom_fields', 'graha_labels', 'client_obligations'],
+  ownsNote: 'Twenty-five tables in all. <b>graha_clients</b> is the one the rest of the product points at: an invoice, an order, a signature request and a campaign audience all resolve back to a row in it.',
+},
+
+/* ────────────────────────────────────────────────────────── vikray ── */
+vikray: {
+  counts: [['19', 'Endpoints'], ['11', 'Data tables'], ['13', 'Screens'],
+           ['1', 'Action to invoice', 'Order → Ganit invoice, linked both ways']],
+  caps: [
+    ['Orders and quotes', 'vikray_orders', [
+      'An order opens against a Graha client — or <b>directly from a won deal</b>, carrying the client with it.',
+      'Line items with quantity, rate, discount and tax, computed by the system rather than by a spreadsheet.',
+      'Delivery terms and validity live on the order, so what was promised is on the document that was sent.',
+      'Status moves are explicit and recorded; drafts and soft-deleted rows are <b>excluded from every revenue figure</b>.',
+      'Every line carries its own rate and discount, so a mixed-rate order is still one document.',
+      'The order book filters by client, state and period — “what is agreed but not billed” is one view.',
+    ]],
+    ['Converting to money', 'the handover to Ganit', [
+      '<b>One action turns an agreed order into a Ganit invoice</b>, with the tax treatment already decided.',
+      'The two records stay linked. An order knows what it was billed as; an invoice knows what it was sold as.',
+      'No re-keying between sales and accounts, which is where the transcription errors used to be.',
+      'Conversion happens <b>when the customer confirms</b> — not on a schedule, and never automatically.',
+    ]],
+    ['Stock', 'vikray_stock', [
+      'A stock position per product, so an order is not agreed against something you do not have.',
+      '<b>Stock moves</b> are a ledger — every change has a reason and a time, not just a new number.',
+      'Adjust a position manually when a count disagrees with the system, and the adjustment is itself a move.',
+      'Stock is visible <b>as the order is written</b>, rather than discovered at dispatch.',
+    ]],
+    ['Targets and attainment', 'vikray_targets', [
+      'Targets per person or per team, for a period you choose.',
+      'A <b>leaderboard</b> that reads off real orders — not a parallel sheet maintained by hand.',
+      'Attainment updates as orders are written, so the number at month end is the number all month.',
+    ]],
+    ['The sales view', 'dashboard and pipeline', [
+      'A dashboard of orders, value and conversion for the period.',
+      'A pipeline view of what is agreed but not yet billed — the gap between <em>won</em> and <em>invoiced</em>.',
+      'A customers view: who is buying, how often, and for how much — which is the repeat-business question.',
+    ]],
+    ['What it does not do', 'deliberately', [
+      'It does not decide tax. <b>Ganit does</b>, once, at conversion — so there is exactly one place tax logic lives.',
+      'It does not hold its own customer list. <b>Graha does</b>, so there is no second copy to reconcile.',
+      'It does not take payment. Nothing in Kartavaya does — see Ganit.',
+    ]],
+  ],
+  proof: [
+    ['The step between “won” and “billed” stops being email.',
+     'In most firms this gap is a Word document, an attachment and a phone call. It is where the wrong discount and the wrong quantity get in, and where an order that was never billed goes to die.',
+     'A <b>vikray_orders</b> row with line items — created from the deal, converted to the invoice, linked to both.'],
+    ['The audit question has an answer.',
+     '“What was this billed as?” usually needs somebody to find the quote, find the invoice and compare them by eye. Here the link is in the data, both ways, permanently.',
+     'Conversion writes <b>ganit_invoices</b> and stores the reference on the order.'],
+    ['Your revenue figure excludes what it should exclude.',
+     'A dashboard that counts drafts, credit notes and deleted rows overstates revenue. This one was measured against that exact failure and now excludes all three — <b>a headline that matches its own breakdown</b>.',
+     'Drafts, soft-deleted rows and credit notes are filtered out of every revenue aggregate, not netted in.'],
+    ['Targets read from the orders.',
+     'Attainment computed from the same rows the order desk writes, so there is no reconciliation meeting and no second version of the month.',
+     '<b>vikray_targets</b> joined to real <b>vikray_orders</b>; the leaderboard is a query, not a submission.'],
+  ],
+  india: 'Every order carries the tax treatment its invoice will use, but <b>decides none of it</b> — that is Ganit’s single responsibility, so CGST/SGST against IGST is settled in exactly one place in the product. GSTIN is <b>never required</b> to write an order: an unregistered customer is a customer.',
+  replaces: ['The quotation Word template, and the folder of near-identical copies of it.',
+             'Re-typing an agreed order into the accounting package.',
+             'A spreadsheet of targets updated on Friday afternoons.',
+             'The “what did we actually promise them?” email thread.'],
+  roles: [
+    ['Order desk', 'Writes orders from won deals, prices the lines, converts to an invoice when the customer confirms.'],
+    ['Sales manager', 'Watches the pipeline of agreed-not-billed, and the leaderboard against target.'],
+    ['Stores / inventory', 'Keeps stock positions honest; every correction is a move with a reason.'],
+    ['Accounts', 'Receives an invoice that already carries the right client, lines and tax. Nothing to re-enter.'],
+  ],
+  scenario: [
+    ['The deal is won', 'One action opens an order against the same Graha client. No customer is re-typed, and no code is copied across.'],
+    ['The lines are priced', 'Quantity, rate and a 12% line discount. The arithmetic is the system’s. Stock shows the quantity is actually available.'],
+    ['Terms are agreed', 'Delivery in three weeks, order valid thirty days. Both are fields on the record, so the promise and the document cannot disagree.'],
+    ['The customer confirms', 'One action converts it. <b>Ganit</b> writes the invoice, derives place of supply from the two GSTINs and splits the tax.'],
+    ['Both records point at each other', 'The order shows the invoice it became; the invoice shows the order it came from. Six months later, that is the audit answer.'],
+    ['The month totals itself', 'Attainment moves against target as the order was written — not when somebody remembers to update the sheet.'],
+  ],
+  owns: ['vikray_orders', 'vikray_targets', 'vikray_stock', 'vikray_stock_moves', 'ganit_products',
+         'graha_clients', 'ganit_invoices'],
+  ownsNote: 'Eleven tables, and note which ones it <b>reads</b> rather than copies: the client is Graha’s, the invoice is Ganit’s. Vikray owns the agreement and nothing else, which is why there is no second customer list to reconcile.',
+},
+
+/* ─────────────────────────────────────────────────────────── ganit ── */
+ganit: {
+  counts: [['51', 'Endpoints'], ['22', 'Data tables'], ['23', 'Screens'],
+           ['0', 'Payment gateways', 'By design — money is confirmed at the bank']],
+  caps: [
+    ['Invoicing', 'ganit_invoices', [
+      'Invoices against a client, with line items, HSN codes and your own custom fields on the printed document.',
+      '<b>Estimates and quotes</b> that the customer accepts, then convert into an invoice.',
+      'Raise an invoice <b>from a deal</b>, or <b>from time entries</b> — billable hours become a bill without a re-keying step.',
+      '<b>Recurring invoices</b> — a retainer generates on schedule instead of on a reminder.',
+      'PDF rendering, email delivery, and a <b>public payment link</b> for the customer.',
+      'Cancel writes a state, and an unpaid invoice stays <b>editable</b> — a typo is a correction, not a credit note.',
+    ]],
+    ['The tax logic', 'why this module exists', [
+      '<b>Place of supply derived from the two GSTINs</b>, following s.12(2)(a) of the IGST Act. Not a dropdown someone guesses at.',
+      'State codes decide the split: <b>CGST + SGST</b> within the state, <b>IGST</b> across it. Computed, never typed.',
+      '<b>TDS</b> and <b>e-way bills</b> hang off the same invoice rather than living in a separate file.',
+      'GSTIN, PAN and TAN are <b>never mandatory</b> to save a client or an invoice.',
+    ]],
+    ['Getting paid', 'and how “paid” is decided', [
+      'Payments post against the invoice and the balance falls.',
+      '<b>Bank statement import</b> with a format you configure once for your bank.',
+      'Each unmatched line is offered <b>candidate invoices</b> to match against — and a match can be undone.',
+      '<b>“Paid” comes from the bank.</b> There is no gateway and no webhook deciding it for you.',
+      'A collections view of what is owed, by whom, and for how long.',
+    ]],
+    ['Money going out', 'payables', [
+      'Vendors, vendor bills and vendor payments, in the same ledger as the money coming in.',
+      'A <b>payables summary</b> with an aging breakdown beside it.',
+      'Expenses with categories, and expense statistics for the period.',
+    ]],
+    ['Contracts', 'ganit_contracts', [
+      'Contracts held against the client, with signers.',
+      '<b>Send for signature</b> straight into E-Sign, and read the status back without leaving the finance module.',
+      'The full <b>audit trail</b> of a contract — who signed, from where, when.',
+      'Cancel a signature request that was sent in error.',
+    ]],
+    ['The financial picture', 'stats and cash', [
+      'Revenue, outstanding and collection statistics for a period.',
+      'A <b>cash position</b> that reads receivables against payables rather than one of the two.',
+      'Feeds Dristi, which reads it and writes nothing back.',
+    ]],
+  ],
+  proof: [
+    ['The tax logic is in the product, not in the person.',
+     'Place of supply follows <b>s.12(2)(a) of the IGST Act</b> and is derived from the supplier’s and the recipient’s GSTIN. The intra-state and inter-state split follows from the state codes. A junior raising their first invoice raises a correct one.',
+     'Both GSTINs are read, the state codes compared, and CGST+SGST or IGST written. <b>The user is never asked to choose.</b>'],
+    ['No payment gateway. Ever.',
+     'Kartavaya never holds your money and has no PCI scope. Your customer pays your <b>UPI ID or your bank</b>, directly. The consequence is deliberate and we state it plainly: there is no instant receipt, because <b>“paid” is a fact from your bank statement</b>, not a webhook from a processor.',
+     'Bank statement import plus candidate matching. No gateway integration exists in the codebase, and none is planned.'],
+    ['GSTIN, PAN and TAN never block you.',
+     'You can save a client, raise an invoice, add an employee and record a contact with none of them. The registration is captured when you have it — <b>it is never a gate on getting work done</b>.',
+     'No NOT NULL and no validation gate on capture. <em>Statutory forms that report under a registration still require it</em> — a TDS challan without a TAN is invalid under s.203A, and the product says so rather than inventing a number.'],
+    ['An unpaid invoice is still editable.',
+     'A typo on an unissued or unpaid invoice is a correction. Systems that force a credit note for a spelling mistake generate paperwork that exists only to satisfy the software.',
+     'Editability follows payment state. <b>Do not infer it from doc_status</b> — that column defaults to <em>final</em> and means something else.'],
+  ],
+  india: 'This is the module that makes Kartavaya an <b>Indian</b> product rather than a translated one. <b>s.12(2)(a)</b> place of supply, CGST/SGST against IGST from state codes, HSN on the line, e-way bills and TDS on the invoice, professional tax and TDS challans elsewhere in the suite, and bank reconciliation as the only definition of paid — because that is how money is actually confirmed here.',
+  replaces: ['Tally as the place invoices are raised — and the export step to it.',
+             'A GST rate cheat-sheet taped to somebody’s monitor.',
+             'The manual decision about CGST/SGST versus IGST, taken invoice by invoice.',
+             'Reconciling a bank statement against invoices in a spreadsheet.',
+             'A payment gateway’s fee on every rupee you collect.'],
+  roles: [
+    ['Accounts executive', 'Raises invoices, posts payments, imports the bank statement and clears the matching queue.'],
+    ['Accounts manager', 'Watches cash position, collections and payables aging. Approves nothing by feel.'],
+    ['The firm’s CA', 'Reads a ledger where the tax treatment was decided by rule and can be traced to the section.'],
+    ['Partner / owner', 'One number for what is owed to the firm, and one for what the firm owes.'],
+  ],
+  scenario: [
+    ['The invoice is raised', 'From a converted Vikray order — client, lines and amounts already there. Nobody re-types a customer name.'],
+    ['Tax decides itself', 'Supplier GSTIN is Gujarat, the customer’s is Maharashtra. Different state codes, so <b>IGST</b>. The user was not asked.'],
+    ['It goes out', 'PDF rendered, emailed, and a payment link the customer can open. The e-way bill and any TDS sit on the same record.'],
+    ['A typo is found', 'The invoice is unpaid, so it is <b>edited</b>. No credit note, no reversal, no explanation to an auditor about paperwork that exists to satisfy software.'],
+    ['The bank statement is imported', 'Using the format configured once for this bank. Twenty-two lines come in; eighteen match themselves.'],
+    ['Paid means paid', 'Four lines are offered candidate invoices and matched by a person. The balance falls. <b>Nothing said “paid” until the bank did</b> — and a wrong match can be unmatched.'],
+  ],
+  owns: ['ganit_invoices', 'ganit_payments', 'ganit_recurring', 'ganit_expenses', 'ganit_expense_categories',
+         'ganit_vendors', 'ganit_vendor_bills', 'ganit_vendor_payments', 'ganit_contracts',
+         'ganit_contract_signers', 'ganit_bank_formats', 'ganit_bank_statement_lines', 'ganit_pay_scans'],
+  ownsNote: 'Twenty-two tables. <b>ganit_invoices</b> is read by Vikray, Kray, Vetana and Dristi — which is why the tax treatment is decided here once and nowhere else.',
+},
+
+/* ──────────────────────────────────────────────────────────── kray ── */
+kray: {
+  counts: [['22', 'Endpoints'], ['12', 'Data tables'], ['5', 'Screens'],
+           ['5', 'Standing reports', 'Committed, RNI, late suppliers, 194Q, budget']],
+  caps: [
+    ['Purchase orders', 'ganit_purchase_orders', [
+      'A PO drafted against a vendor and priced line by line, <b>before</b> anybody has promised anything.',
+      'Submit for approval; issue once cleared, which stamps a <b>PO number and a timestamp</b>.',
+      'Revisions are kept, so an amendment has a before and an after.',
+      'Close a PO when it is done, and delete a draft that never should have existed.',
+      'The order list filters by state, so “what is waiting on me” is a view rather than a search.',
+    ]],
+    ['Approvals', 'thresholds you set', [
+      '<b>Thresholds your organisation sets</b> decide what needs sign-off — not a hard-coded number.',
+      'Amend an order past its threshold and it <b>needs approving again</b>.',
+      'Approver candidates are resolved from the role model, so the queue is never addressed to a person who left.',
+      'Approve or reject with the decision recorded against the order.',
+      'Thresholds and approver rules live in <b>org settings</b> and are edited there — not in code, and not per order.',
+    ]],
+    ['Receipts and matching', 'what arrived', [
+      'Receipts record what arrived — which is rarely all of it, and rarely all at once. <b>Partial receipts are normal, not an exception.</b>',
+      '<b>Three-way match</b>: order against receipt against bill.',
+      'Every discrepancy is surfaced for a person to look at.',
+      'Link a vendor bill to the order it belongs to, so the match has something to compare.',
+      'Receipts accumulate against the order until it is closed, so a part-delivered order stays open and visible.',
+    ]],
+    ['The reports this data enables', 'standing', [
+      '<b>Committed spend</b> — what you are on the hook for while it is still a commitment, not after it is a bill.',
+      '<b>Received not invoiced</b> — the period-end accrual, otherwise assembled by hand or not at all.',
+      '<b>Late suppliers</b>, reported rather than remembered.',
+      '<b>Budget</b> — what was planned against what has been committed.',
+    ]],
+    ['s.194Q', 'the India-specific one', [
+      'A <b>TDS 194Q report</b> of vendors at or approaching the ₹50 lakh threshold.',
+      'The rate is read from the <b>statute calendar as of the date</b> — not a constant somebody hard-coded in 2023.',
+      'The warning appears <b>at PO time</b>, while you can still act on it, rather than at year end.',
+    ]],
+    ['Where its data lives', 'not here', [
+      'Kray owns <b>no vendor table of its own</b>. Vendors, bills and payments are Ganit’s.',
+      'It is the discipline over that data — approval, receipt, match — not a second copy of it.',
+      'So a vendor’s payment history and their PO history are the same history.',
+    ]],
+  ],
+  proof: [
+    ['You can see committed spend while it is still a commitment.',
+     'Most firms discover what they have committed when the bill arrives. A PO that is a record rather than an understanding makes <b>committed spend</b> and <b>received-not-invoiced</b> answerable on any given day — including the last one of the quarter.',
+     'Issuing stamps a PO number and <b>issued_at</b>; receipts and bills reference it. Both reports are queries, not exercises.'],
+    ['The match approves nothing.',
+     'A three-way match that auto-approves is a control you have delegated to software before you have watched it be right. This one <b>surfaces exceptions for a person</b>. Auto-approval is a decision for after you trust it, not a default you inherit.',
+     'The match endpoint returns discrepancies. There is no code path from a clean match to an approval.'],
+    ['s.194Q, warned while you can still act.',
+     'The ₹50 lakh threshold is a year-end surprise in most systems. Here vendors approaching it are flagged <b>at purchase order time</b>, with the rate read from the statute calendar as of that date.',
+     'A standing report over <b>statute_calendar</b>, resolved <b>as of</b> the date rather than from a hard-coded rate.'],
+    ['Amend it past the threshold, and it needs approving again.',
+     'The oldest trick in procurement is an approved order quietly amended upward. The threshold is re-tested on amendment, so the second version needs the same sign-off the first one did.',
+     'Revisions are stored in <b>ganit_po_revisions</b> and re-evaluated against the org’s thresholds.'],
+  ],
+  india: '<b>s.194Q TDS</b> on purchases is reported against the ₹50 lakh threshold, with the rate resolved from the statute calendar <b>as of the date of the order</b> — so a rate change does not silently rewrite last year. Vendor GSTIN and PAN are captured where you have them and <b>required nowhere</b>.',
+  replaces: ['A purchase order that was an email, and an approval that was a reply to it.',
+             'The quarter-end scramble to work out what has been received but not invoiced.',
+             'A spreadsheet of open POs that is out of date by lunchtime.',
+             'Finding out about s.194Q from your CA in March.'],
+  roles: [
+    ['Purchaser', 'Drafts the order, submits it, records receipts as goods arrive.'],
+    ['Approver', 'Clears a queue that is populated by rule, and whose thresholds the firm set.'],
+    ['Accounts', 'Links the vendor bill and works the discrepancy list the match produced.'],
+    ['Finance lead', 'Reads committed spend, RNI and budget. Sees the 194Q warning before the vendor crosses.'],
+  ],
+  scenario: [
+    ['A PO is drafted', 'Twelve line items against a vendor. Nothing is committed yet — this is a draft, and it can be deleted.'],
+    ['It crosses the threshold', 'The firm set ₹2 lakh. This is ₹3.4 lakh, so submitting routes it to an approver resolved from the role model.'],
+    ['A 194Q flag appears', 'This vendor is at ₹47.2 lakh for the year. The report flags them <b>now</b>, with the rate read from the statute calendar as of today.'],
+    ['It is issued', 'Approval clears it. The order takes a PO number and a timestamp. It is now a record, not an understanding.'],
+    ['Two-thirds arrives', 'A receipt records what actually turned up. The rest is still outstanding, and the RNI report knows it.'],
+    ['The bill does not agree', 'Three-way match flags a quantity discrepancy and a price difference. <b>It approves nothing</b> — it hands two exceptions to a person.'],
+  ],
+  owns: ['ganit_purchase_orders', 'ganit_po_lines', 'ganit_po_receipts', 'ganit_po_approvals',
+         'ganit_po_revisions', 'ganit_vendors', 'ganit_vendor_bills', 'statute_calendar'],
+  ownsNote: 'Note the prefix: these are <b>ganit_</b> tables. Kray owns no vendor list of its own — it is the discipline over Ganit’s payables, which is why a vendor’s PO history and their payment history are one history.',
+},
+
+/* ─────────────────────────────────────────────────────────── esign ── */
+esign: {
+  counts: [['14', 'Endpoints'], ['5', 'Data tables'], ['6', 'Screens'],
+           ['0', 'Accounts a signer needs', 'No login, no app, no download']],
+  caps: [
+    ['Preparing a document', 'sign_documents', [
+      'Upload the document against the record it belongs to — a contract on a deal, an engagement letter on a client.',
+      '<b>Place the fields</b> on the page: where each signer signs, and what else they must fill.',
+      'Multiple signers on one document, each with their own link.',
+      'Send from Ganit directly, so a contract does not have to be re-uploaded to be signed.',
+      'Preparing and sending are <b>separate steps</b> — a document can be set up now and sent when it is agreed.',
+    ]],
+    ['Sending and signing', 'the signer’s side', [
+      'Each signer receives a <b>tokenised link</b>. One link, one document, one signer.',
+      'They open it in a browser and sign — <b>no account, no app, no download</b>. This is the single most common reason signing stalls.',
+      '<b>OTP verification</b> before signing, when the document warrants it.',
+      'A signer can <b>decline</b>, with the refusal recorded — which is an answer, and better than silence.',
+      'Each signer’s link is independent, so one person signing does not wait on another.',
+    ]],
+    ['Managing what is out', 'while you wait', [
+      'Resend to one signer without disturbing the others.',
+      'Cancel a request that was sent in error.',
+      'Rebuild the signed artefact if the document needs regenerating.',
+      'Status readable from the originating record — including from inside Ganit.',
+      'A list of everything currently out for signature, with the state of each.',
+    ]],
+    ['The trail', 'sign_audit_log', [
+      'Who signed, <b>from where</b>, and when. Every event on the document, in order.',
+      'The trail is retrievable as a document you can hand to an auditor or a counterparty.',
+      'The signed artefact is written back <b>against the originating record</b>, not into somebody’s inbox.',
+      'The trail covers <b>every event</b> — the sends and the reminders, not only the signature.',
+    ]],
+    ['Where the files live', 'object storage', [
+      'Documents are held in <b>Cloudflare R2</b>; the record keeps the reference.',
+      'No file bytes in a database column, which is what keeps the record small and the retrieval fast.',
+      'Data residency: Singapore, permanently.',
+      'The signed copy is a new document kept <b>alongside</b> the original, never replacing it.',
+    ]],
+    ['What it is not', 'a deliberate choice', [
+      '<b>Not Aadhaar eSign.</b> No eKYC dependency, and no third party between you and a signature.',
+      'It is <b>web-only</b>. Signing is not a mobile destination in this product, and we do not pretend otherwise.',
+      'It does not try to be a document management system. It signs, files and proves.',
+    ]],
+  ],
+  proof: [
+    ['The signer needs no account.',
+     'Every stalled signature has the same cause: the counterparty was asked to create an account, install an app, or download something. Here they click a link and sign in the browser they already had open. <b>That is what makes a first-time counterparty actually finish.</b>',
+     'A tokenised URL resolves the document and the signer. No authentication, no session, no install.'],
+    ['Deliberately not Aadhaar.',
+     'Aadhaar eSign puts an eKYC provider between you and every signature you need. When they are down, you are down. This is in-house signing: <b>no eKYC dependency, no third-party outage</b> standing between a client and a contract.',
+     'In-house signing service. The trail is the product’s own, held in <b>sign_audit_log</b>.'],
+    ['The signed copy files itself.',
+     'The failure mode of every signing tool is that the executed copy ends up in one person’s email. Here it is written back against the record that needed it — the deal, the client, the contract — where the next person will look for it.',
+     'The artefact is stored in R2 and the reference written to the originating record.'],
+    ['A decline is an answer.',
+     'Most tools model only success, so a refusal looks identical to silence and gets chased for three weeks. A signer can decline, and the refusal is recorded as an event.',
+     'A decline endpoint alongside sign. Both write to the audit trail.'],
+  ],
+  india: 'Deliberately <b>not Aadhaar eSign</b> — no eKYC provider, no UIDAI dependency, no outage you cannot fix. Documents are held in Singapore under the same residency rule as the rest of the product, and the audit trail is yours to hand over rather than a third party’s to produce on request.',
+  replaces: ['Print, sign, scan, email — and the version of the file that is now four generations old.',
+             'A signing subscription priced per envelope.',
+             'Asking a client to create an account with a vendor they have never heard of.',
+             '“Can you resend it, I think it went to spam” — three times.'],
+  roles: [
+    ['Whoever owns the deal', 'Sends the engagement letter from the record it belongs to. Sees status without asking.'],
+    ['Accounts', 'Sends a contract for signature from inside Ganit and reads the status back there.'],
+    ['The signer', 'Opens a link. Signs. Does not create an account, install anything, or download a file.'],
+    ['Auditor / counterparty', 'Receives a trail stating who signed, from where and when.'],
+  ],
+  scenario: [
+    ['The engagement letter is ready', 'Uploaded against the client record in Graha. Signature and date fields placed on page four.'],
+    ['Two signers, two links', 'The client’s director and the firm’s partner each get their own tokenised link. One link, one document, one signer.'],
+    ['The client signs on a phone', 'In a browser, at 21:40, without creating an account or installing anything. <b>OTP first</b>, because this document warranted it.'],
+    ['The partner is chased — precisely', 'Only the partner’s link is resent. The client is not emailed again about a document they already signed.'],
+    ['It seals itself', 'The signed artefact is written back <b>against the client record</b>. Nobody has to remember to file it.'],
+    ['A year later, an auditor asks', 'The trail states who signed, from where, and when. That is the answer — not a screenshot of an email.'],
+  ],
+  owns: ['sign_documents', 'sign_signers', 'sign_audit_log', 'outbound_log'],
+  ownsNote: 'Five tables and no ambition to be more. The document bytes live in <b>Cloudflare R2</b>, not in a column — the record keeps a reference, which is what keeps retrieval fast and the database small.',
+},
+
+/* ─────────────────────────────────────────────────────────── manav ── */
+manav: {
+  counts: [['85', 'Endpoints'], ['28', 'Data tables'], ['26', 'Screens'],
+           ['2', 'Steps to grant leave', 'A request row, then a separate approval row']],
+  caps: [
+    ['The employee record', 'manav_employees', [
+      'One record per person, from candidate through to exit interview. Nothing about someone lives in a second place.',
+      'Departments, reporting lines and the org’s own structure.',
+      'Documents filed against the person — PAN, contracts, police verification — in object storage, not a shared drive.',
+      '<b>Aadhaar is encrypted at rest and masked on read.</b> Reading it is a separate, privileged action.',
+      'Link an employee to their login, so the person and the user account are the same person.',
+    ]],
+    ['Leave and holidays', 'two steps, always', [
+      'Leave types you define, with balances tracked per person.',
+      'A leave <b>request</b> is a row. The <b>approval</b> is a second, separate row — so a granted leave always records <b>who granted it</b>.',
+      '<b>Conflict checking</b> before approval: who else is already off that week.',
+      'A holiday calendar per organisation, because the holidays differ by state and by firm.',
+    ]],
+    ['Shifts and scheduling', 'most HRMS skip this', [
+      'Shift definitions, and schedules built against them — including <b>bulk</b> scheduling.',
+      '<b>Coverage</b>: whether a day is actually staffed, before it arrives.',
+      'Employees post their <b>availability</b>; the schedule is built against reality.',
+      '<b>Shift bids</b> — open a shift, let people apply, accept one. And <b>swaps</b> between two employees, with approval.',
+    ]],
+    ['Recruitment and joining', 'the front end', [
+      '<b>Job openings</b> and a candidate pipeline with stages.',
+      '<b>Hire a candidate</b> and they become an employee record — the same record that will hold their exit interview.',
+      'Announcements to the organisation, so an all-staff message is not an email nobody can find.',
+    ]],
+    ['Assets and claims', 'between systems', [
+      '<b>Asset register</b> — laptops, phones, vehicles. <b>Assign</b> to a person and <b>return</b> on the way out.',
+      'What a given employee currently holds, which is the offboarding checklist writing itself.',
+      '<b>Expense claims</b> with approve and reject, and a pending count so nothing sits unseen.',
+      '<b>Commission schemes</b> with bands, and <b>bonus awards</b> with eligibility — both feeding payroll.',
+    ]],
+    ['Leaving', 'and doing it properly', [
+      '<b>Offboarding</b> as a tracked process with steps, not a memory.',
+      '<b>Exit interviews</b> with structured reasons, so attrition is analysable rather than anecdotal.',
+      'The assets they hold, the leave they are owed and their final run are all against the same record.',
+    ]],
+  ],
+  proof: [
+    ['Two rows to grant leave, and that is the point.',
+     'A request is one row. The approval is a <b>separate</b> row. So an entitlement dispute six months later has a name and a date attached to it, rather than a recollection of a conversation. This is the control an HR audit asks about first.',
+     'A row in <b>manav_leave_requests</b>, then an action that writes the approval — never a single field flipped from pending to approved.'],
+    ['Your vendor cannot read your employee records.',
+     'Manav is <b>excluded from platform staff</b> by the role tiers. Aekam’s own support people cannot open your HR module. Inside your organisation, reading a colleague’s documents requires admin — and Aadhaar is encrypted at rest and masked on read.',
+     'Enforced in the role tier registry, not by policy. <b>Data residency: Singapore, permanently.</b>'],
+    ['It handles shifts, which is why it fits real Indian firms.',
+     'Most HR software assumes a salaried desk workforce. A firm with site staff, branch staff or shift staff needs coverage, bids and swaps — and usually buys a second system for it. Here it is <b>the same employee record</b>.',
+     'Shift definitions, schedules, coverage, availability, bids and swaps — all keyed to <b>manav_employees</b>.'],
+    ['The file is complete on the day someone leaves.',
+     'Offboarding is a tracked process, the exit interview is structured, and the assets they hold are already listed against them. Nobody reconstructs a leaver’s file from three inboxes.',
+     '<b>manav_offboarding</b>, <b>manav_exit_interviews</b> and <b>manav_assets</b> all reference the one employee row.'],
+  ],
+  india: 'Documents and identity are held to Indian expectations: <b>Aadhaar encrypted at rest and masked on read</b>, PAN and police verification filed against the person, and a <b>per-organisation holiday calendar</b> because holidays here are a state matter, not a national list. Attendance detail is visible only at the highest access tier, under <b>DPDP</b>. Professional tax is on the payroll side, from the state slab.',
+  replaces: ['An employee folder on a shared drive that three people can open.',
+             'Leave approved in WhatsApp, and disputed in March.',
+             'A separate rostering tool for the shift staff.',
+             'A spreadsheet of who has which laptop.',
+             'Reconstructing a leaver’s file from three inboxes on their last afternoon.'],
+  roles: [
+    ['Employee', 'Requests leave, posts availability, bids for a shift, files an expense claim, reads announcements.'],
+    ['Manager', 'Approves leave — after seeing who else is off — approves claims and swaps, builds the schedule.'],
+    ['HR', 'Owns the record: hiring, documents, departments, holidays, assets, offboarding, exit interviews.'],
+    ['Finance', 'Reads commission schemes, bonus awards and approved claims — all of which reach payroll.'],
+  ],
+  scenario: [
+    ['A candidate becomes an employee', 'Hired from the candidate pipeline. The record created that day is the one that will hold their exit interview years later.'],
+    ['They are equipped', 'A laptop is assigned from the asset register. It is now against their name, and it will be on the offboarding list without anyone writing it down.'],
+    ['They ask for leave', 'A request row. Their manager sees <b>who else is already off</b> that week before deciding.'],
+    ['It is granted — by someone', 'The approval is a separate row. In March, when it is disputed, the answer has a name and a date on it.'],
+    ['A shift needs covering', 'The shift is opened for bids. Three people apply, one is accepted, and the schedule updates. Coverage is answered before the day arrives.'],
+    ['They leave properly', 'Offboarding runs as steps. The laptop comes back, the exit interview records a structured reason, and the final payroll run reads the same record.'],
+  ],
+  owns: ['manav_employees', 'manav_leave_requests', 'manav_leave_balances', 'manav_leave_types',
+         'manav_departments', 'manav_holidays', 'manav_shift_definitions', 'manav_schedules',
+         'manav_shift_bids', 'manav_swap_requests', 'manav_assets', 'manav_expense_claims',
+         'manav_candidates', 'manav_job_openings', 'manav_offboarding', 'manav_exit_interviews',
+         'manav_commission_schemes', 'manav_bonus_awards', 'manav_employee_documents'],
+  ownsNote: 'Twenty-eight tables — the largest people surface in the product. All of them hang off <b>manav_employees</b>, which is why the file is complete on the day someone goes rather than assembled afterwards.',
+},
+
+/* ───────────────────────────────────────────────────────── pahchan ── */
+pahchan: {
+  counts: [['32', 'Endpoints'], ['12', 'Data tables'], ['13', 'Screens'],
+           ['72h', 'Offline buffer', 'A punch survives three days without signal']],
+  caps: [
+    ['Enrolment', 'once per person', [
+      'An employee enrols a <b>face template</b> once. Everything after that is a match against it.',
+      'Enrolment photos go to an <b>approval queue</b> — a bad enrolment is caught before it causes a month of failed punches.',
+      'A pending queue so HR can see who is not yet enrolled and chase exactly those people.',
+      'An enrolment photo is fetched by a <b>short-lived URL</b>, so a face template is not left sitting in a cache.',
+    ]],
+    ['The punch', 'three facts, not one tap', [
+      'Clock-in captures a <b>photo, a location and the device</b>.',
+      'The punch is checked against a <b>geofence</b> — attendance is <em>placed</em>, not merely timed.',
+      'The photo is retrievable for review, under access control.',
+      'A supervisor can <b>review</b> a punch and record a decision on it.',
+      'The photo uploads <b>separately</b> from the punch, so a slow connection does not delay the clock-in itself.',
+    ]],
+    ['Working without signal', 'why this exists', [
+      'No network? The punch is held <b>on the device</b> and reconciled when signal returns.',
+      'A <b>72-hour buffer</b>, which covers a site with no coverage for three days.',
+      'Reconciliation is matched, not duplicated — the same punch does not land twice.',
+      'The queue is on the device, not on a server — so nothing depends on reaching us at the moment of the punch.',
+    ]],
+    ['Sites and policy', 'rules per place', [
+      '<b>Sites</b> with geofences — a head office, a branch, a project site.',
+      'Shift policy decides lateness <b>by rule</b>, so the same lateness means the same thing in every branch.',
+      '<b>Policy scopes</b> — an override for one site or one group, with the <b>effective</b> policy readable for any person.',
+      'So “which rule applied to me on that day” has an answer, rather than an argument.',
+    ]],
+    ['Corrections', 'the real world happens', [
+      '<b>Regularisation requests</b> — the phone died, the face did not match, they were at a client site.',
+      'Employees see their own requests; approvers work a queue.',
+      '<b>Manual attendance</b> entry, recorded as manual rather than disguised as a punch.',
+      'A <b>register</b> view of the month, and a <b>publish</b> step before it goes to payroll.',
+      'An employee sees <b>their own</b> attendance — so a query about a missing day starts with them, not with HR.'],
+    ],
+    ['Consent and DPDP', 'this is biometric data', [
+      '<b>Explicit consent</b> per employee, recorded with a timestamp — not a checkbox nobody stored.',
+      'A <b>consent roster</b>: who has consented and who has not.',
+      'A privacy <b>notice with acknowledgement</b>, so being told is itself a record.',
+      'Attendance detail is visible <b>only at the highest access tier</b>.',
+      'Consent can be given by the employee, or captured on their behalf and shown on the roster either way.',
+    ]],
+  ],
+  proof: [
+    ['The punch survives the dead zone.',
+     'Site staff, field staff and branch staff work where the signal does not. A cloud attendance system that requires connectivity at the moment of clock-in does not work for them. Here the punch is <b>queued on the device</b> and reconciled inside a 72-hour buffer.',
+     'Offline-first client with a 72-hour reconciliation window. Matched on sync, so a punch cannot land twice.'],
+    ['Face plus place — the two questions a register cannot answer.',
+     'A paper register proves neither who signed nor where they were. A punch here carries a face match, a geofenced location and the device it came from. <b>Buddy punching stops being possible</b> rather than being discouraged.',
+     'A face template matched at punch time, a coordinate tested against a <b>pahchan_sites</b> geofence, and the device recorded.'],
+    ['Consent is a row, and DPDP is why.',
+     'This is biometric data, and the DPDP Act treats it accordingly. Consent is captured per employee with a timestamp, the privacy notice acknowledgement is itself recorded, and there is a roster showing exactly who has consented.',
+     '<b>pahchan_employee_consents</b> and <b>pahchan_notice_acknowledgements</b>. Attendance detail is gated to the highest access tier.'],
+    ['A correction is a request, not an edit.',
+     'The phone died. The face did not match in bad light. They were at a client site. These are normal, and a system that forces an administrator to silently edit attendance has lost its own audit trail. Here it is a <b>regularisation request</b> with an approver.',
+     '<b>pahchan_regularisations</b>, plus manual entry that is <em>recorded as manual</em> rather than disguised as a punch.'],
+  ],
+  india: 'Built for how Indian firms are actually staffed — branches, project sites and field teams, in places where the signal fails. <b>72-hour offline buffer</b>, geofenced sites, per-site policy overrides. Consent, the privacy notice and its acknowledgement are all recorded rows, because biometric data under the <b>DPDP Act</b> is not something a checkbox covers.',
+  replaces: ['A paper register, and the question of who actually signed it.',
+             'A biometric terminal per site, and the cabling and the AMC.',
+             'Attendance that fails whenever the branch loses internet.',
+             'A month-end spreadsheet reconciling three sites by hand.'],
+  roles: [
+    ['Employee', 'Punches in and out. Raises a regularisation when something went wrong. Gives consent, once.'],
+    ['Site supervisor', 'Reviews punches, works the regularisation queue, sees who is actually on site.'],
+    ['HR', 'Approves enrolments, sets sites and policy scopes, publishes the month.'],
+    ['Payroll', 'Receives days worked already totalled, from a register that was published rather than assembled.'],
+  ],
+  scenario: [
+    ['Consent, then enrolment', 'The employee consents — a row with a timestamp — and acknowledges the notice. They enrol a face template once, and HR approves it.'],
+    ['They punch in at a site', 'Photo, location and device. The coordinate falls inside the project site’s geofence, so the punch is placed as well as timed.'],
+    ['The signal dies', 'The site has no coverage for two days. Punches queue <b>on the device</b>.'],
+    ['It reconciles', 'Back in coverage on day three — inside the 72-hour buffer — the queued punches sync. Matched, not duplicated.'],
+    ['Something goes wrong anyway', 'One morning the face will not match in low light. They raise a <b>regularisation</b>; the supervisor approves it. The correction is a record, not a silent edit.'],
+    ['The month is published', 'The register is reviewed and published. Vetana receives days worked already totalled — nobody re-keys three sites into a spreadsheet.'],
+  ],
+  owns: ['pahchan_punches', 'pahchan_sites', 'pahchan_policy', 'pahchan_policy_overrides',
+         'pahchan_enrollment_photos', 'pahchan_regularisations', 'pahchan_employee_consents',
+         'pahchan_notice_acknowledgements', 'manav_attendance'],
+  ownsNote: 'Twelve tables, and one of them is <b>manav_attendance</b> — Manav’s. Attendance is written where HR will read it, so the days that reach payroll and the days HR sees are the same days.',
+},
+
+/* ────────────────────────────────────────────────────────── vetana ── */
+vetana: {
+  counts: [['27', 'Endpoints'], ['21', 'Data tables'], ['10', 'Screens'],
+           ['4', 'Statutory deductions', 'PF, ESI, PT and TDS, computed per employee']],
+  caps: [
+    ['The run', 'vetana_payroll_runs', [
+      'A run is created for a month. <b>It is a record with a state</b>, not a spreadsheet with a filename.',
+      'Employees are pulled from Manav; days worked from Pahchan. Nothing is re-keyed between the three.',
+      '<b>Revert</b> a run and re-check it before anybody is paid.',
+      'A dashboard of the run, and a <b>statutory summary</b> of what is owed to whom.',
+      'Every run is listed with its state, so March is findable a year later without opening a file.',
+    ]],
+    ['What it computes', 'the four that matter', [
+      '<b>PF</b> on the statutory ceiling.',
+      '<b>ESI</b> where applicable.',
+      '<b>PT</b> on the correct <b>state</b> slab — professional tax is a state matter, and the product treats it as one.',
+      '<b>TDS</b> against income tax slabs held in the product and editable as the law changes.',
+    ]],
+    ['Salary structures', 'defined once', [
+      'Structures defined once and applied to people, rather than a salary re-typed per employee.',
+      'Editable as the firm’s bands change, with the change applying to the next run.',
+      'Basic, allowances and deductions modelled — not one gross number with the detail lost.',
+      'A structure is attached to a person, and the run reads it at compute time.',
+    ]],
+    ['The slabs', 'they change, so they are data', [
+      '<b>Income tax slabs</b> are rows you can read and change — not constants compiled into the software.',
+      '<b>Professional tax slabs</b> per state, likewise.',
+      'A rate change is a data change, applied to the next run. You do not wait for a release.',
+    ]],
+    ['Payslips', 'nothing paid before approval', [
+      'Processing generates the payslips; <b>approval is what makes them payable</b>. A payslip cannot be marked disbursed until the run is approved.',
+      'PDF per employee, and a disbursement state per payslip.',
+      'A payslip references the run it came from, so a query about March has one answer.',
+      'Payslips list by period and by employee, so both questions are one lookup.',
+    ]],
+    ['Loans and adjustments', 'vetana_loans', [
+      '<b>Employee loans and advances</b>, with recovery across runs.',
+      'Bonus awards and commission schemes from Manav reach the run.',
+      'Approved expense claims and leave balances land in the same computation.',
+      'Loan recovery instalments are computed <b>into the run</b> rather than remembered by a person.',
+    ]],
+  ],
+  proof: [
+    ['Approving payroll is a second, separate act.',
+     'Running a payroll and releasing it are different endpoints with different permissions, and the release is written to the audit log with a name on it. <b>Grant a second approver and the person who ran the payroll cannot release it</b> — the control turns on for that organisation with no change to the software.',
+     'Release is gated at its own permission rung. Where an org has <b>only one</b> approver the release proceeds and is logged as a <em>self-approval</em> — auditable rather than blocked, so payroll never stops company-wide.'],
+    ['No salary is payable until the run is approved.',
+     'Processing computes the payslips; it does not release them. A payslip cannot be marked <b>disbursed</b> until the run has been approved — so the money cannot move on the strength of a calculation somebody ran.',
+     'Disbursement refuses any payslip not in <b>approved</b> state, and approval is what moves them there.'],
+    ['PF on the ceiling, PT on the state slab.',
+     'This is the arithmetic your CA would otherwise redo by hand every month — and the part a payroll product built for another country simply does not have. Professional tax differs by state, and the product models it that way.',
+     'Statutory ceiling for PF; <b>pay_professional_tax</b> per state; <b>pay_income_tax_slabs</b> as editable rows.'],
+    ['The slabs are data, not code.',
+     'When a slab changes, you change a row. You do not raise a support ticket, and you do not wait for a release to be able to run March correctly.',
+     'Income tax and professional tax slabs are CRUD tables in the product, with endpoints to read and edit them.'],
+  ],
+  india: 'This is the module that cannot be bought from abroad. <b>PF on the statutory ceiling, ESI, professional tax on the correct state slab, and TDS against income tax slabs held as editable data.</b> A statutory summary states what is owed to each authority. Attendance comes from a register built for sites with no signal, and the arithmetic is the product’s rather than a spreadsheet’s.',
+  replaces: ['A payroll spreadsheet with a filename like <em>salary-march-final-v3.xlsx</em>.',
+             'One person who does everything, and the audit finding that follows.',
+             'Paying an outsourcer to compute PF, ESI and PT each month.',
+             'A payroll product that does not know what professional tax is.'],
+  roles: [
+    ['Payroll executive', 'Opens the run, pulls employees and days, computes, checks. <b>Cannot approve it.</b>'],
+    ['Approver (partner/finance)', 'Reviews the run and approves. That action is what creates the payslips.'],
+    ['HR', 'Owns the salary structures, the loans and the bonus awards that the run reads.'],
+    ['Employee', 'Receives a payslip that exists because it was approved — not because a draft was emailed.'],
+  ],
+  scenario: [
+    ['The run opens', 'March. A record with a state, not a file on somebody’s desktop.'],
+    ['It pulls what it needs', 'Employees from Manav. Days worked from Pahchan’s published register. Approved claims, loans and bonus awards come with them.'],
+    ['It computes', 'Gross, then PF on the ceiling, ESI, professional tax on the state slab, TDS against the slabs — to a net figure per employee.'],
+    ['Something looks wrong', 'One employee’s days are short. The run is <b>reverted</b>, the attendance regularisation approved, and it is recomputed. Nobody has been paid.'],
+    ['A second person approves', 'With a second approver granted, the person who ran it cannot release it. The partner approves — and <b>that is what makes the payslips payable</b>.'],
+    ['It is issued', 'Only now can a payslip be marked disbursed. The statutory summary states what is owed to each authority.'],
+  ],
+  owns: ['vetana_payroll_runs', 'vetana_payslips', 'vetana_salary_structures', 'vetana_loans',
+         'pay_income_tax_slabs', 'pay_professional_tax', 'statute_calendar', 'manav_employees',
+         'manav_attendance', 'manav_leave_balances', 'manav_bonus_awards', 'manav_expense_claims'],
+  ownsNote: 'Twenty-one tables, and most of what it reads belongs to Manav and Pahchan. Payroll owns the <b>run</b>, the <b>payslip</b> and the <b>slabs</b> — everything else it reads from the record that already held it.',
+},
+
+/* ───────────────────────────────────────────────────────── prachar ── */
+prachar: {
+  counts: [['53', 'Endpoints'], ['19', 'Data tables'], ['11', 'Screens'],
+           ['1', 'Source of truth', 'The audience is the CRM — never an export']],
+  caps: [
+    ['Audiences', 'from the CRM, not a CSV', [
+      'Audiences are built from <b>Graha contacts</b> — the CRM you already keep, not a list exported six weeks ago.',
+      '<b>Preview the audience</b> before sending. You see who it resolves to, then you send.',
+      'The audience is re-resolved at send time, so a contact who unsubscribed yesterday is not in today’s send.',
+      'The segmentable fields are published, so you can see what you can filter on before you build a list.',
+    ]],
+    ['Templates and lint', 'prachar_templates', [
+      'One template renders <b>per recipient</b>, so personalisation is a field rather than a mail merge.',
+      '<b>Compliance classes</b> and a <b>lint</b> step that checks a template before it goes anywhere.',
+      'Templates are reusable objects shared with Varta — not a copy per campaign.',
+      'Edit or retire a template centrally; every campaign that uses it follows.',
+    ]],
+    ['Campaigns', 'prachar_campaigns', [
+      'Send now, or <b>schedule</b> for later.',
+      'Out through <b>WhatsApp or email</b>, on the same campaign record.',
+      '<b>Per-recipient</b> delivery and engagement — you know who received it, not just how many.',
+      'Campaign statistics, and a dashboard across campaigns.',
+      'Edit or delete a campaign before it sends. Once it has sent, the record stays.',
+    ]],
+    ['Sequences', 'prachar_sequences', [
+      'Multi-step <b>sequences</b>: a series of messages over days, not a single blast.',
+      'Enrol contacts, and <b>pause</b> or <b>resume</b> a running sequence.',
+      'Per-sequence statistics and a log of every step that fired for every enrolment.',
+      'Steps are added and removed without rebuilding the sequence.',
+    ]],
+    ['Events', 'prachar_events', [
+      'Events with a <b>registration</b> flow — a seminar, a webinar, a client briefing.',
+      'A registration list you can work, with each registration’s state.',
+      'The attendee is a Graha contact, so the follow-up starts where the relationship already is.',
+      'Registration state per attendee, so “who actually came” is data rather than a memory.',
+    ]],
+    ['Paid ads and unsubscribes', 'the two ends', [
+      '<b>Ad accounts</b> connected and synced, with campaign <b>insights</b> pulled back.',
+      'An overview that puts <b>paid spend beside the organic sends</b> on the same screen.',
+      '<b>Unsubscribes are first-class</b>: a public unsubscribe endpoint, a suppression list, and honouring it is automatic.',
+      'Automations that trigger a send from something happening elsewhere in the product.',
+    ]],
+  ],
+  proof: [
+    ['The audience cannot go stale.',
+     'Every marketing tool that lives outside the CRM works from an export, and every export is wrong by the time it is used. Here the audience <b>is</b> the CRM query — resolved at send time, so a contact who unsubscribed yesterday is not in today’s send.',
+     'Audiences resolve against <b>graha_contacts</b> at send. There is no imported list to go stale.'],
+    ['Per-recipient, not per-campaign.',
+     'Knowing that 4,000 messages were sent tells you nothing. Knowing that <b>this</b> client opened it tells the person who calls them tomorrow something useful — and it writes back to the contact record.',
+     'Delivery and engagement post back per recipient into <b>prachar_campaign_contacts</b>, then onto the contact.'],
+    ['A template is checked before it is sent.',
+     'Compliance classes and a lint step run over a template before it reaches anybody. For a professional-services firm, where what you may say is constrained by your institute, that check is not decoration.',
+     'A compliance class per template and a lint endpoint, with per-org overrides where the rules differ.'],
+    ['Unsubscribe is built in, not bolted on.',
+     'A public unsubscribe endpoint, a suppression list, and automatic honouring of it. The alternative — a suppression list somebody maintains by hand — is how a firm ends up emailing someone who asked twice to be left alone.',
+     '<b>prachar_unsubscribes</b> is consulted at audience resolution, not at send time as an afterthought.'],
+  ],
+  india: 'Outbound here is <b>WhatsApp-first</b>, because that is the channel Indian customers answer — and it runs through your own business account, so Meta bills you and Aekam takes no margin on your messages. Compliance classes exist because a professional firm’s outbound is constrained by its institute: <b>the ICAI bars prospecting email for member firms</b>, and the product carries per-org overrides rather than pretending the rule does not exist.',
+  replaces: ['Mailchimp, and the export from the CRM that feeds it.',
+             'A list that is six weeks old and includes two people who unsubscribed.',
+             'A separate events tool for a seminar you run twice a year.',
+             '“How did that campaign do?” answered with an open rate and nothing else.'],
+  roles: [
+    ['Marketing', 'Builds audiences, writes templates, schedules campaigns and sequences, runs the events.'],
+    ['Sales', 'Sees what a contact was sent and what they did with it, on the contact record, before calling.'],
+    ['Compliance / partner', 'Sets the compliance class. The lint runs before anything leaves.'],
+    ['Owner', 'Reads paid spend beside organic reach on one screen, rather than in two dashboards.'],
+  ],
+  scenario: [
+    ['The audience is a query', 'Clients in Gujarat with a GST registration and no filing this quarter. It resolves against the CRM — no export, no CSV.'],
+    ['The template is linted', 'It renders per recipient, so each one is addressed properly. The compliance class is checked before it goes anywhere.'],
+    ['It is previewed, then scheduled', 'The list is 340 contacts. Two unsubscribed last month and are <b>not in it</b>. It is scheduled for Tuesday, 09:00.'],
+    ['It sends on both channels', 'WhatsApp where there is an opt-in, email otherwise — one campaign record, two channels.'],
+    ['Results arrive per person', 'Delivery and engagement post back <b>per recipient</b> and land on the contact record.'],
+    ['Sales picks it up', 'A rep opening a contact tomorrow sees what was sent and what they did. The follow-up is informed rather than cold.'],
+  ],
+  owns: ['prachar_campaigns', 'prachar_campaign_contacts', 'prachar_templates', 'prachar_sequences',
+         'prachar_sequence_steps', 'prachar_sequence_enrollments', 'prachar_sequence_logs',
+         'prachar_events', 'prachar_event_registrations', 'prachar_unsubscribes',
+         'prachar_automations', 'prachar_ad_accounts', 'prachar_ad_campaigns', 'prachar_ad_insights'],
+  ownsNote: 'Nineteen tables — and <b>graha_contacts</b> is not one of them. Prachar reads the CRM rather than copying it, which is the whole reason an audience here cannot be out of date.',
+},
+
+/* ─────────────────────────────────────────────────────────── varta ── */
+varta: {
+  counts: [['13', 'Endpoints'], ['7', 'Data tables'], ['6', 'Screens'],
+           ['0', 'Margin on your messages', 'Meta bills you directly — we take no cut']],
+  caps: [
+    ['The business account', 'your own WABA', [
+      'Connect <b>your own</b> WhatsApp Business account. The number is yours and stays yours.',
+      'More than one account, where a firm runs more than one number.',
+      'Disconnect without losing the conversation history that came through it.',
+      'Nothing is sent until an account is connected — there is no shared number, and no pooled sender.',
+    ]],
+    ['Templates', 'because Meta requires them', [
+      'A business-initiated message <b>must</b> use an approved template. That is Meta’s rule, so templates are first-class here rather than an afterthought.',
+      'Templates managed in the product and shared with Prachar.',
+      'Each automation is gated on <b>its own</b> template’s approval — a rejection disables one rule, never the whole feature.',
+      'Remove a template Meta rejected without disturbing the ones that were approved.',
+    ]],
+    ['Conversations', 'varta_conversations', [
+      'One readable <b>thread</b> per customer, not a pile of receipts and a separate inbox.',
+      'The <b>24-hour window</b> is shown, so you know whether you may send freely or must use a template.',
+      'Send into an open conversation from inside the product.',
+      'Replies match back <b>by message id</b>, so they join the thread instead of starting a new one.',
+      'Conversations list across every connected account, so one screen covers a firm with two numbers.',
+    ]],
+    ['Delivery', 'the webhook is the value', [
+      'Delivery status arrives on a <b>webhook</b> — sent, delivered, read, failed — and is matched by message id.',
+      'Inbound replies arrive the same way. A reply does not wait for a poll.',
+      'The ladder is visible: <b>sent → delivered → read</b>, per message, rather than a send count.',
+      '<b>Failed is a state, not a silence.</b> A message that did not arrive says so.',
+    ]],
+    ['Cost', 'varta_rate_card', [
+      'A <b>rate card</b> in the product, so the cost of a conversation category is visible before you send.',
+      '<b>Meta bills your business account directly.</b> Aekam does not resell messages and takes no margin.',
+      'No per-message markup to negotiate, and no usage invoice arriving from us.',
+      'The card is per <b>conversation category</b>, which is how Meta actually prices it.',
+    ]],
+    ['Consent and guardrails', 'number health', [
+      '<b>Opt-in before any template send</b>, with a ledger — a timestamp and a source, not a checkbox nobody recorded.',
+      '<b>STOP unsubscribes</b>, and no rule can override one.',
+      'Quiet hours, and <b>one message per invoice per day</b> however many rules fire.',
+      'Reminders stop the moment an invoice is paid. A WABA that keeps sending is throttled by Meta, then flagged.',
+    ]],
+  ],
+  proof: [
+    ['The number is yours, and so is the bill.',
+     'Kartavaya does not resell WhatsApp messages. You connect <b>your own</b> business account, Meta bills you at Meta’s rate, and we take no margin. There is no per-message markup to negotiate and no usage invoice from us.',
+     'Your WABA credentials, your account. The product holds a <b>rate card</b> so you can see the cost — it does not sit in the payment path.'],
+    ['One thread, both directions.',
+     'A send and its reply are the same conversation because the <b>message id</b> ties them together. No separate outbox, no “which of our numbers did this come from”, and no reply sitting in a phone somebody took home.',
+     'Send stores the Cloud API message id; the webhook matches receipts and replies back to it.'],
+    ['The webhook is the whole point.',
+     'Without it a message goes into silence, which a free <b>wa.me</b> link already does. The inbound endpoint with signature verification is what turns a send into a <b>delivery ladder</b> — sent, delivered, read — and what lets a reply land against the customer.',
+     'Meta signature verification on inbound; sent / delivered / read / failed plus replies, matched by id.'],
+    ['Guardrails that keep your number alive.',
+     'A business account that keeps sending unwanted messages is throttled by Meta and eventually flagged. Opt-in is a ledgered row, STOP cannot be overridden by any rule, quiet hours are enforced, and a reminder stops the moment the invoice is paid.',
+     'Consent held with timestamp and source. One message per invoice per day, however many rules fire.'],
+  ],
+  india: 'WhatsApp is <b>the</b> business channel in India, and this treats it as infrastructure rather than a marketing toy: your own business number, template approval respected, the 24-hour window surfaced, and a consent ledger. It is also how an invoice reaches a customer with <b>the PDF inside the message</b> — something a wa.me deep link can never do, because a deep link carries text and not files.',
+  replaces: ['WhatsApp Web on somebody’s laptop, and the history that leaves with them.',
+             'A BSP reselling you messages at a markup.',
+             'A reply that arrived on a personal phone and was never seen by anyone else.',
+             '“Did they get it?” with no way to answer.'],
+  roles: [
+    ['Account manager', 'Reads and replies in one thread per customer. Knows whether the 24-hour window is open.'],
+    ['Accounts', 'Sends the invoice with the PDF in the message, and watches sent → delivered → read.'],
+    ['Marketing', 'Manages templates, and knows which are approved. Shares them with Prachar.'],
+    ['Owner', 'Owns the business account and the Meta bill. No reseller in the middle.'],
+  ],
+  scenario: [
+    ['The invoice goes out', 'From Ganit, on the firm’s own WhatsApp number, with the PDF inside the message as a template document header.'],
+    ['The id is stored', 'The Cloud API returns a message id. It is kept — and it is what makes everything after this work.'],
+    ['Receipts arrive', 'The webhook posts sent, then delivered, then read. Each is matched back by that id.'],
+    ['The customer replies', '“Can we pay next week?” It matches the same id and <b>joins the thread</b> — it does not start a new conversation with an unknown number.'],
+    ['A person answers', 'From inside the product, in the same thread, while the 24-hour window is open — so no template is needed.'],
+    ['The reminder stops itself', 'When the payment is reconciled at the bank, the dunning rule stops. <b>Nothing chases a customer who has already paid.</b>'],
+  ],
+  owns: ['varta_business_accounts', 'varta_conversations', 'varta_messages', 'varta_contacts',
+         'varta_templates', 'varta_rate_card', 'credit_prices'],
+  ownsNote: 'Seven tables. <b>varta_messages</b> holds the Cloud API message id, which is the single fact that makes a send, its receipts and its reply one conversation rather than three unrelated rows.',
+},
+
+/* ───────────────────────────────────────────────────────── sanvaad ── */
+sanvaad: {
+  counts: [['27', 'Endpoints'], ['11', 'Data tables'], ['24', 'Screens'],
+           ['1', 'Place the decision lives', 'On the record it changed']],
+  caps: [
+    ['Channels and DMs', 'samvada_channels', [
+      'Channels for a team, a project or a topic, with members you manage.',
+      '<b>Direct messages</b> between two people, in the same product as the work.',
+      'A <b>directory</b> of who is in the organisation — by name, never by an ID.',
+      '<b>Mute</b> a channel you do not need today without leaving it.',
+      'Membership is explicit — added and removed deliberately, not inherited from a group somewhere.',
+    ]],
+    ['Messages', 'samvada_messages', [
+      'Messages with attachments, held in object storage with the thread keeping the reference.',
+      '<b>Threaded replies</b>, so a side discussion does not derail the channel.',
+      'Edit and delete your own messages.',
+      '<b>Reactions</b>, which are the cheapest way to say “seen, agreed” without another message.',
+      'Attachments go to object storage; the thread keeps the reference, so history stays fast.',
+    ]],
+    ['Being needed', 'mentions and unread', [
+      'A <b>mention</b> raises a notification for that person. Being needed is explicit, not hoped for.',
+      'A mentions view: everywhere you were named, in one place.',
+      '<b>Read state is per person.</b> An unread count means unread <b>by you</b> — not by the channel.',
+      'Live presence and typing, so you know whether the answer is coming.',
+      'Unread is answerable in one call, so the badge is the same number everywhere you see it.',
+    ]],
+    ['Finding it again', 'in a year', [
+      '<b>Search</b> across messages.',
+      '<b>Pin</b> the messages that matter to a channel, and read the pins as a list.',
+      'A thread anchored to a <b>record</b> — a deal, an invoice, a task — so the conversation is where the work is.',
+      'Search runs across every channel you are a member of, and only those.',
+    ]],
+    ['Sahayak in the channel', 'the AI, in context', [
+      'Ask <b>Sahayak</b> inside a channel, against the organisation’s own data.',
+      'The answer lands in the thread, where the people who needed it are.',
+      'Priced in credits, like every other run — and it says what it cost.',
+    ]],
+    ['Internal, and only internal', 'the boundary', [
+      'This is the firm talking <b>to itself</b>. <b>Varta</b> is the outside line.',
+      'Keeping them separate is what stops an internal note reaching a customer.',
+      'Membership and read state are per person, so a shared channel does not lie about what you have seen.',
+    ]],
+  ],
+  proof: [
+    ['The decision and the record it changed are in the same place.',
+     'A thread belongs to a <b>channel or a record</b>. So the argument about the discount is attached to the deal, and the question about the invoice is attached to the invoice — not in a chat tool that knows nothing about either.',
+     'Threads anchor to a record. Context is structural, not a pasted link that will rot.'],
+    ['A new joiner reads the history instead of asking for it.',
+     'The reason a discussion is worth keeping is that somebody will need it in a year. Anchored to the record, searchable, with the important messages pinned — the history is a resource rather than a scroll.',
+     'Search across messages, pins per channel, and every thread attached to the thing it was about.'],
+    ['Read state is per person, so the count does not lie.',
+     'A shared inbox where “read” means somebody read it is worse than no signal at all. Here unread means unread <b>by you</b>, which is the only version of that number that is any use.',
+     'Read state stored per user per channel, not a flag on the message.'],
+    ['Internal stays internal.',
+     'The single most expensive messaging mistake is an internal note reaching a customer. Sanvaad and Varta are separate modules with separate data — the boundary is architectural, not a habit of being careful.',
+     'Separate tables, separate surfaces. <b>samvada_</b> is inside; <b>varta_</b> is outside.'],
+  ],
+  india: 'Runs alongside WhatsApp rather than trying to replace it: <b>Varta</b> is the outside line and Sanvaad is the inside one, so what a firm says to itself and what it says to a customer are structurally different things. Attachments and message history stay in <b>Singapore</b> under the product’s residency rule.',
+  replaces: ['A WhatsApp group for work, and the history that leaves with whoever set it up.',
+             'A Slack subscription for a firm that mostly needs to talk about records.',
+             'An email thread with eleven people, four of whom stopped reading.',
+             '“Why did we agree to that?” asked about a decision made two years ago.'],
+  roles: [
+    ['Everyone', 'Talks about the work, on the work. Sees what they were mentioned in. Reacts instead of replying “ok”.'],
+    ['Team lead', 'Runs channels, pins what matters, and knows a mention will actually reach someone.'],
+    ['New joiner', 'Reads a record’s history and understands the decision without asking four people.'],
+    ['Partner', 'Finds the discussion behind a decision by opening the record, not by searching an inbox.'],
+  ],
+  scenario: [
+    ['A question is raised on the invoice', 'Not in an email. The thread is anchored to the invoice, which is what the question is about.'],
+    ['The right person is pulled in', 'A mention raises a notification for them. They were needed explicitly, not copied hopefully.'],
+    ['The answer arrives with a file', 'An attachment goes into object storage; the thread keeps the reference. The channel is not clogged with a side discussion, because that is a threaded reply.'],
+    ['Sahayak is asked in the channel', 'A grounded question about the client’s history. The answer lands in the thread — and states what it cost.'],
+    ['The decision is pinned', 'One message says what was decided. It is pinned, so it is findable without reading the scroll.'],
+    ['A year later', 'Someone new opens the invoice and reads why. Nobody has to remember, and nobody has to be asked.'],
+  ],
+  owns: ['samvada_channels', 'samvada_channel_members', 'samvada_messages', 'samvada_mentions',
+         'samvada_message_reactions', 'samvada_presence', 'samvada_typing', 'notifications'],
+  ownsNote: 'Eleven tables, all internal. There is deliberately <b>no overlap</b> with the <b>varta_</b> tables that hold customer conversations — which is the architecture that stops an internal note reaching a customer.',
+},
+
+/* ───────────────────────────────────────────────────────── sahayak ── */
+sahayak: {
+  counts: [['92', 'Endpoints'], ['32', 'Data tables'], ['16', 'Screens'],
+           ['78', 'Skills on the shelf', '44 of them armed on a schedule']],
+  caps: [
+    ['The credit model', 'hub_credit_wallets', [
+      'Credits are debited <b>up front</b>, at a price you can see before the run.',
+      '<b>A failed run refunds its credits.</b> You are not charged for an answer you did not get.',
+      'Every run records <b>what it touched and what it cost</b> — every run, not a monthly total.',
+      'Top up an org wallet, and <b>allocate credits to individual users</b>.',
+      'Spend analytics per organisation and per client.',
+    ]],
+    ['Grounded answers', 'against your own data', [
+      'A <b>knowledge base</b> per client: upload documents, add FAQs, and search it.',
+      'Chat grounded in that base, <b>with citations</b> — the answer names what it read.',
+      'Streaming chat with sessions you can return to, and delete.',
+      'Conversation context per surface, so the assistant on a screen knows what screen it is on.',
+    ]],
+    ['The skills shelf', 'hub_skill_templates', [
+      '<b>78 skill templates</b>, each stating <b>who it is for</b> and <b>when to run it</b>.',
+      'Assign a skill to a client or to your own organisation, then run it.',
+      'A run history per skill, so you can see what it has said before.',
+      '<b>Findings can be acknowledged</b>, so a skill stops repeating something you have dealt with.',
+      '<b>44 of the 78 are armed on a schedule</b> — free, model-free, write-free checks that do not need a person to remember them.',
+    ]],
+    ['Content and brand', 'hub_brand_profiles', [
+      'A <b>brand profile</b> per client — tone, audience, what not to say — applied to every generation.',
+      'Generate content, then <b>review and approve</b> it before it goes anywhere.',
+      'A content library with facets, so what was made is findable.',
+      'Quick generation for the one-off, and structured skills for the repeatable.',
+    ]],
+    ['Publishing', 'hub_publish_queue', [
+      'Connect social accounts <b>per client</b> through OAuth.',
+      '<b>Schedule</b> a post, bulk-schedule a month, publish now, or cancel.',
+      'A publishing <b>calendar</b> and a queue you can see.',
+      'Per-client platform settings, because not every client is on every platform.',
+    ]],
+    ['The model routing', 'and what is pinned', [
+      'A router picks the model per task. <b>Versions are pinned</b> — an answer does not change because a vendor shipped.',
+      'Web search runs through a <b>dedicated search provider</b>, so a citation is a real page.',
+      '<b>Feedback</b> on an answer is captured and reportable, so quality is measured rather than assumed.',
+    ]],
+  ],
+  proof: [
+    ['Every run says what it cost.',
+     'AI billing that arrives as a monthly surprise is not a product, it is a risk. Credits are debited up front at a visible price, every run logs its own spend, and <b>a failed run refunds</b>. The spend is legible by design.',
+     'Debit, then run, then log to <b>hub_ai_logs</b>; refund on failure. Per-run cost, not a monthly total.'],
+    ['Grounded in your data, and it cites.',
+     'The knowledge base holds your documents, and an answer names what it read. The alternative — a general model answering about your clients from the open web — is the thing that makes AI unusable in a professional firm.',
+     '<b>hub_kb_documents</b> and <b>hub_kb_chunks</b>, scored against a minimum threshold, with citations returned.'],
+    ['Pinned versions, so answers do not drift.',
+     'A model silently upgraded underneath you changes what your firm gets told, with no release note and no way to reproduce last month’s answer. Versions here are pinned deliberately.',
+     'Explicit model versions in the router. <em>Never</em> a floating <b>-latest</b> tag.'],
+    ['Skills that say who they are for.',
+     'A catalogue of AI features nobody knows when to run is shelfware. Every template carries <b>used_by</b> and <b>when_to_run</b> — the sentence that tells a person whether this one is theirs.',
+     '78 templates, all carrying both fields. <b>44 are armed on a schedule</b>; the rest are run on demand.'],
+  ],
+  india: 'Deliberately built on <b>cheap, pinned models</b> and a dedicated search provider rather than the most expensive option — because an AI feature that costs more than the work it saves does not get used in an Indian SMB. Credits are priced in the product and visible before the run, and the grounding is your own client files rather than the open web.',
+  replaces: ['A ChatGPT subscription per person, with your client data pasted into it.',
+             'An AI bill that arrives monthly and cannot be attributed to anything.',
+             'A separate social scheduling tool, and its own per-client logins.',
+             'Answers about your clients, generated from the open web.'],
+  roles: [
+    ['Any user', 'Asks a grounded question and gets an answer with citations — and sees what it cost.'],
+    ['Account manager', 'Runs skills for a client, reviews generated content, schedules the month’s posts.'],
+    ['Admin', 'Tops up the wallet, allocates credits per user, and reads spend analytics.'],
+    ['Partner', 'Sees AI spend as a line they can attribute, not a subscription they cannot.'],
+  ],
+  scenario: [
+    ['A question is asked', 'About a client’s engagement history. The price of the run is visible <b>before</b> it starts.'],
+    ['Credits are debited up front', 'Not estimated, not billed later. The wallet moves now, and the ledger records it.'],
+    ['It is grounded, and it cites', 'The knowledge base holds the client’s documents. The answer names what it read, so it can be checked.'],
+    ['The model is the pinned one', 'A specific version, not a floating tag. Ask again next month and the behaviour has not moved underneath you.'],
+    ['A run fails', 'The provider errors. <b>The credits are refunded.</b> You are not charged for an answer you did not get.'],
+    ['The spend is legible', 'Every run has a cost line. At month end the number is attributable to work, not a subscription nobody can account for.'],
+  ],
+  owns: ['hub_credit_wallets', 'hub_credit_transactions', 'hub_ai_logs', 'hub_skill_templates',
+         'hub_client_skills', 'hub_skill_runs', 'hub_org_skills', 'hub_kb_documents', 'hub_kb_chunks',
+         'hub_chat_sessions', 'hub_chat_messages', 'hub_brand_profiles', 'hub_content_items',
+         'hub_content_approvals', 'hub_publish_queue', 'hub_social_accounts', 'ai_feedback'],
+  ownsNote: 'Thirty-two tables — and the two that matter commercially are <b>hub_credit_wallets</b> and <b>hub_ai_logs</b>: the wallet the run debits, and the line it writes saying what it cost. Nothing is silently billed.',
+},
+
+/* ────────────────────────────────────────────────────────── dristi ── */
+dristi: {
+  counts: [['19', 'Endpoints'], ['19', 'Data tables'], ['15', 'Screens'],
+           ['0', 'Tables it writes to', 'Read-only by construction']],
+  caps: [
+    ['The standing views', 'one per spine', [
+      '<b>Overview</b> — the firm on one screen.',
+      '<b>Revenue</b> from Ganit, <b>pipeline</b> from Graha, <b>sales</b> from Vikray, <b>HR</b> from Manav.',
+      'Computed at read time, so a figure is as current as the record behind it.',
+      'No nightly copy and no warehouse to fall behind.',
+      '<b>Support tickets and outbound</b> are in scope too — service load and what the firm sent, beside revenue and headcount.',
+    ]],
+    ['Dashboards', 'dristi_dashboards', [
+      'Saved dashboards you build, from a set of widget types.',
+      'Edit and remove them as the question changes.',
+      'A dashboard is a saved arrangement, not a request to a developer.',
+      '<b>Widget types are published</b>, so you know what a dashboard can hold before you start building one.',
+      'A dashboard belongs to the organisation — the partner and the analyst are looking at the same one.',
+    ]],
+    ['The pivot builder', 'the unplanned question', [
+      'A <b>query builder</b> for the question nobody planned a report for.',
+      'Dimensions and measures across the modules that hold them.',
+      'The answer to “can it show me…” is usually yes, without a change request.',
+      'Ask <b>across</b> modules in one query — invoices against employees, orders against territories.',
+    ]],
+    ['Scheduled reports', 'a subscription', [
+      'The same queries on a timer. <b>A report is a subscription</b>, not a task somebody remembers.',
+      'Delivered by email to whoever needs it, on the morning they need it.',
+      '<b>Run now</b> when you cannot wait, and <b>logs</b> of every delivery so a missing report is diagnosable.',
+      'Delivery can be passphrase-protected.',
+      'Re-point a schedule at different recipients without rebuilding the report behind it.',
+    ]],
+    ['Exports', 'when the answer has to leave', [
+      'Export any report type for the people who will always want a spreadsheet.',
+      'Downloads go through object storage rather than being built in a request.',
+      'The export is generated on request, so it is never a stale file somebody saved last quarter.',
+    ]],
+    ['What it will not do', 'this is the feature', [
+      '<b>It writes no business data.</b> No report can alter what it reports on.',
+      'Drafts, credit notes and soft-deleted rows are <b>excluded</b> from revenue.',
+      'So a headline figure matches its own breakdown — which is exactly the bug that was found and fixed here.',
+      '<b>It keeps no copy of your data.</b> Remove Dristi and not one business record is lost.',
+    ]],
+  ],
+  proof: [
+    ['Read-only by construction.',
+     'Dristi writes no business data at all. A reporting layer that can write is a reporting layer that can corrupt what it reports on, and every “the dashboard changed my data” incident starts there. This one cannot.',
+     'It reads across the other modules’ tables and writes only its own dashboards, schedules and logs.'],
+    ['The headline matches the breakdown.',
+     'A revenue dashboard here once reported <b>3.2× the real figure</b> — drafts counted, credit notes added instead of subtracted, soft-deleted rows included. It was measured, fixed, and the exclusions are now the rule everywhere revenue is aggregated.',
+     'Drafts, credit notes and soft-deleted rows excluded from every revenue aggregate. <em>Found by measuring, not by assuming.</em>'],
+    ['Live, not last night.',
+     'Numbers are computed at read time across the modules that own them. There is no warehouse, no nightly ETL, and therefore no window in which the dashboard and the record disagree.',
+     'A request fans out over the other modules’ tables and aggregates. Nothing is copied ahead of time.'],
+    ['A report is a subscription.',
+     'The partner gets Monday’s figures on Monday without asking on Monday. Scheduled queries deliver by email, with a log of every delivery — so a report that did not arrive is a diagnosable event rather than a suspicion.',
+     '<b>dristi_scheduled_reports</b> on a timer, with <b>dristi_report_logs</b> per delivery and a run-now action.'],
+  ],
+  india: 'Reports the numbers an Indian firm is actually asked for — GST-relevant turnover that is not inflated by drafts, receivables aging, statutory payroll totals — and reports them from the systems that produced them rather than from a re-keyed summary. <b>Turnover figures feed registration and audit thresholds</b>, which is precisely why the exclusions above are not a detail.',
+  replaces: ['A monthly management pack assembled by hand over two days.',
+             'Four dashboards in four tools that disagree with each other.',
+             'A partner asking for Monday’s numbers, on Monday.',
+             'A warehouse, an ETL job, and the window in which both are wrong.'],
+  roles: [
+    ['Partner / owner', 'Reads the overview. Subscribes to what they need and stops asking for it.'],
+    ['Finance', 'Revenue, receivables and payables — from the ledger, not a re-keyed summary.'],
+    ['Sales manager', 'Pipeline and attainment, computed from the same rows the reps are working.'],
+    ['Anyone with a new question', 'Builds it in the pivot builder. No change request, no waiting.'],
+  ],
+  scenario: [
+    ['A question is asked at 09:00', 'Revenue by client by month, for the quarter. Nobody has built this report before.'],
+    ['It fans out', 'The request reaches Ganit for invoices, Graha for clients, Vikray for orders — the modules that own the data.'],
+    ['It computes now', 'At read time. There is no overnight copy, so the figure is as current as the record behind it.'],
+    ['The number is honest', 'Drafts, credit notes and soft-deleted rows are excluded — so the headline agrees with its own breakdown.'],
+    ['It becomes a subscription', 'Saved as a scheduled report, delivered by email every Monday at 07:00. Nobody has to remember.'],
+    ['It never writes back', 'Not one business row was altered by any of this. <b>Dristi reads everything and writes nothing.</b>'],
+  ],
+  owns: ['dristi_dashboards', 'dristi_scheduled_reports', 'dristi_report_logs'],
+  ownsNote: 'Nineteen tables are <b>read</b>; exactly three are written, and all three are Dristi’s own — a dashboard, a schedule and a delivery log. <b>Not one business row is writable from here</b>, and that is the design rather than a limitation.',
+},
+
+};
+
 /* ══ Rendering ══════════════════════════════════════════════════════════ */
 
 const esc = s => String(s);
 const FAMILY_LABEL = { revenue: 'Revenue', people: 'People', conversation: 'Conversation', intelligence: 'Intelligence' };
 
-function footer(left, right) {
+/* The page number is left EMPTY here and stamped after the visibility filter
+   runs. The same source renders three documents — the full book, the overview
+   deck and a four-sheet module brochure — and a number baked in at render time
+   is correct in at most one of them. Numbering what is actually visible is the
+   only version that is right in all three. */
+function footer(left) {
   return `<div class="foot">
     <div class="foot__brand">${lotus(2)} <span>Kartavaya &middot; kartavaya.com</span></div>
     <div>${esc(left)}</div>
-    <div>${esc(right)}</div>
+    <div class="foot__pg"></div>
   </div>`;
 }
 
@@ -719,10 +1981,12 @@ function coverPage() {
       <div class="cover__deva">कर्तव्य &nbsp;&middot;&nbsp; Kartavaya</div>
       <p class="cover__lede">One place to run an Indian business — CRM, GST invoicing, sales orders,
         signatures, HR, attendance, payroll, marketing, WhatsApp, messaging, AI and reporting.
-        This document shows, one page at a time, what actually happens inside each of them.</p>
+        This document shows what actually happens inside each of them.</p>
       <div class="cover__rule"></div>
       <div class="cover__meta">
-        <b>How to read a page</b> &nbsp;·&nbsp; the flow runs left to right in five steps<br/>
+        <b class="book-only">Four sheets per module</b><span class="book-only"> &nbsp;·&nbsp;
+          Overview &nbsp; Capabilities &nbsp; Proof &nbsp; In practice<br/></span>
+        <b>How to read the flow</b> &nbsp;·&nbsp; left to right, in five steps<br/>
         <b>Families</b> &nbsp;·&nbsp; Revenue &nbsp; People &nbsp; Conversation &nbsp; Intelligence<br/>
         <b>By</b> &nbsp;·&nbsp; Aekam Inc &nbsp;·&nbsp; built in India, hosted in Singapore
       </div>
@@ -795,7 +2059,7 @@ function mapPage() {
          <b>Dristi</b> reads across every module and writes to none of them.
          Neither owns a spine — they are what you point at the rest.</p>
     </div>
-    ${footer('The shape of the product', 'Page 2')}
+    ${footer('The shape of the product')}
   </section>`;
 }
 
@@ -845,18 +2109,142 @@ function modulePage(m, index) {
       </div>
     </div>
 
-    ${footer(`${m.name} ${m.deva}`, `Page ${index + 3}`)}
+    ${footer(`${m.name} ${m.deva} &middot; Overview`)}
   </section>`;
 }
 
-document.getElementById('deck').innerHTML =
-  coverPage() + mapPage() + MODULES.map(modulePage).join('');
+/* ── The depth sheets ──────────────────────────────────────────────────── */
+/* All three carry the SAME data-code as the overview sheet, so `?only=<code>`
+   already selects the whole four-sheet brochure without special-casing.
+   `page--deep` is what `?level=overview` hides to produce the short deck. */
 
-/* `?only=<code>` — the single-module export. Also accepts `_cover` and `_map`. */
-const only = new URLSearchParams(location.search).get('only');
+function deepPage(m, title, tag, inner) {
+  return `<section class="page page--deep fam-${m.family}" data-code="${m.code}">
+    <header class="rhead">
+      <div class="rhead__name">${m.name} <span class="deva">${m.deva}</span></div>
+      <div class="rhead__title">${title}</div>
+      <div class="rhead__tag">${tag}</div>
+    </header>
+    ${inner}
+    ${footer(`${m.name} ${m.deva} &middot; ${tag}`)}
+  </section>`;
+}
+
+/* Sheet 2 — what is actually in the module. */
+function capsPage(m) {
+  const d = DEEP[m.code];
+  const groups = d.caps.map(([label, note, items]) => `
+    <div class="cap">
+      <div class="cap__label">${label} <i>${note}</i></div>
+      <ul>${items.map(x => `<li>${x}</li>`).join('')}</ul>
+    </div>`).join('');
+
+  const counts = d.counts.map(([n, label, note]) => `
+    <div class="count"><b>${n}</b><span>${label}</span>${note ? `<i>${note}</i>` : ''}</div>`).join('');
+
+  return deepPage(m, 'Everything the module actually does.', 'Capabilities', `
+    <div class="sheet">
+      <div class="caps">${groups}</div>
+      <div class="counts">${counts}</div>
+    </div>`);
+}
+
+/* Sheet 3 — why the claims hold. Each card pairs a claim with the mechanism
+   underneath it, because a claim without one is a slogan and the buyer's
+   technical reviewer reads the mechanism first. */
+function proofPage(m) {
+  const d = DEEP[m.code];
+  const cards = d.proof.map(([title, body, how], i) => `
+    <div class="pcard">
+      <div class="pcard__n">${String(i + 1).padStart(2, '0')}</div>
+      <h4>${title}</h4>
+      <p>${body}</p>
+      <div class="pcard__how"><b>How:</b> ${how}</div>
+    </div>`).join('');
+
+  return deepPage(m, 'Why it holds up under a hard look.', 'Proof', `
+    <div class="sheet">
+      <div class="proof">${cards}</div>
+      <div class="strip">
+        <div class="strip__box">
+          <div class="strip__label">India, specifically</div>
+          <p>${d.india}</p>
+        </div>
+        <div class="strip__box strip__box--plain">
+          <div class="strip__label">What it replaces</div>
+          <ul>${d.replaces.map(r => `<li>${r}</li>`).join('')}</ul>
+        </div>
+      </div>
+    </div>`);
+}
+
+/* Sheet 4 — a Tuesday. The scenario runs DOWN where the overview flow runs
+   across: the same five-beat grammar at a finer grain, turned ninety degrees
+   so a reader recognises it without being told. */
+function practicePage(m) {
+  const d = DEEP[m.code];
+  const beats = d.scenario.map(([title, body], i) => `
+    <div class="beat">
+      <div class="beat__n">${String(i + 1).padStart(2, '0')}</div>
+      <h5>${title}</h5>
+      <p>${body}</p>
+    </div>`).join('');
+
+  const who = d.roles.map(([role, does]) => `
+    <div class="who__row"><div class="who__role">${role}</div><div class="who__does">${does}</div></div>`).join('');
+
+  return deepPage(m, 'One day, start to finish.', 'In practice', `
+    <div class="sheet">
+      <div class="practice">
+        <div>
+          <div class="subhead">A worked example</div>
+          ${beats}
+        </div>
+        <div style="display:flex;flex-direction:column;min-height:0">
+          <div class="subhead">Who uses it, and for what</div>
+          <div class="who">${who}</div>
+          <div class="owns">
+            <div class="subhead">The data it holds</div>
+            <div class="owns__grid">${d.owns.map(t => `<span class="owns__t">${t}</span>`).join('')}</div>
+            <p class="owns__note">${d.ownsNote}</p>
+          </div>
+        </div>
+      </div>
+    </div>`);
+}
+
+document.getElementById('deck').innerHTML = coverPage() + mapPage()
+  + MODULES.map((m, i) => modulePage(m, i) + capsPage(m) + proofPage(m) + practicePage(m)).join('');
+
+/* ── Which sheets this render is for ───────────────────────────────────────
+   `?only=<code>`   one module's four sheets (also accepts `_cover`, `_map`)
+   `?level=overview` cover + map + the thirteen overview sheets, no depth
+   neither            the full book                                          */
+const params = new URLSearchParams(location.search);
+const only = params.get('only');
+
+if (params.get('level') === 'overview') {
+  document.querySelectorAll('.page--deep').forEach(el => el.remove());
+  /* The cover promises four sheets per module. In the short deck it does not,
+     because there are not four — a cover that describes a document the reader
+     is not holding is the fastest way to lose them on page one. */
+  document.querySelectorAll('.book-only').forEach(el => el.remove());
+}
 if (only) {
   document.body.classList.add('only');
   document.querySelectorAll(`.page[data-code="${only}"]`).forEach(el => el.classList.add('show'));
+}
+
+/* Stamp page numbers over what is VISIBLE, after the filter above. A number
+   baked in at render time would be right in one of the three documents and
+   wrong in the other two. */
+{
+  const visible = [...document.querySelectorAll('.page')]
+    .filter(el => !document.body.classList.contains('only') || el.classList.contains('show'));
+  visible.forEach((el, i) => {
+    const pg = el.querySelector('.foot__pg');
+    if (pg) pg.textContent = `Page ${i + 1} of ${visible.length}`;
+  });
 }
 </script>
 </body>

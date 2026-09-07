@@ -12,7 +12,176 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
-## 2026-09-07 (last) — ✅ THE VIEW STRIPS TOO (`?view=`), AND HOW THEY WERE FOUND
+## 2026-09-07 (last) — ✅ THE MODULE SHEETS ARE FOUR PAGES, AND THE SCREEN COUNT WAS WRONG
+
+Marketing collateral only — **no product code changed**. Each module PDF was one
+A4 sheet, which is a summary rather than something you can sell from. It is now
+four: **Overview** (unchanged), **Capabilities**, **Proof** (each claim with its
+mechanism) and **In practice** (a worked day, the roles, the tables).
+
+Three documents, still one source — `docs/marketing/module-flows.html`:
+
+| Output | Sheets | Selected by |
+|---|---|---|
+| `pdf/kartavaya-product-book.pdf` | 54 | — |
+| `pdf/kartavaya-module-flows.pdf` | 15 | `?level=overview` |
+| `pdf/modules/kartavaya-<code>.pdf` | 4 | `?only=<code>` |
+
+⚠ **THE "SCREENS" FIGURE WAS WRONG ON ELEVEN OF THIRTEEN SHEETS**, and nine
+overstated: **Graha claimed 34 against a real 25**, Sahayak 25 against 16,
+Vikray 20 against 13. It had been read from the **Pages** column of
+`docs/MODULES.md`, which counts every file under `pages/` **including
+`__tests__`**. Corrected to the non-test count; `docs/marketing/README.md`
+carries the command to re-derive it. **Endpoint and table counts were correct.**
+
+⚠ **Writing the capability sheets under the rule "every line is a real route or
+table" showed the one-pagers were omitting whole subsystems** — not merely being
+brief. Vikray's sheet never mentioned **stock or targets**; Manav's never
+mentioned **recruitment, assets, shift bids, swaps, expense claims or
+offboarding**; Ganit's never mentioned **bank-statement import and matching**;
+Pahchan's never mentioned **consent or regularisations**, which is the entire
+DPDP surface a buyer asks about. The product was being undersold by its own
+collateral.
+
+A second silent layout fault was found and is now a build check:
+`assertLabelsFit` fails on a capability heading that wraps and drops its group's
+rule out of line — **twenty wrapped on the first render**. Verified against a
+deliberately broken label, as was the pre-existing overflow check.
+
+Measured, and the result was the opposite of the expectation: **the tightest
+sheets are the OVERVIEW ones nobody touched** — `kray/Overview` has **0.7mm** of
+slack, so the next sentence added there will overflow. The new dense sheets have
+more room than the old sparse ones.
+
+### ⚠ EVIDENCE AUDIT BEFORE SENDING — live row counts, 2026-09-07
+
+Every module's claims were checked against a **live read**, not against this
+file, because two of the rows this file carries were stale in opposite
+directions. ⚠ **Row counts are post-migration-260**, which cleared 1,441 rows in
+every org except Aekam so that what remains was produced BY the new flows — so a
+**0 means "not exercised since 2026-09-01", not "broken"**. It is still not ✅.
+
+**🔴 TWO CLAIMS IN THE COLLATERAL WERE FALSE AND ARE FIXED.** Both were Vetana,
+and both were taken from `docs/modules/vetana.md`, which is wrong:
+
+- *"No payslip exists until approval."* **False.** The only run is `processed`,
+  `approved_by` NULL — and `PS-2026-0001` exists at status `generated`. Payslips
+  are created by processing. What is true, and is what the sheet now says:
+  `disburse_payslip` refuses any payslip not in `approved` state, so **no salary
+  is payable until the run is approved.**
+- *"The role that runs payroll cannot approve it."* **Overstated**, and
+  `routers/vetana.py:2554` says so in a comment naming `docs/modules/vetana.md`
+  as promising the opposite. The four-eyes rule is **conditional**: every org has
+  exactly one Vetana approver today, so an unconditional rule would stop payroll
+  company-wide. Where a second approver exists the runner cannot release; where
+  one does not, release proceeds and is logged as a **self-approval**.
+  `_RELEASE_LEVEL` is also still held at `admin` pending `PROPOSED_071`.
+
+⚠ **`docs/modules/vetana.md` still carries both wrong sentences** and is
+hand-written (not generated), so regenerating will not fix it.
+
+**Sahayak was understated, not overstated:** the sheet said ten skills armed;
+live is **44 of 78**. See the corrected RAG/KB row below — and note the 610 runs
+are all user-triggered, so "unattended" remains unproven.
+
+| Module | Rows behind the claims | Send? |
+|---|---|---|
+| **E-Sign** | 6 documents, 10 signers, **52 audit events**, statuses incl. `completed` | ✅ strongest |
+| **Sahayak** | 332 AI logs, 610 skill runs, 93 content items, KB 8/8, 42 chat messages | ✅ |
+| **Sanvaad** | 12 channels, **196 messages**, 18 mentions | ✅ |
+| **Dristi** | 4 dashboards, 1 scheduled report, **5 delivery logs** | ✅ |
+| **Vetana** | 1 run, 1 payslip — PF 1,800 on the ₹15,000 ceiling, PT 200 Gujarat | ✅ core only; approval/disbursement never exercised |
+| **Graha** | 3 clients, 5 contacts, 1 territory, 4 obligations | 🟡 **0 deals, 0 merges, 0 approvals, 0 web forms, 0 inbound email, 0 scoring rules** |
+| **Ganit** | 1 invoice, 2 expenses, 1 contract, 2 vendors, 3 vendor bills | 🟡 **`ganit_payments` still 0**; bank formats 0, statement lines 0, recurring 0 |
+| **Prachar** | 13 campaigns, 13 templates, 3 sequences, 3 events, 6 unsubscribes | 🟡 **0 campaign_contacts** — per-recipient delivery unproven; 0 enrollments, 0 registrations |
+| **Vikray** | 1 order | 🟡 **0 stock, 0 stock moves, 0 targets** |
+| **Manav** | 1 employee, 2 attendance, 1 salary structure | 🔴 **0 leave requests, 0 candidates, 0 assets, 0 claims, 0 shifts, 0 bids, 0 swaps, 0 offboarding, 0 documents** |
+| **Pahchan** | **every table 0** — punches, consents, enrolments, sites, regularisations | 🔴 do not demo |
+| **Kray** | **0 purchase orders, 0 receipts, 0 approvals** — never exercised | 🔴 do not demo |
+| **Varta** | **every table 0** — no business account connected | 🔴 blocked on owner creds |
+
+`outbound_log`: **718 sent**, 115 suppressed, 1,142 total — mail genuinely leaves.
+
+---
+
+## 2026-09-07 (mobile) — ✅ THE NATIVE APP'S TABS ARE ADDRESSABLE — and it is NOT "the same"
+
+Asked for "the same for the mobile app tabs". Two different things carry that
+name and they were in opposite states:
+
+- **`frontend/ios` + `frontend/android`** are Capacitor containers with
+  `webDir: "dist"` — they ship the WEB bundle, so all four of today's passes
+  already apply. Proven rather than argued: `npx cap sync android` put today's
+  exact `index-CYhHzPSL.css` into the container, carrying `.m2tabs a`, the
+  `ModuleTabs` anchor, the `?open=` skeleton labels and the `?view=` allow-list.
+  The checked-in copies were stale AND untracked — artifacts a sync regenerates,
+  not something to fix.
+- **`mobile/`** is the native React Native app, and it needed real work.
+
+### ⚠ "The same" is not possible, and building it as though it were would be wrong
+
+React Native has no browser: no second tab, no href, no ctrl-click. The app also
+does **not** restore navigation state on a cold start, so "survives a refresh"
+buys nothing either. Exactly ONE of the web's payoffs crosses over, and on a
+phone it is the one that matters:
+
+> **A push notification can land on the right tab.**
+
+### `Approvals` had no deep link AT ALL
+
+Not a missing tab — a missing screen. `group: 'work'` puts it outside the rule
+`nav/__tests__/linking.test.ts` enforces (scoped to `group: 'modules'`), so
+nothing was looking — and Approvals is among the likeliest things for a push to
+be about.
+
+| screen | was | path now |
+| --- | --- | --- |
+| Approvals | `useState`, **no link at all** | `approvals/:tab?` |
+| Tasks (bottom tab) | `useState` segment | `tasks/:segment?` |
+| Vikray · Sales | `useState` tab | `sales/:tab?` |
+| Board | `useState` view | `board/:projectId/:view?` |
+
+`hooks/useRouteTab.ts` is the mobile analogue of `useUrlView`. It uses
+`setParams`, which rewrites the current route in place and pushes nothing — so
+Android's hardware Back still leaves the screen rather than walking backwards
+through every tab the reader looked at.
+
+### The test drives React Navigation's OWN resolver
+
+`linking.ts` fails by doing nothing, and an optional segment is a NEW way to
+fail like that: a `:tab?` React Navigation did not accept would leave
+`approvals` resolving to nothing, opening Today, with no error anywhere. So
+`nav/__tests__/tabsAreAddressable.test.ts` calls `getStateFromPath` against the
+real config instead of asserting on the shape of the strings — a test that
+merely checked the map contained `'approvals/:tab?'` would pass over a syntax
+that does not work. It also pins that **every bare path still resolves**, so no
+link already delivered to a user is broken by the optional segment.
+
+⚠ **Measured: `approvals/nonsense` resolves happily** and hands the screen
+`{ tab: 'nonsense' }`. Nothing in the linking layer rejects it, so the screen's
+allow-list is the only thing between that and a strip with nothing selected.
+`resolveTab` is exported for that test — the suite does not render, by design
+(`src/test/register.mjs`), so the pure guard is the testable half.
+
+### 🟡 `pahchan/ClockScreen` deliberately left in `useState`
+
+It owns the whole window and runs a camera, and `linking.test.ts` already
+records why it has no path. With no deep link there is **no payoff at all** on
+mobile — no browser tab, no state restore — so moving it into the route would be
+change for its own sake. Asserted, so it reads as a decision.
+
+**Mobile: 865 tests pass** (was 846; 19 new), `npm run typecheck` exit 0. Four
+negative controls, each failing only its intended tests: the optional marker
+dropped (2 failed), the allow-list ignored (1), the hook navigating instead of
+setting params (1), a screen reverted to `useState` (1).
+
+⚠ **Not run on a device.** `npm test` does not render and Expo Go cannot run this
+app, so this is verified by the real link resolver and the type-checker, not by a
+build. A cold-restart check on a dev build or APK is still owed.
+
+---
+
+## 2026-09-07 (before that) — ✅ THE VIEW STRIPS TOO (`?view=`), AND HOW THEY WERE FOUND
 
 Verifying the `?open=` deploy on the live site meant grepping the shipped bundle
 for `role="tab"`, and that turned up **eleven more tab strips nobody had
@@ -3265,7 +3434,7 @@ figure in this table as "last measured when its row says", not as current.
 | Org-client billing | 87 | 🟡 **no longer 🔴 — corrected 27 Aug.** Both 500s were DEPLOYED-fixed 26 Aug (`gst_rate` dropped, `invoice_number` allocated, `balance_due` bound — a second bug found while fixing the first). It is 🟡 and not ✅ because **no row has been created through the board yet**; recurring-doesn't-recur is unmeasured since |
 | Liquid glass | 88, 89 | ✅ record; rescope done; enriched 2026-08-25; Apple-pass (buttons/tiles/modal) 2026-08-25 |
 | WhatsApp channel | 38, 39 | ⬜ owner creds (Phase 0.26) |
-| RAG / KB index | 08 | 🔴 empty always; answers grounded on nothing |
+| RAG / KB index | 08 | ✅ **NO LONGER 🔴 — re-measured live 2026-09-07.** `hub_kb_documents` **8**, `hub_kb_chunks` **8**. The old row ("empty always; answers grounded on nothing") was one of the figures this table's own preamble flags as un-re-counted, and it was wrong. Sahayak is in fact the most-exercised module in the product: `hub_ai_logs` **332**, `hub_org_skill_runs` **610**, `hub_chat_messages` **42**, `hub_content_items` **93**. ⚠ **But every one of those 610 runs is `triggered_by` a USER** — there is no cron or system trigger among them, so "the first unattended runs in the product's history" is NOT supported by the run table. Arming is real (**44** of 78 templates carry `trigger_config->>'type'='cron'`, and 45 grants have a `last_run_at`); an unattended run is still unproven. **77 of the 610 runs failed** (~13%). |
 | Employee↔login join | 05 | 🟡 **"0 of 98" is FALSE — corrected 27 Aug from a live read.** It is **14 of 109**: E2E **12 of 83** (one-to-one, 12 distinct logins, 11 department/designation shapes, all linked through the real screens in Phase 0.23) and Unicode **2 of 26**. It still gates payslips and payroll **for the other 95**, and most of those links are impossible — the largest org has far more employees than logins |
 
 ## Structural debt (`PHASE-6`)

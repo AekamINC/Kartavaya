@@ -2,11 +2,16 @@
 
 **Module code** `vetana` · registered in `backend/middleware/role_tiers.py`
 
-Monthly payroll runs with statutory Indian deductions — PF, ESI, PT and TDS — computed per employee. Separated duty: the role that runs payroll cannot approve it.
+Monthly payroll runs with statutory Indian deductions — PF, ESI, PT and TDS — computed per employee. Releasing a run is a separate act on its own permission rung, written to the audit log with a name on it.
+
+⚠ **Two sentences here were wrong until 2026-09-07, and both had been copied into customer-facing collateral.** They are recorded rather than deleted because `routers/vetana.py:2554` already named this file as promising the opposite of what is built, and the next person to write a payroll claim will reach for this paragraph.
+
+- ~~"the role that runs payroll cannot approve it"~~ — the four-eyes rule is **conditional**. Counted live before it was written: every org has exactly **one** Vetana approver, so an unconditional rule would not separate the duty, it would stop payroll company-wide. Where a second approver exists, the person who ran the payroll cannot release it; where one does not, the release proceeds and is logged as a **self-approval**. `_RELEASE_LEVEL` is additionally still held at `admin` pending `PROPOSED_071_vetana_approver_backfill.sql`.
+- ~~"payslips are only issued after it"~~ — payslips are created by **processing**, at status `generated`. Verified live 2026-09-07: the only run is `processed` with `approved_by` NULL, and `PS-2026-0001` exists. What approval actually gates is **money**: `disburse_payslip` refuses any payslip not in `approved` state.
 
 ## Flow
 
-A run is created for a month, pulls employees from Manav, computes gross then each deduction to reach net, and lands in `processed`. Approval is a second, separate action; payslips are only issued after it.
+A run is created for a month, pulls employees from Manav, computes gross then each deduction to reach net, and lands in `processed` — **generating the payslips at that point**, not at approval. Approval is a second, separate action on the release rung; a payslip cannot be marked `disbursed` until it has happened, so nothing is payable on the strength of a calculation alone.
 
 ## Backend
 

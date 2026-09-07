@@ -2,11 +2,17 @@
  * build-pdf.mjs — renders module-flows.html to print-ready PDFs.
  *
  * Outputs, into ./pdf/:
- *   kartavaya-module-flows.pdf      the deck: cover + ecosystem map + one page per module
- *   modules/kartavaya-<code>.pdf    one single-page sheet per module
+ *   kartavaya-product-book.pdf      the book: cover + map + FOUR sheets per module
+ *   kartavaya-module-flows.pdf      the short deck: cover + map + one sheet per module
+ *   modules/kartavaya-<code>.pdf    one four-sheet brochure per module
  *
- * The single-page sheets are the SAME source: `?only=<code>` hides every other
- * sheet, so a one-pager can never drift from the page in the deck.
+ * All three are the SAME source, which is the point: `?only=<code>` selects one
+ * module's four sheets and `?level=overview` drops the depth sheets, so a
+ * brochure handed to a prospect cannot drift from the book it came out of.
+ *
+ * The four sheets of a module are: Overview (the flow), Capabilities (what is
+ * actually in it), Proof (why the claims hold, each with its mechanism) and
+ * In practice (a worked day, who uses it, the data it holds).
  *
  * Fonts are EMBEDDED, from `fonts.css` (see build-fonts.mjs). They were linked
  * from Google Fonts and that silently substituted a Windows system face into
@@ -88,39 +94,101 @@ async function assertNoOverflow(page, label) {
     const mm = 96 / 25.4;
     const pages = [...document.querySelectorAll('.page')].filter(el => el.offsetParent !== null || !document.body.classList.contains('only'));
     pages.forEach(el => { el.style.height = 'auto'; el.style.overflow = 'visible'; });
-    const out = pages.map(el => ({ code: el.dataset.code, h: el.getBoundingClientRect().height / mm }));
+    /* The sheet TAG, not just the module code: a module is four sheets now, and
+       "graha 215.7mm" sends you to look at the wrong one. */
+    const out = pages.map(el => ({
+      code: el.dataset.code,
+      tag: (el.querySelector('.rhead__tag')?.textContent || 'Overview').trim(),
+      h: el.getBoundingClientRect().height / mm,
+    }));
     pages.forEach(el => { el.style.height = ''; el.style.overflow = ''; });
     return out;
   });
   const over = rows.filter(r => r.h > 210);
   if (over.length) {
-    throw new Error(`${label}: ${over.length} sheet(s) overflow 210mm and would be silently clipped — `
-      + over.map(r => `${r.code} ${r.h.toFixed(1)}mm`).join(', '));
+    throw new Error(`${label}: ${over.length} sheet(s) overflow 210mm and would be silently clipped —\n  `
+      + over.map(r => `${r.code}/${r.tag} ${r.h.toFixed(1)}mm (+${(r.h - 210).toFixed(1)})`).join('\n  '));
   }
   return rows.length;
+}
+
+/* Sheets per module: Overview, Capabilities, Proof, In practice. Asserted
+   rather than assumed — a module missing from DEEP would otherwise render
+   three sheets and be noticed by nobody until a prospect had it. */
+const PER_MODULE = 4;
+
+/**
+ * Fail on a capability heading that has wrapped to a second line.
+ *
+ * `.cap__label` is a non-wrapping flex row: the heading text and its note sit
+ * side by side, and when the pair is too wide for the 84mm column it is the
+ * HEADING that breaks internally. Nothing errors — the group simply gets a
+ * taller header, and its rule then sits several millimetres below the rules of
+ * the other two groups in its row. Six groups, three columns: one wrap is
+ * visible immediately as a row that no longer lines up.
+ *
+ * This is the same class of failure as the overflow check: silent, invisible to
+ * the build, and obvious to the prospect holding the sheet. Twenty of these
+ * wrapped on the first render, which is why it is a check and not a habit.
+ */
+async function assertLabelsFit(page, label) {
+  const bad = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.cap__label')) {
+      if (el.offsetParent === null && document.body.classList.contains('only')) continue;
+      const cs = getComputedStyle(el);
+      const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.2;
+      const content = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+      if (content > line * 1.5) {
+        out.push(`${el.closest('.page').dataset.code}: "${el.textContent.trim().replace(/\s+/g, ' ')}"`);
+      }
+    }
+    return out;
+  });
+  if (bad.length) {
+    throw new Error(`${label}: ${bad.length} capability heading(s) wrap to a second line, `
+      + `which drops that group's rule out of line with its row —\n  ` + bad.join('\n  '));
+  }
 }
 
 const browser = await chromium.launch();
 await mkdir(modDir, { recursive: true });
 
-// ── The deck ───────────────────────────────────────────────────────────────
-const deck = await open(browser, src);
-const sheets = await deck.locator('.page').count();
-if (sheets !== CODES.length + 2) throw new Error(
-    `expected ${CODES.length + 2} sheets (cover + map + ${CODES.length} modules), rendered ${sheets}`);
+// ── The book: every sheet ──────────────────────────────────────────────────
+const bookExpected = CODES.length * PER_MODULE + 2;
+const book = await open(browser, src);
+const bookSheets = await book.locator('.page').count();
+if (bookSheets !== bookExpected) throw new Error(
+    `book: expected ${bookExpected} sheets (cover + map + ${CODES.length}x${PER_MODULE}), rendered ${bookSheets}`);
+await assertNoOverflow(book, 'book');
+await assertLabelsFit(book, 'book');
+await book.pdf({ ...PDF_OPTS, path: join(outDir, 'kartavaya-product-book.pdf') });
+await book.close();
+console.log(`book:    ${bookSheets} sheets, none clipped -> pdf/kartavaya-product-book.pdf`);
+
+// ── The short deck: overview sheets only ───────────────────────────────────
+const deck = await open(browser, `${src}?level=overview`);
+const deckSheets = await deck.locator('.page').count();
+if (deckSheets !== CODES.length + 2) throw new Error(
+    `deck: expected ${CODES.length + 2} sheets (cover + map + ${CODES.length} overviews), rendered ${deckSheets}`);
+if (await deck.locator('.page--deep').count() !== 0) throw new Error(
+    'deck: a depth sheet survived ?level=overview');
 await assertNoOverflow(deck, 'deck');
 await deck.pdf({ ...PDF_OPTS, path: join(outDir, 'kartavaya-module-flows.pdf') });
 await deck.close();
-console.log(`deck: ${sheets} sheets, none clipped -> pdf/kartavaya-module-flows.pdf`);
+console.log(`deck:    ${deckSheets} sheets, none clipped -> pdf/kartavaya-module-flows.pdf`);
 
-// ── One sheet per module ───────────────────────────────────────────────────
+// ── One four-sheet brochure per module ─────────────────────────────────────
 for (const code of CODES) {
   const page = await open(browser, `${src}?only=${code}`);
   const visible = await page.locator('.page.show').count();
-  if (visible !== 1) throw new Error(`${code}: expected 1 visible sheet, got ${visible}`);
+  if (visible !== PER_MODULE) throw new Error(
+      `${code}: expected ${PER_MODULE} visible sheets, got ${visible}`);
+  await assertNoOverflow(page, code);
+  await assertLabelsFit(page, code);
   await page.pdf({ ...PDF_OPTS, path: join(modDir, `kartavaya-${code}.pdf`) });
   await page.close();
-  console.log(`  ${code} -> pdf/modules/kartavaya-${code}.pdf`);
+  console.log(`  ${code.padEnd(8)} ${visible} sheets -> pdf/modules/kartavaya-${code}.pdf`);
 }
 
 await browser.close();

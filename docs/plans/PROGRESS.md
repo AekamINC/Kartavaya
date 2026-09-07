@@ -11652,3 +11652,205 @@ failing only its intended test: `select` pushing instead of replacing, `hrefFor`
 dropping the other parameters, the allow-list ignored so any `?view=` value
 renders, and a strip reverted to a button. `npm run check` exit 0;
 `npm run build` exit 0.
+
+## 2026-09-07 (marketing) — the module sheets go from one page to four
+
+The one-pagers were a *summary*, and a summary does not sell. Each module PDF is
+now a four-sheet brochure: **Overview** (unchanged — the five-step flow),
+**Capabilities** (what is actually in the module), **Proof** (four claims, each
+carrying the mechanism underneath it) and **In practice** (a worked day, who
+uses it, the tables it holds).
+
+Three documents now come out of the one source, which is the invariant that
+already made the one-pagers safe and is preserved rather than traded away:
+
+| Output | Sheets |
+|---|---|
+| `pdf/kartavaya-product-book.pdf` | 54 — cover + map + 13 × 4 |
+| `pdf/kartavaya-module-flows.pdf` | 15 — the old short deck, via `?level=overview` |
+| `pdf/modules/kartavaya-<code>.pdf` | 4 — one module, via `?only=<code>` |
+
+Page numbers are stamped **after** the visibility filter, over what is actually
+visible. A number rendered into the markup would be right in one of the three
+documents and wrong in the other two.
+
+### The content rule, and what it turned up
+
+Every capability line corresponds to a **route or table in
+`docs/modules/<code>.md`**. Writing under that rule is what exposed how much the
+one-pagers were leaving on the table — the sheets were not just short, they were
+**omitting whole subsystems**:
+
+- **Vikray** had no mention of **stock, stock moves, targets or the leaderboard**.
+- **Manav** had none of **recruitment, the asset register, shift bids, swaps,
+  expense claims, offboarding or commission schemes** — most of the module.
+- **Ganit** had no **bank-statement import and matching**, no recurring
+  invoices, no estimates, no contracts, no payables.
+- **Pahchan** had no **consent, regularisations, enrolment approval or policy
+  scopes** — i.e. none of the DPDP surface, which is the part a buyer asks about.
+- **E-Sign** had no **OTP, decline, resend or cancel**.
+
+### ⚠ The "Screens" figure was wrong on eleven of thirteen sheets
+
+Nine of them **overstated**: Graha claimed 34 against a real 25, Sahayak 25
+against 16, Vikray 20 against 13. The number had been taken from the **Pages**
+column of `docs/MODULES.md`, which counts every file under `pages/` —
+**including `__tests__`**. A prospect's technical reviewer would have found it.
+It is now the pages-directory count excluding tests, and the README carries the
+one-liner to re-derive it rather than a number to cite. Endpoint and table
+counts were correct and are unchanged.
+
+### A second silent layout fault, and a check for it
+
+`.cap__label` is a non-wrapping flex row. When a heading and its note exceed the
+84mm column the **heading** breaks internally, and that group's rule drops out of
+line with the other two in its row — no error, no warning, just a sheet that
+looks unconsidered. **Twenty of them wrapped on the first render.**
+
+`assertLabelsFit` fails the build on it, and was **verified against a
+deliberately broken label** before being relied on — the same discipline as the
+overflow check it sits beside. Both were re-proved this session.
+
+### Measured, not eyeballed
+
+Sheet heights were measured by releasing the fixed 210mm height, the same way
+the overflow check does. The finding that mattered was the opposite of the
+expectation: **the tightest sheets are the OVERVIEW ones, which nobody
+touched** — `kray/Overview` has **0.7mm** of slack. The dense new sheets have
+more room than the old sparse ones (Capabilities ~6mm worst, Proof ~8mm,
+In practice ~32mm). Nine Capabilities sheets were then topped up from 161–174mm
+to 180–193mm with further real capability lines, so the grid reads as a full
+page rather than a short one.
+
+Build green: 54 + 15 + 13×4 sheets, none clipped, no wrapped heading, Tiro
+Devanagari embedded on every render.
+
+## 2026-09-07 (marketing, later) — the collateral was checked against the DATABASE, and two claims were false
+
+Asked to verify each module's status before the sheets went to prospects. Doing
+it against `docs/STATUS.md` alone would have been wrong twice, in opposite
+directions — that file's own table preamble flags several figures as
+"nobody re-counted today", and two of them were exactly the ones that mattered.
+So: a live read.
+
+### 🔴 Two false claims, both Vetana, both inherited from `docs/modules/vetana.md`
+
+- **"No payslip exists until approval."** The only run is `processed` with
+  `approved_by` NULL, and `PS-2026-0001` exists at status `generated`. Payslips
+  are created by **processing**. The true control is money, not existence:
+  `disburse_payslip` refuses any payslip not in `approved` state.
+- **"The role that runs payroll cannot approve it."** Conditional, and
+  `routers/vetana.py:2554` already carried a comment naming
+  `docs/modules/vetana.md` as promising the opposite. Every org has exactly one
+  Vetana approver, so an unconditional rule would stop payroll company-wide;
+  where a second approver exists the runner cannot release, where one does not
+  the release is logged as a **self-approval**. `_RELEASE_LEVEL` is still held at
+  `admin` pending `PROPOSED_071`.
+
+Both fixed on the sheets **and at the root** — `docs/modules/vetana.md` now
+carries the correction, struck through rather than deleted, because the code
+comment already pointed at that paragraph and the next person will reach for it.
+
+### The stale row went the other way too
+
+`RAG / KB index` was 🔴 *"empty always; answers grounded on nothing"*. Live:
+`hub_kb_documents` **8**, `hub_kb_chunks` **8**. Sahayak is in fact the
+**most-exercised module in the product** — 332 AI logs, 610 skill runs, 93
+content items. The sheet said ten skills armed; live is **44 of 78**.
+
+⚠ **But 610 runs are ALL `triggered_by` a user.** There is no cron or system
+trigger among them, so "the first unattended runs in the product's history"
+is not supported by the run table. Arming is real; an unattended run is not yet
+proven. 77 of the 610 failed (~13%).
+
+### ⚠ A 0 here means "not exercised since 2026-09-01", not "broken"
+
+Migration 260 cleared 1,441 rows in every org except Aekam. So row counts are
+evidence of what the *new* flows have produced, and a zero is not a defect — but
+per CLAUDE.md it is not ✅ either.
+
+Three modules have **no rows at all** and should not be demonstrated: **Kray**
+(0 purchase orders, ever), **Pahchan** (every table 0), **Varta** (0 — blocked on
+the owner's WhatsApp credentials). **Manav** is the widest gap between what the
+sheet describes and what has run: 1 employee, and zero leave requests,
+candidates, assets, claims, shifts, bids, swaps or offboarding.
+
+Strongest evidence: **E-Sign** (6 documents, 10 signers, 52 audit events,
+statuses including `completed`), **Sanvaad** (196 messages), **Dristi** (5
+delivery logs), **Sahayak**. `outbound_log` holds **718 sent**.
+
+Full per-module table in `docs/STATUS.md` under this date.
+
+## 2026-09-07 (mobile) — the native tabs get addresses, and "the same" was the wrong brief
+
+Asked for "the same for the mobile app tabs". Two different things carry that
+name and they were in opposite states, so the first job was telling them apart.
+
+**`frontend/ios` and `frontend/android` are Capacitor containers** with
+`webDir: "dist"` — they ship the WEB bundle, so all four of today's passes
+already apply to them. Proven rather than argued: `npx cap sync android` put
+today's exact `index-CYhHzPSL.css` into the container, carrying `.m2tabs a`, the
+`ModuleTabs` anchor, the `?open=` skeleton labels and the `?view=` allow-list.
+The copies sitting in the container beforehand were stale AND untracked by git —
+build artifacts a sync regenerates, not a thing to fix.
+
+⚠ **`mobile/` needed real work, and "the same" is not possible there.** React
+Native has no browser: no second tab, no href, no ctrl-click. Measured while
+looking: this app does not restore navigation state on a cold start either, so
+"survives a refresh" buys nothing. Exactly ONE of the web's four payoffs crosses
+over, and on a phone it is the one that matters — **a push notification can land
+on the right tab.** "A leave request needs approving" should open Approvals on
+Pending rather than dropping the reader on a default to go and find it.
+
+Building it as though it were the same feature would have produced motion
+without benefit, which is why the brief was worth disputing before writing code.
+
+**`Approvals` had no deep link AT ALL** — not a missing tab, a missing screen.
+`group: 'work'` puts it outside the rule `nav/__tests__/linking.test.ts`
+enforces, which is scoped to `group: 'modules'`, so nothing was looking. Four
+screens converted: Approvals (`approvals/:tab?`), Tasks (`tasks/:segment?`),
+Vikray (`sales/:tab?`) and Board (`board/:projectId/:view?`).
+
+`hooks/useRouteTab.ts` is the analogue of the web's `useUrlView`. It uses
+`setParams`, which rewrites the current route in place and pushes nothing, so
+Android's hardware Back still leaves the screen instead of walking backwards
+through every tab the reader looked at — the same conclusion the web reached for
+its view strips, except here it is the default rather than something to ask for.
+
+⚠ **The test drives React Navigation's OWN resolver, not the shape of the
+strings.** `linking.ts` fails by doing nothing — its header says so and two
+modules have already shipped with no path — and an optional segment is a NEW way
+to fail like that: a `:tab?` React Navigation did not accept would leave
+`approvals` resolving to nothing, the app opening on Today, and no error
+anywhere. `getStateFromPath` runs fine in the node harness (react-native is
+stubbed), so the assertions call it against the real config. A test that merely
+checked the map contained `'approvals/:tab?'` would pass over a syntax that does
+not work. It also pins that every BARE path still resolves, so no link already
+delivered to a user is broken by the optional segment.
+
+⚠ **Measured, not assumed: `approvals/nonsense` resolves happily** and hands the
+screen `{ tab: 'nonsense' }`. Nothing in the linking layer rejects it, so the
+screen's own allow-list is the only thing between that and a tab strip with
+nothing selected and no panel rendered. `resolveTab` is exported for exactly
+that test — `src/test/register.mjs` does not render, by design, so a hook cannot
+be called from this suite and the pure guard is the testable half.
+
+🟡 **`pahchan/ClockScreen` is deliberately left in `useState`.** It owns the
+whole window and runs a camera, and `linking.test.ts` already records why it has
+no path: "a link into a capture screen from a push notification is a worse
+experience than landing on Today." With no deep link there is no payoff at all
+on mobile — no browser tab to open it in, no state to restore — so moving it
+into the route would be change for its own sake. Asserted, so it reads as a
+decision rather than an omission.
+
+**Tests: 865 mobile passed** (was 846; 19 new in
+`nav/__tests__/tabsAreAddressable.test.ts`), `npm run typecheck` exit 0. Four
+negative controls run, each failing only its intended tests: the optional marker
+dropped so the segment became required (2 failed), the allow-list ignored (1),
+the hook navigating instead of setting params (1), and a screen reverted to
+`useState` (1).
+
+⚠ **NOT run on a device.** `npm test` does not render and Expo Go cannot run this
+app, so this is verified by the real link resolver and the type-checker, not by a
+build. A cold-restart check on a dev build or APK is still owed — and per
+CLAUDE.md, hot reload lies about this kind of change.
