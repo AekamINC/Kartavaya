@@ -705,7 +705,7 @@ const MODULES = [
       ['Punch',    'Clock-in captures a photo, a location and the device. Three facts, not one tap.'],
       ['Place',    'The punch is checked against a <b>geofence</b> — attendance is placed, not merely timed.'],
       ['Queue',    'No signal? The punch is held <b>on the device</b> and reconciled later, inside a <b>72-hour</b> buffer.'],
-      ['Roll up',  'Shift policy decides lateness; the days-worked figure flows into Vetana for the month.'],
+      ['Roll up',  'Punches pair into a day, and the days-worked figure flows into Vetana for the month.'],
     ],
     gives: [
       'Site and field staff can clock in where there is no network.',
@@ -714,7 +714,7 @@ const MODULES = [
     ],
     built: [
       '<b>Offline-first, 72-hour buffer</b> — the punch survives the dead zone.',
-      'Shift policies decide lateness by rule, so the same lateness means the same thing in every branch.',
+      'Shift and geofence policy is set per org and <b>overridden per site or group</b>, so a branch is governed by rule rather than by habit.',
       'Attendance detail is visible only at the highest access tier, under DPDP.',
     ],
     to: [['Manav','मानव'],['Vetana','वेतन']],
@@ -1404,7 +1404,7 @@ pahchan: {
     ]],
     ['Sites and policy', 'rules per place', [
       '<b>Sites</b> with geofences — a head office, a branch, a project site.',
-      'Shift policy decides lateness <b>by rule</b>, so the same lateness means the same thing in every branch.',
+      'Shift, overtime and geofence settings live in policy, with the <b>effective</b> policy readable for any person.',
       '<b>Policy scopes</b> — an override for one site or one group, with the <b>effective</b> policy readable for any person.',
       'So “which rule applied to me on that day” has an answer, rather than an argument.',
     ]],

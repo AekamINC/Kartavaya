@@ -11850,10 +11850,24 @@ dropped so the segment became required (2 failed), the allow-list ignored (1),
 the hook navigating instead of setting params (1), and a screen reverted to
 `useState` (1).
 
-⚠ **NOT run on a device.** `npm test` does not render and Expo Go cannot run this
-app, so this is verified by the real link resolver and the type-checker, not by a
-build. A cold-restart check on a dev build or APK is still owed — and per
-CLAUDE.md, hot reload lies about this kind of change.
+✅ **RUN ON A DEVICE.** Two APKs from `mobile/scripts/build-apk.sh release` — the
+phone artefact (arm64+armeabi, 66 MB) and an `ARCHS=x86_64` one for the emulator,
+both signed and verifying. Installed on a booted Pixel_9_Pro and driven with
+`am start -a android.intent.action.VIEW`, force-stopped between each so every one
+was a cold start: `approvals/history` selects History ("No decisions yet"),
+`approvals` selects Pending ("Nothing waiting"), and `approvals/nonsense` also
+selects Pending — the allow-list, on the device rather than in the resolver.
+
+⚠ **My first two probes read the WRONG PANE and looked like a failure.** On a tall
+window `ApprovalsScreen` returns a `PaneHost` whose SUPPORTING pane is the
+decided history, shown on both tabs, with the tab strip scrolled out of frame —
+its own comment says "on a short window the tab remains the way to reach it".
+I nearly reported `approvals` as landing on History. What settled it was a
+CONTROL: launching with no deep link at all, which correctly opened Today, so
+the links were navigating and only my reading was wrong. Rotating to landscape
+forces the stacked layout and the strip is legible. Third time today that a
+verification method, not the code, was the thing that was broken — after the
+asset-hash comparison and the missing `strings` binary.
 
 ## 2026-09-07 (marketing, last) — the Vetana drift was not unique: three more module docs were false
 
@@ -11910,3 +11924,61 @@ All four corrections are made **at the root** as well as on the sheets — each
 module doc carries the struck-through claim and the reason, because
 `routers/vetana.py:2554` had named `vetana.md` as wrong for weeks and nobody
 read it. Build green: 54 + 15 + 13x4 sheets, none clipped, no wrapped heading.
+
+## 2026-09-07 (marketing, final) — Pahchan's lateness claim was false too, and the empty table was hiding a 500
+
+The one claim left unsettled in the module-doc audit. Settled: **nothing
+computes lateness**, and chasing it turned up a latent production 500.
+
+### The claim, refuted three ways
+
+- `services/attendance_bridge.py` writes exactly two statuses —
+  `STATUS_PRESENT = "present"` and `STATUS_INCOMPLETE = "incomplete"`. There is
+  no `STATUS_LATE` and never was.
+- `shift_start_time` is declared on the bridge's policy dataclass (`:114`),
+  selected from the DB (`pahchan_attendance.py:433`) and passed in (`:445`) —
+  **and never read again**. It is carried into the computation and dropped.
+  `grace_minutes` is not referenced in the bridge at all.
+- `analytics/metrics/pahchan.py` registers `pahchan.late_arrivals` as an
+  **`absent_metric`**: *"The policy now exists — verified live 2026-08-25 … but
+  an ARRIVAL does not."* The codebase already said this out loud.
+
+`manav_attendance.status` does admit `'late'` — the CHECK carries it — but the
+only writer is a human choosing it through the manual-attendance endpoint. The
+policy fields are real; nothing consumes them.
+
+### 🔴 `POST /attendance/publish` 500s on its first real month
+
+`STATUS_INCOMPLETE = "incomplete"` is **not in `manav_attendance_status_check`**
+(`present, absent, half_day, late, on_leave, holiday, weekend`). Proved
+write-free against the live catalogue rather than by inserting a row, per
+CLAUDE.md: `SELECT 'incomplete' = ANY(ARRAY[...])` → **false**.
+
+The bridge `continue`s only when a day has NEITHER check-in nor check-out. A day
+with exactly ONE punch — clocked in, never out — takes `STATUS_INCOMPLETE` and
+**is appended to `result.records`**. The publish route loops over those and
+inserts with no filter; `grep -n incomplete routers/pahchan_attendance.py`
+returns nothing. The constraint refuses it.
+
+**It has never fired because `pahchan_punches` holds 0 rows.** Textbook "a table
+at 0 rows is TWO unknowns" — the empty table was not merely hiding an
+unexercised path, it was hiding a defect in the path downstream of it. And it is
+the single most ordinary attendance exception that triggers it.
+
+⚠ **Not fixed.** Whether a half-recorded day should be `absent`, `half_day`,
+withheld the way the no-punch case already is, or whether the constraint should
+gain `'incomplete'`, is a decision about what such a day MEANS to payroll. That
+is the owner's, not a rename.
+
+### Tally for the module-doc audit
+
+**Four of thirteen** hand-written Purpose/Flow paragraphs were false — Vetana
+(two claims), Sanvaad, Manav, Graha, Pahchan — and every one had been copied
+into customer-facing collateral. Nine verified true. The generated sections were
+correct throughout; **it is only the hand-written prose that drifted.**
+
+⚠ Also: three module docs were silently rewritten LF→CRLF earlier in this
+session by `io.open(path,'w')` on Windows — the documented trap, walked into
+anyway. Caught by the diffstat (404 changed lines for a one-paragraph edit),
+normalised, and amended before the push. `git status` cannot see this; only the
+diff size can. Subsequent writes used `newline=''`.

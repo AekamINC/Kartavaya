@@ -6,7 +6,23 @@ Biometric clock-in and clock-out with face matching and geofencing. Offline-firs
 
 ## Flow
 
-An employee enrols a face template once, then punches against it. Each punch records a photo, a location and a device, and is matched to a shift policy to decide lateness. Attendance rolls up into Vetana for the days-worked figure.
+An employee enrols a face template once, then punches against it. Each punch records a photo, a location and a device. `services/attendance_bridge.py` pairs the day's punches into a `manav_attendance` row, and Vetana reads that for the days-worked figure.
+
+⚠ **"matched to a shift policy to decide lateness" was wrong until 2026-09-07**, and it had been copied into customer-facing collateral. **Nothing computes lateness.** Three independent confirmations:
+
+- The bridge writes exactly two statuses — `STATUS_PRESENT = "present"` and `STATUS_INCOMPLETE = "incomplete"`. There is no `STATUS_LATE`.
+- `shift_start_time` is declared on the bridge's policy dataclass (`attendance_bridge.py:114`), selected from the DB and passed in — **and never read again**. `grace_minutes` is not referenced in the bridge at all; it exists only as a settings field that round-trips to the client.
+- `analytics/metrics/pahchan.py` registers `pahchan.late_arrivals` as an **`absent_metric`**, i.e. the codebase's own declaration that this is not built: *"The policy now exists … but an ARRIVAL does not."*
+
+`manav_attendance.status` does admit `'late'`, but the only writer is a **human** choosing it through the manual-attendance endpoint.
+
+## 🔴 A latent 500 in `POST /attendance/publish`, found on the way
+
+`STATUS_INCOMPLETE = "incomplete"` is **not** in `manav_attendance_status_check`, which admits only `present, absent, half_day, late, on_leave, holiday, weekend` (read from the live catalogue 2026-09-07; `'incomplete' = ANY(...)` evaluates **false**).
+
+The bridge `continue`s only when a day has **neither** check-in nor check-out. A day with **one** punch — clocked in and never out, the most ordinary attendance exception there is — gets `status = STATUS_INCOMPLETE` and **is appended to `result.records`**. The publish route then loops `for rec in result.records` and inserts it with no filter (`grep -n incomplete routers/pahchan_attendance.py` returns nothing).
+
+So the first publish of any month containing a single-punch day violates the CHECK and 500s. **Never hit because `pahchan_punches` holds 0 rows** — nobody has ever published. Not fixed here: whether an incomplete day should be `absent`, `half_day`, skipped, or whether the constraint should gain `'incomplete'`, is an owner's decision, not a rename.
 
 ## Backend
 

@@ -135,10 +135,48 @@ Prachar writes per-recipient `prachar_campaign_contacts` · Sahayak calls
 `credits.refund(tx_id)` on failure · Dristi writes **nothing** outside `dristi_`
 tables · Vetana reads `manav_attendance`, so attendance does roll up.
 
-🟡 **One not settled:** Pahchan's *"matched to a shift policy to decide
-lateness"*. `grace_minutes` and `shift_start_time` are real, scoped policy
-fields returned to the client, but no server-side lateness computation was
-located. Not called false — not proven either.
+### ⚠ PAHCHAN'S LATENESS CLAIM — SETTLED, AND IT IS FALSE (4th module doc)
+
+*"matched to a shift policy to decide lateness."* **Nothing computes lateness.**
+Three independent confirmations:
+
+- `services/attendance_bridge.py` writes exactly two statuses —
+  `STATUS_PRESENT = "present"` and `STATUS_INCOMPLETE = "incomplete"`. There is
+  no `STATUS_LATE`.
+- `shift_start_time` is declared on the bridge's policy dataclass (`:114`),
+  selected from the DB and passed in — **and never read again**. `grace_minutes`
+  is not referenced in the bridge at all; it round-trips to the client as a
+  setting and nothing consumes it.
+- `analytics/metrics/pahchan.py` registers `pahchan.late_arrivals` as an
+  **`absent_metric`** — the codebase's own declaration that it is not built:
+  *"The policy now exists … but an ARRIVAL does not."*
+
+`manav_attendance.status` does admit `'late'`, but the only writer is a **human**
+choosing it in the manual-attendance endpoint. Corrected on the sheets and in
+`docs/modules/pahchan.md`.
+
+### 🔴 FOUND, NOT FIXED — `POST /attendance/publish` will 500 on its first real month
+
+`STATUS_INCOMPLETE = "incomplete"` is **not in `manav_attendance_status_check`**,
+which admits only `present, absent, half_day, late, on_leave, holiday, weekend`.
+Read from the live catalogue and evaluated write-free:
+`'incomplete' = ANY(...)` → **false**.
+
+The bridge `continue`s only when a day has **neither** check-in nor check-out. A
+day with **one** punch — clocked in and never out, the most ordinary attendance
+exception there is — gets `status = STATUS_INCOMPLETE` and **is appended to
+`result.records`**. `routers/pahchan_attendance.py` then loops
+`for rec in result.records` and inserts with no filter (`grep -n incomplete`
+on that file returns nothing). The CHECK rejects it.
+
+**Never hit because `pahchan_punches` holds 0 rows** — nobody has ever
+published. This is the "a table at 0 rows is TWO unknowns" pattern exactly: the
+empty table was hiding a downstream defect, not just an unexercised path.
+
+⚠ **Not fixed here, deliberately.** Whether an incomplete day should be
+`absent`, `half_day`, withheld like the no-punch case, or whether the constraint
+should gain `'incomplete'`, is a product decision about what a half-recorded day
+*means* to payroll — not a rename. It needs the owner.
 
 ---
 
@@ -213,9 +251,30 @@ negative controls, each failing only its intended tests: the optional marker
 dropped (2 failed), the allow-list ignored (1), the hook navigating instead of
 setting params (1), a screen reverted to `useState` (1).
 
-⚠ **Not run on a device.** `npm test` does not render and Expo Go cannot run this
-app, so this is verified by the real link resolver and the type-checker, not by a
-build. A cold-restart check on a dev build or APK is still owed.
+### ✅ RUN ON A DEVICE — all three links driven on a booted emulator
+
+Two APKs built from `mobile/scripts/build-apk.sh release`: the phone artefact
+(`arm64-v8a+armeabi-v7a`, 66 MB) and an `ARCHS=x86_64` one for the emulator,
+both signed and verifying. Installed on a booted Pixel_9_Pro and driven with
+`am start -a android.intent.action.VIEW`, force-stopped between each so every
+one was a COLD start:
+
+| link | tab selected | empty state shown |
+| --- | --- | --- |
+| `kartavaya://approvals/history` | **History** | "No decisions yet" |
+| `kartavaya://approvals` | **Pending** | "Nothing waiting" |
+| `kartavaya://approvals/nonsense` | **Pending** | "Nothing waiting" |
+
+The third is the allow-list working on the device, not just in the resolver.
+
+⚠ **The first two attempts read the WRONG PANE and looked like a failure.** On a
+tall window `ApprovalsScreen` returns a `PaneHost` with the queue as `list` and
+`DecidedPane` as a SUPPORTING pane below — its own comment says "on a short
+window the tab remains the way to reach it" — so the decided-history text shows
+on BOTH tabs and the strip was off-screen. Rotating to landscape gives the
+stacked layout, where the tab strip is visible and the selection is legible.
+The probe was invalid, not the feature; the control that settled it was opening
+the app with no deep link at all, which correctly landed on Today.
 
 ---
 
