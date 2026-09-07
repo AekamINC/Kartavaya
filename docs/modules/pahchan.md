@@ -16,13 +16,21 @@ An employee enrols a face template once, then punches against it. Each punch rec
 
 `manav_attendance.status` does admit `'late'`, but the only writer is a **human** choosing it through the manual-attendance endpoint.
 
-## 🔴 A latent 500 in `POST /attendance/publish`, found on the way
+## ✅ A latent 500 in `POST /attendance/publish` — found, then fixed
 
 `STATUS_INCOMPLETE = "incomplete"` is **not** in `manav_attendance_status_check`, which admits only `present, absent, half_day, late, on_leave, holiday, weekend` (read from the live catalogue 2026-09-07; `'incomplete' = ANY(...)` evaluates **false**).
 
 The bridge `continue`s only when a day has **neither** check-in nor check-out. A day with **one** punch — clocked in and never out, the most ordinary attendance exception there is — gets `status = STATUS_INCOMPLETE` and **is appended to `result.records`**. The publish route then loops `for rec in result.records` and inserts it with no filter (`grep -n incomplete routers/pahchan_attendance.py` returns nothing).
 
-So the first publish of any month containing a single-punch day violates the CHECK and 500s. **Never hit because `pahchan_punches` holds 0 rows** — nobody has ever published. Not fixed here: whether an incomplete day should be `absent`, `half_day`, skipped, or whether the constraint should gain `'incomplete'`, is an owner's decision, not a rename.
+So the first publish of any month containing a single-punch day violated the CHECK and 500'd. **Never hit because `pahchan_punches` holds 0 rows** — nobody has ever published.
+
+**Fixed 2026-09-07 by withholding, not by mapping.** `attendance_bridge.WRITABLE_STATUSES` names the statuses the column accepts, `partition_for_write()` splits the bridge's output on membership in it, and the publish route inserts only the writable side. The withheld days come back in the response as `incomplete_days` / `incomplete_rows`, so the screen can show them and a regularisation can fix them — they are not silently dropped.
+
+Why withheld rather than mapped: `absent` and `half_day` both **assert** something, and this module already refuses that move for the no-punch case — *"Emitting an 'absent' row here would assert someone did not work on the strength of a punch nobody has reviewed yet."* A one-punch day is the same position, except the person demonstrably **did** work, so `absent` is not merely unproven but wrong.
+
+Widening the CHECK to admit `'incomplete'` was the other candidate and was **not** taken: it is DDL against the table payroll reads, to store a value meaning *unknown* in a column of attendance facts. Payroll is unaffected either way — `vetana.py` counts `status IN ('present','late')`, so an incomplete row would never have counted as a day worked. Withholding costs nothing on the money side and asserts nothing false.
+
+Pinned by `tests/test_attendance_bridge_writable_status.py` (9 tests), each proved against a mutation: re-adding `'incomplete'` to the set kills 4, making the partition write everything kills 1, making it drop the withheld side kills 2.
 
 ## Backend
 

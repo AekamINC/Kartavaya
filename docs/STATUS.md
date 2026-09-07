@@ -155,7 +155,7 @@ Three independent confirmations:
 choosing it in the manual-attendance endpoint. Corrected on the sheets and in
 `docs/modules/pahchan.md`.
 
-### 🔴 FOUND, NOT FIXED — `POST /attendance/publish` will 500 on its first real month
+### ✅ FIXED — `POST /attendance/publish` would have 500'd on its first real month
 
 `STATUS_INCOMPLETE = "incomplete"` is **not in `manav_attendance_status_check`**,
 which admits only `present, absent, half_day, late, on_leave, holiday, weekend`.
@@ -173,10 +173,28 @@ on that file returns nothing). The CHECK rejects it.
 published. This is the "a table at 0 rows is TWO unknowns" pattern exactly: the
 empty table was hiding a downstream defect, not just an unexercised path.
 
-⚠ **Not fixed here, deliberately.** Whether an incomplete day should be
-`absent`, `half_day`, withheld like the no-punch case, or whether the constraint
-should gain `'incomplete'`, is a product decision about what a half-recorded day
-*means* to payroll — not a rename. It needs the owner.
+**Fixed by withholding, not by mapping.** `attendance_bridge.WRITABLE_STATUSES`
+names what the column accepts; `partition_for_write()` splits the bridge's
+output on membership in it; the route inserts only the writable side and returns
+the rest as `incomplete_days` / `incomplete_rows` so the screen can show them and
+a regularisation can fix them. **They are not silently dropped** — a day the
+filter swallowed would be a day payroll never hears about and nobody is told to
+correct.
+
+`absent` and `half_day` were rejected because both **assert** something, and
+this module already refuses that move for the no-punch case. A one-punch day is
+the same epistemic position except the person demonstrably **did** work, so
+`absent` is not merely unproven, it is wrong. Widening the CHECK was rejected
+too: DDL against the table payroll reads, to store *unknown* in a column of
+attendance facts. **Payroll is unaffected either way** — `vetana.py` counts
+`status IN ('present','late')`, so an incomplete row would never have counted as
+a day worked.
+
+`tests/test_attendance_bridge_writable_status.py` — 9 tests, and **every one
+proved against a mutation** rather than trusted green: re-adding `'incomplete'`
+to the set kills 4, making the partition write everything (the original defect)
+kills 1, making it drop the withheld side kills 2. 895 pahchan/attendance/
+vetana/payroll tests pass, 0 failures.
 
 ---
 

@@ -69,6 +69,50 @@ VERDICT_CLEARED = "ok"
 STATUS_PRESENT = "present"
 STATUS_INCOMPLETE = "incomplete"
 
+#: The statuses `public.manav_attendance.status` will actually accept, mirroring
+#: `manav_attendance_status_check` — read from the live catalogue 2026-09-07,
+#: not copied from a migration file.
+#:
+#: ⚠ `STATUS_INCOMPLETE` IS DELIBERATELY NOT IN HERE, AND THAT IS THE POINT.
+#: This bridge is a pure function and `incomplete` is its honest answer for a
+#: day it cannot price — one punch and no pair, or an out before an in. The
+#: database has no such status, because "we do not know" is not an attendance
+#: fact. Every caller that WRITES a record must therefore filter on this set;
+#: `routers/pahchan_attendance.py` does, and explains why withholding beats
+#: mapping it onto `absent` or `half_day`.
+#:
+#: Until 2026-09-07 nothing filtered, so a single-punch day — somebody clocked
+#: in and forgot to clock out — sent `status='incomplete'` into a CHECK that
+#: refuses it and 500'd the entire publish. It had never fired only because
+#: `pahchan_punches` held zero rows.
+#:
+#: Membership, not `!= STATUS_INCOMPLETE`: a future status added here to mean
+#: something the bridge knows and the column does not would otherwise reach the
+#: INSERT the same way this one did.
+WRITABLE_STATUSES = frozenset({
+    "present", "absent", "half_day", "late", "on_leave", "holiday", "weekend",
+})
+
+
+def partition_for_write(records):
+    """Split day records into (writable, withheld) by what the column accepts.
+
+    A function rather than a comprehension inside the route, for one reason: a
+    filter written inline is invisible to a test that has no database, and the
+    publish route needs a pool. Here the partition is pure, so
+    `tests/test_attendance_bridge_writable_status.py` exercises the ACTUAL split
+    the route performs instead of a re-implementation of it that could drift the
+    same way the original defect did.
+
+    Order is preserved in both lists — the publish route reports the withheld
+    ones back to the screen, and a payroll operator scanning dates wants them in
+    the order they occurred.
+    """
+    writable, withheld = [], []
+    for rec in records:
+        (writable if rec.status in WRITABLE_STATUSES else withheld).append(rec)
+    return writable, withheld
+
 #: HOW the day was marked, not WHICH MODULE marked it — and that distinction is
 #: why this line was a defect for as long as it existed.
 #:

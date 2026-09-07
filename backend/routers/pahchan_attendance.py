@@ -35,6 +35,7 @@ from services.niyam.subjects import correction_decided, correction_requested
 from services.attendance_bridge import (
     MARKED_BY_BRIDGE,
     MARKED_BY_MANUAL,
+    partition_for_write,
     Punch,
     Regularisation,
     ShiftPolicy,
@@ -473,8 +474,48 @@ async def publish_attendance_to_payroll(
     written = 0
     skipped_manual = []
 
+    # ── AN INCOMPLETE DAY IS WITHHELD, NOT WRITTEN ───────────────────────────
+    # `STATUS_INCOMPLETE` is the bridge's honest answer for a day it cannot
+    # price: one punch and no pair, or an out before an in. It is NOT a value
+    # `manav_attendance_status_check` admits — that CHECK is
+    # ('present','absent','half_day','late','on_leave','holiday','weekend'), and
+    # `'incomplete' = ANY(...)` is FALSE. Verified against the live catalogue
+    # 2026-09-07 without writing a row. The set lives in the bridge as
+    # `WRITABLE_STATUSES`, and the filter is MEMBERSHIP rather than a test
+    # against this one status — see the note there.
+    #
+    # So every insert below of an incomplete day violates the constraint and
+    # 500s the whole publish. It had never fired only because `pahchan_punches`
+    # holds zero rows — the empty table was hiding a defect DOWNSTREAM of it,
+    # and the trigger is the most ordinary exception there is: somebody clocked
+    # in and forgot to clock out.
+    #
+    # ── Why withheld rather than mapped to a status that fits ────────────────
+    # `absent` and `half_day` both ASSERT something. This module already refuses
+    # that exact move for the no-punch case, in `attendance_bridge`: "Emitting
+    # an 'absent' row here would assert someone did not work on the strength of
+    # a punch nobody has reviewed yet." A day with ONE punch is the same
+    # epistemic position — we know they arrived, we do not know the day — and
+    # the person DID work, so `absent` is not merely unproven, it is wrong.
+    #
+    # Widening the CHECK to admit 'incomplete' was the other candidate and is
+    # NOT taken: it is DDL against the table payroll reads, to store a value
+    # meaning "unknown" in a column of attendance facts. Payroll is unaffected
+    # either way — `vetana.py` counts `status IN ('present','late')`, so an
+    # incomplete row would not have counted as a day worked any more than an
+    # absent row does. Withholding costs nothing on the money side and asserts
+    # nothing false.
+    #
+    # The day is not lost: it is returned in `incomplete_days` so the publish
+    # screen can show it, which is what a regularisation exists to fix.
+    writable, withheld_incomplete = partition_for_write(result.records)
+    incomplete = [
+        {"employee_id": r.employee_id, "date": r.day.isoformat()}
+        for r in withheld_incomplete
+    ]
+
     if not body.dry_run:
-        for rec in result.records:
+        for rec in writable:
             # The WHERE on the DO UPDATE is the guard: a row HR typed by hand
             # keeps its values and returns nothing, so it lands in
             # skipped_manual instead of being silently reverted by a re-run.
@@ -529,7 +570,8 @@ async def publish_attendance_to_payroll(
     # bridge, because the bridge has no pool and should not acquire one.
     withheld = result.withheld_days[:50]
     manual = skipped_manual[:50]
-    await _name_employees(pool, org_id, withheld, manual)
+    incomplete_shown = incomplete[:50]
+    await _name_employees(pool, org_id, withheld, manual, incomplete_shown)
 
     return {
         "dry_run": body.dry_run,
@@ -538,6 +580,12 @@ async def publish_attendance_to_payroll(
         "skipped_manual_rows": len(skipped_manual),
         "skipped_manual": manual,
         "withheld_days": withheld,
+        # A day with one punch and no pair. Counted separately from
+        # `withheld_days` (which is "nothing eligible at all") because the fix
+        # is different: this one has evidence and needs a regularisation, not a
+        # review. Reported rather than written — see the note at the filter.
+        "incomplete_rows": len(incomplete),
+        "incomplete_days": incomplete_shown,
         # Said plainly, because "0.0 overtime" and "overtime was never computed"
         # look identical on a payslip and mean opposite things.
         "overtime": {

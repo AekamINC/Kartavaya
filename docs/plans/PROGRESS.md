@@ -11982,3 +11982,76 @@ session by `io.open(path,'w')` on Windows — the documented trap, walked into
 anyway. Caught by the diffstat (404 changed lines for a one-paragraph edit),
 normalised, and amended before the push. `git status` cannot see this; only the
 diff size can. Subsequent writes used `newline=''`.
+
+## 2026-09-07 (fix) — the incomplete-status 500, closed by withholding rather than asserting
+
+The defect found while settling Pahchan's lateness claim. `STATUS_INCOMPLETE =
+"incomplete"` is the bridge's honest answer for a day it cannot price — one
+punch and no pair, or an out before an in — and it is **not** a value
+`manav_attendance_status_check` admits. The publish route looped over every
+record the bridge returned and inserted it, so the first month containing a
+single-punch day would violate the CHECK and 500 the whole publish. It had never
+fired because `pahchan_punches` holds zero rows.
+
+### The decision: withhold, don't map
+
+Four options, and the reasoning matters more than the code:
+
+- **`absent`** — rejected. It asserts someone did not work, and this module
+  already refuses exactly that move for the no-punch case in its own comment:
+  *"Emitting an 'absent' row here would assert someone did not work on the
+  strength of a punch nobody has reviewed yet."* A one-punch day is the same
+  position except the person demonstrably **did** work, so `absent` is not
+  merely unproven — it is wrong.
+- **`half_day`** — rejected, same reason plus a made-up quantity.
+- **Widen the CHECK to admit `'incomplete'`** — rejected. DDL against the table
+  payroll reads, to store a value meaning *unknown* in a column of attendance
+  facts. **Payroll is unaffected either way**: `vetana.py` counts
+  `status IN ('present','late')`, so an incomplete row would never have counted
+  as a day worked any more than its absence does. The migration buys nothing on
+  the money side and costs a production DDL.
+- **Withhold and report** — taken. Costs nothing, asserts nothing false, and
+  matches the conservatism the bridge is already built on.
+
+### The shape of the fix
+
+`WRITABLE_STATUSES` in `attendance_bridge.py` names what the column accepts,
+mirroring the CHECK read from the live catalogue. `partition_for_write()` splits
+records on **membership** in that set — not on `!= STATUS_INCOMPLETE`, because a
+future status meaning something the column does not know would otherwise reach
+the INSERT the same way this one did.
+
+⚠ **The partition is a named function, not a comprehension in the route, and
+that is the point.** A filter written inline is invisible to a test with no
+database, and the publish route needs a pool. Invisible is how the original
+defect survived. The tests now exercise the actual split the route performs.
+
+Withheld days are returned as `incomplete_days` / `incomplete_rows` beside the
+existing `withheld_days` and `skipped_manual`. Counted separately because the
+remedy differs: `withheld_days` is "nothing eligible, needs a review",
+`incomplete_days` is "there is evidence, needs a regularisation". A day the
+filter swallowed silently would be a day payroll never hears about and nobody is
+told to correct.
+
+### Every test proved against a mutation
+
+9 tests in `tests/test_attendance_bridge_writable_status.py`, and none trusted
+green:
+
+| Mutation | Tests killed |
+|---|---|
+| `'incomplete'` re-added to `WRITABLE_STATUSES` | 4 |
+| `partition_for_write` sends everything to writable (**the original defect**) | 1 |
+| `partition_for_write` drops the withheld side | 2 |
+
+⚠ The first mutation attempt **silently did nothing** — the file is CRLF on
+disk, the patch string was LF, the match count was 0, and the suite passed
+green. A mutation that fails to apply looks exactly like a mutation the tests
+survived. Re-run with a CRLF-aware edit before the result was believed.
+
+895 pahchan/attendance/vetana/payroll tests pass, 0 failures.
+
+⚠ `attendance_bridge.py` also had to be normalised LF before commit: git holds
+LF, the working tree was CRLF, `core.autocrlf=false` and `.gitattributes` has no
+`*.py` rule — so a straight `git add` would have stored a **706-line** diff for
+a 44-line change. Caught by staging it and reading `git diff --cached --stat`.
