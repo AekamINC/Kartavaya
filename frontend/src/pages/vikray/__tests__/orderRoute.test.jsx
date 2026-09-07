@@ -148,8 +148,15 @@ const mountTab = async (props = {}) => {
 
 const drawer = () => document.querySelector('[role="dialog"]');
 const drawerText = () => drawer()?.textContent || '';
+/* `cancelable: true`, because the order row is an `<a href>` now and its
+   handler calls preventDefault to keep a plain click inside the SPA. On a
+   non-cancelable event that call does nothing, so jsdom followed the href and
+   logged "Not implemented: navigation" under every passing assertion here. A
+   real browser click is cancelable; this makes the fixture say so too. */
 const click = async (el) => {
-  await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  await act(async () => {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
   await settle();
 };
 const orderReads = () => api.get.mock.calls

@@ -260,6 +260,11 @@ export default function GrahaPage() {
         <ModuleTabs
           tabs={tabs} value={tab} onChange={setTab} label="Graha sections"
           defaultTab={prefs.defaultTab}
+          /* `/graha`, not the current pathname: `/graha/deals/:dealId` renders
+             as a child of this page (see `graha/GrahaModule.jsx`), so while a
+             deal is open the tab links would otherwise be built from the
+             RECORD's address and every one of them would reopen the deal. */
+          basePath="/graha"
           // Pin the open tab first: saving a new "opens here" from the sheet
           // must not yank the panel the user is reading.
           onCustomize={() => { setTab(tab); setCustomize(true); }}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '../../components/editorial';
 import { Avatar } from '../../components/ui';
 import { errorKind } from '../../components/ui/ErrorState';
@@ -38,12 +39,12 @@ const verbLabel = t => (t ? String(t).replace(/_/g, ' ') : 'updated');
  * page that each say plainly that they could not load. Wording and markup are
  * `ApprovalsCard`'s, so the two failures on this column read as one voice.
  */
-export default function TeamPulse({ activity = [], error = null, onRetry, onOpenActivity }) {
+export default function TeamPulse({ activity = [], error = null, onRetry, activityHref = '/activity' }) {
   return (
     <Card
       title="Team pulse"
       sanskrit="दल की गतिविधि"
-      right={<button className="k-link" onClick={onOpenActivity}>All activity →</button>}
+      right={<Link className="k-link" to={activityHref}>All activity →</Link>}
     >
       <div className="k-activity">
         {error ? (

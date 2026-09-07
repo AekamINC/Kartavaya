@@ -13,6 +13,8 @@
 //  · `registerAttendee` did not check the event was full. `max_attendees` was
 //    collected in the form and used nowhere.
 import React, { useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -29,7 +31,9 @@ export default function EventsTab({ onChanged }) {
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
   const [status, setStatus] = useState('');
-  const [openId, setOpenId] = useState(null);
+  /* Which event is expanded is in the URL — see `hooks/useOpenRecord.js`, so
+     an event and its registrations can be opened in a second tab or sent on. */
+  const { openId, close, hrefFor } = useOpenRecord();
 
   const { data, loading, error, reload } = useResource(
     () => api.get('/v1/prachar/events').then(rows), [],
@@ -150,14 +154,30 @@ export default function EventsTab({ onChanged }) {
                   </Td>
                   <td>
                     <div className="pr__rowact">
-                      <button
-                        type="button"
-                        className="k-btn k-btn--ghost k-btn--sm"
-                        aria-expanded={openId === ev.id}
-                        onClick={() => setOpenId(openId === ev.id ? null : ev.id)}
-                      >
-                        {openId === ev.id ? 'Close' : 'Open'}
-                      </button>
+                      {/* Open is a LINK and Close is a BUTTON, because they are
+                          not the same kind of act: one goes somewhere and can be
+                          ctrl-clicked into a second tab, the other dismisses what
+                          is already here and has nowhere to point. `aria-expanded`
+                          stays on both — it is what tells a screen reader this
+                          control governs the panel below. */}
+                      {openId === ev.id ? (
+                        <button
+                          type="button"
+                          className="k-btn k-btn--ghost k-btn--sm"
+                          aria-expanded
+                          onClick={close}
+                        >
+                          Close
+                        </button>
+                      ) : (
+                        <Link
+                          className="k-btn k-btn--ghost k-btn--sm"
+                          aria-expanded={false}
+                          to={hrefFor(ev.id)}
+                        >
+                          Open
+                        </Link>
+                      )}
                       <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setForm(toForm(ev))}>
                         Edit
                       </button>

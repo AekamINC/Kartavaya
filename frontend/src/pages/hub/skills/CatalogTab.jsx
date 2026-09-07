@@ -76,7 +76,9 @@
 // twelve in `role_tiers`, and four modules unreachable through the UI built to
 // reach them. There is one list.
 import React, { useState, useMemo, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../../lib/api';
+import useOpenRecord from '../../../hooks/useOpenRecord';
 import { useToast } from '../../../components/ui/toast';
 import { Empty } from '../../../components/editorial';
 import { Resource, errText, words, creditLabel, useResource } from '../_shared';
@@ -145,7 +147,11 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
   const [cat, setCat] = useState('all');
   const [busyId, setBusyId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [openId, setOpenId] = useState(null);
+  /* The open pack is in the URL — see `hooks/useOpenRecord.js`. `hrefFor`
+     rides down to the cards in place of the old `onOpen` callback: a callback
+     can only be pressed, and what a reader wants here is an address they can
+     send to whoever has to approve the assignment. */
+  const { openId, close, hrefFor } = useOpenRecord();
 
   const canAssign = canManage && canWrite;
   const assignBlocked = !canManage
@@ -393,7 +399,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   busyId={busyId} confirmDel={confirmDel}
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
-                  openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
+                  openRequests={openRequests} activeIds={activeIds} openHref={hrefFor}
                   onChanged={onChanged}
                 />
               ))}
@@ -405,7 +411,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   busyId={busyId} confirmDel={confirmDel}
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
-                  openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
+                  openRequests={openRequests} activeIds={activeIds} openHref={hrefFor}
                   onChanged={onChanged}
                 />
               )}
@@ -437,7 +443,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
               assignBlocked={assignBlocked}
               busy={busyId === drawerPack.t.id}
               onAssign={assign}
-              onClose={() => setOpenId(null)}
+              onClose={close}
               onRequested={() => mine.reload()}
             />
           )}
@@ -450,7 +456,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 /** One titled shelf of cards. Two of them, at most: runnable and held. */
 function Shelf({
   title, hi, note, packs, busyId, confirmDel, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, onOpen, onChanged,
+  onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, openHref, onChanged,
 }) {
   return (
     <section className="mkt-shelf">
@@ -475,7 +481,7 @@ function Shelf({
             onChanged={onChanged}
             request={openRequests?.[String(p.t.id)] || null}
             active={!!activeIds?.has(String(p.t.id))}
-            onOpen={onOpen}
+            openHref={openHref}
           />
         ))}
       </div>
@@ -493,7 +499,7 @@ function Shelf({
  */
 function PackCard({
   pack, busy, confirming, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel, request, active, onOpen, onChanged,
+  onAssign, onDeactivate, onConfirmDel, request, active, openHref, onChanged,
 }) {
   const { t, steps, ai, data, tone, live, listed, blockers, needs, module: mod } = pack;
   const held = !!blockers?.length;
@@ -616,10 +622,10 @@ function PackCard({
             Assign, the way to ask for it at all. A separate control rather
             than making the whole card clickable, because the card already
             carries three buttons and a button inside a button is invalid. */}
-        <button type="button" className="k-btn k-btn--ghost hb-btn--sm mkt-act__more"
-          onClick={() => onOpen?.(t.id)}>
+        <Link className="k-btn k-btn--ghost hb-btn--sm mkt-act__more"
+          to={openHref(t.id)}>
           What it needs
-        </button>
+        </Link>
         {canManage && (confirming ? (
           <span className="mkt-confirm">
             {/* The blast radius, in the confirmation, because the button label

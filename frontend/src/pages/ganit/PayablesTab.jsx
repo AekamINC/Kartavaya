@@ -14,6 +14,7 @@
 // the save differs, and here that is "select the new vendor into the bill the
 // user is halfway through typing".
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
@@ -24,6 +25,7 @@ import { Badge, BILL_STATUS_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import VendorBillDetail from './VendorBillDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
 import VendorForm from '../../components/VendorForm';
@@ -56,7 +58,10 @@ export default function PayablesTab() {
   const [showForm, setShowForm] = useState(false);
   const [showVendorForm, setShowVendorForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [openId, setOpenId] = useState(null);
+  /* The open record is in the URL — see `hooks/useOpenRecord.js`. A drawer
+     with no address cannot be opened in a second tab, sent to a colleague, or
+     survive a refresh. */
+  const { openId, close, hrefFor } = useOpenRecord();
   const [form, setForm] = useState({ ...BLANK_BILL });
 
   const load = useCallback(async () => {
@@ -305,7 +310,12 @@ export default function PayablesTab() {
       ) : (
         <div className="gn-list">
           {bills.map(b => (
-            <button type="button" key={b.id} className="gn-row" onClick={() => setOpenId(b.id)}>
+            /* A link — a bill is a record somebody chases in a second tab while
+               the list stays put. A bare block comment, not the braced JSX
+               form: this sits in the arrow function's expression position, not
+               in JSX children, where the braces are parsed as a block and not
+               as a comment. */
+            <Link key={b.id} className="gn-row" to={hrefFor(b.id)}>
               <span className="gn-row__head">
                 <span>
                   <span className="gn-row__t">{b.vendor_name}</span>
@@ -319,7 +329,7 @@ export default function PayablesTab() {
               <span className="gn-row__meta">
                 <span>{b.bill_date}{b.due_date && ` · due ${b.due_date}`}</span>
               </span>
-            </button>
+            </Link>
           ))}
         </div>
       )}
@@ -327,7 +337,7 @@ export default function PayablesTab() {
       {openId && (
         <VendorBillDetail
           billId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={close}
           onChanged={() => { load(); loadSummary(); }}
         />
       )}

@@ -9,9 +9,16 @@
  */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect } from 'vitest';
 import OrderRows from '../OrderRows';
 import { ORDER_COLUMNS } from '../_shared';
+
+/* The row builds its own href from `orderPath` and the current search, so it
+   needs a Router. `/vikray?tab=orders` is where this list actually lives. */
+const draw = (ui) => render(
+  <MemoryRouter initialEntries={['/vikray?tab=orders']}>{ui}</MemoryRouter>,
+);
 
 const ORDERS = [{
   id: 'o1', order_number: 'SO-2026-0309', contact_name: 'Wipro Consumer',
@@ -23,16 +30,20 @@ const row = (c) => c.querySelector('.vko__row');
 
 describe('Vikray · the order list arranges', () => {
   it('renders the shipped columns when no arrangement is passed', () => {
-    const { container } = render(<OrderRows orders={ORDERS} onOpen={() => {}} />);
+    const { container } = draw(<OrderRows orders={ORDERS} onOpen={() => {}} />);
     for (const c of ORDER_COLUMNS) expect(screen.getByText(c.label)).toBeTruthy();
-    // The row is still a real button — the reason this is a grid at all.
-    expect(row(container).tagName).toBe('BUTTON');
+    /* The row is an ANCHOR now, and this assertion is the reason the change is
+       safe to make: it was a `<button>` so a keyboard could reach it, and it is
+       an `<a href>` so a BROWSER can too — ctrl-click, middle-click, "Open link
+       in new tab". Still not a `<tr>`, which is why this is a grid at all. */
+    expect(row(container).tagName).toBe('A');
+    expect(row(container).getAttribute('href')).toBe('/vikray/orders/o1?tab=orders');
   });
 
   it('gives the head and the rows the SAME template', () => {
     // A header whose columns can drift from its rows is worse than no header,
     // and once a person can reorder them the only defence is one source.
-    const { container } = render(<OrderRows orders={ORDERS} onOpen={() => {}} />);
+    const { container } = draw(<OrderRows orders={ORDERS} onOpen={() => {}} />);
     expect(head(container).style.gridTemplateColumns)
       .toBe(row(container).style.gridTemplateColumns);
   });
@@ -40,7 +51,7 @@ describe('Vikray · the order list arranges', () => {
   it('keeps the party column wider than an even share', () => {
     // MEASURED: at 1 : 1 in the dashboard's ~650px card, "Wipro Consumer"
     // wrapped onto two lines in a 54px row.
-    const { container } = render(<OrderRows orders={ORDERS} onOpen={() => {}} />);
+    const { container } = draw(<OrderRows orders={ORDERS} onOpen={() => {}} />);
     expect(head(container).style.gridTemplateColumns).toContain('1.6fr');
   });
 
@@ -53,7 +64,7 @@ describe('Vikray · the order list arranges', () => {
       gridCells: (byId) => [byId.state, byId.order].map((n, i) =>
         React.cloneElement(n, { key: i })),
     };
-    const { container } = render(<OrderRows orders={ORDERS} onOpen={() => {}} cols={cols} />);
+    const { container } = draw(<OrderRows orders={ORDERS} onOpen={() => {}} cols={cols} />);
     const labels = [...head(container).children].map(n => n.textContent);
     expect(labels).toEqual(['State', 'Order']);
     expect(head(container).style.gridTemplateColumns).toBe('106px 92px');
@@ -70,7 +81,7 @@ describe('Vikray · the order list arranges', () => {
       gridCells: (byId) => [byId.nope, byId.order].map((n, i) =>
         n == null ? <div key={i} /> : React.cloneElement(n, { key: i })),
     };
-    const { container } = render(<OrderRows orders={ORDERS} onOpen={() => {}} cols={cols} />);
+    const { container } = draw(<OrderRows orders={ORDERS} onOpen={() => {}} cols={cols} />);
     const cells = [...row(container).children];
     expect(cells).toHaveLength(2);
     expect(cells[0].textContent).toBe('');

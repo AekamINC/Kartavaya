@@ -24,6 +24,7 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import ModuleTabs from '../components/module/ModuleTabs';
 import { TAB_HI } from '../components/module/tabLabels';
 
@@ -51,10 +52,16 @@ afterEach(() => {
   container = null;
 });
 
+/* The strip builds each tab's href from the current location — it renders real
+   links now, so a browser can open a section in a second tab — which is why it
+   needs a Router the way it always needed a DOM. `/graha` because these
+   fixtures are CRM's own tabs; nothing here asserts on the address. */
 const mount = (value = 'today', tabs = CRM) => {
   const onChange = vi.fn();
   act(() => root.render(
-    <ModuleTabs tabs={tabs} value={value} onChange={onChange} />,
+    <MemoryRouter initialEntries={['/graha']}>
+      <ModuleTabs tabs={tabs} value={value} onChange={onChange} />
+    </MemoryRouter>,
   ));
   return onChange;
 };
@@ -63,7 +70,12 @@ const $  = (s) => container.querySelector(s);
 const $$ = (s) => [...container.querySelectorAll(s)];
 const tabs = () => $$('[role="tab"]');
 const more = () => $('.mt__more');
-const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+/* `cancelable: true` — a real browser click is, and a tab's handler calls
+   preventDefault to keep a plain click inside the SPA. On a non-cancelable
+   event that call is a no-op and jsdom follows the href instead. */
+const click = (el) => act(() => {
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
 
 describe('ModuleTabs · overflow', () => {
   // The inline cap is 8, raised from 6. At 6, four of the nine module pages

@@ -58,6 +58,7 @@
 import React from 'react';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 
@@ -341,7 +342,12 @@ describe('the label sites, discovered from source', () => {
  */
 function mountAs(lang, ui) {
   localStorage.setItem('k_prefs', JSON.stringify({ language: lang }));
-  return render(<CustomizeProvider>{ui}</CustomizeProvider>);
+  /* MemoryRouter because one specimen — `ModuleTabs` — renders its tabs as
+     real links and reads the location to address them. Harmless for the rest:
+     none of them route, and none of these assertions look at a path. */
+  return render(
+    <MemoryRouter><CustomizeProvider>{ui}</CustomizeProvider></MemoryRouter>,
+  );
 }
 
 beforeEach(() => localStorage.clear());

@@ -45,6 +45,11 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+/* MemoryRouter: these lists keep the open record in the URL now — a
+   drawer with no address cannot be opened in a second tab or survive a
+   refresh (see `hooks/useOpenRecord.js`) — so the components read the
+   location and need a Router the way they always needed a DOM. */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -119,7 +124,9 @@ const settle = async (rounds = 6) => {
 };
 
 async function mount(node) {
-  await act(async () => { root.render(<ToastProvider>{node}</ToastProvider>); });
+  await act(async () => {
+    root.render(<MemoryRouter><ToastProvider>{node}</ToastProvider></MemoryRouter>);
+  });
   await settle();
 }
 

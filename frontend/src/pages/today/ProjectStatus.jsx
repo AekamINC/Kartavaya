@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '../../components/editorial';
 import { Secondary } from '../../components/Bilingual';
 import {
@@ -53,7 +54,7 @@ function present(counts) {
 /** No enum reaches the user as-is, even one this file has never seen. */
 const label = s => STATUS_LABELS[s] || String(s).replace(/_/g, ' ');
 
-export default function ProjectStatus({ counts = {}, total = 0, onOpenProjects }) {
+export default function ProjectStatus({ counts = {}, total = 0, projectsHref = '/projects' }) {
   const donePct  = total > 0 ? Math.round(((counts.done || 0) / total) * 100) : 0;
   const segments = present(counts);
   const rows     = [...CORE, ...segments.filter(s => !CORE.includes(s))];
@@ -62,7 +63,10 @@ export default function ProjectStatus({ counts = {}, total = 0, onOpenProjects }
     <Card
       title="Project status"
       sanskrit="स्थिति विवरण"
-      right={<button className="k-link" onClick={onOpenProjects}>Open projects →</button>}
+      /* A `<Link>`, not a `<button onClick={navigate}>`: a card that points
+         somewhere should be openable in a second tab from the context menu or
+         a ctrl-click, and a button offers the browser no href to act on. */
+      right={<Link className="k-link" to={projectsHref}>Open projects →</Link>}
     >
       <div
         className="k-stackbar"

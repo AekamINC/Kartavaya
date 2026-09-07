@@ -492,7 +492,6 @@ export default function TodayPage({ teams = [] }) {
                 <ProjectStatus
                   counts={derived.statusCounts}
                   total={tasks.length}
-                  onOpenProjects={() => navigate('/projects')}
                 />
               )}
             </div>
@@ -501,11 +500,15 @@ export default function TodayPage({ teams = [] }) {
               {/* FIRST in the reference's right column, above Activity. The
                   build had no approvals panel on Today at all — clearing three
                   decisions meant navigating to /approvals and back. */}
-              <ApprovalsCard onOpenApprovals={() => navigate('/approvals')} />
+              <ApprovalsCard />
 
               {!error && <UpcomingWeek tasks={withTeam(derived.upcoming)} onOpenTask={openTask} />}
-              <TeamPulse activity={activity} error={activityErr} onRetry={loadActivity}
-                onOpenActivity={() => navigate('/activity')} />
+              {/* These three cards name their own destination now and render
+                  it as a `<Link>`, so "Open projects", "History" and "All
+                  activity" can each be ctrl-clicked into a second tab. Passing
+                  a navigate() callback made that impossible from the outside:
+                  no href reaches the browser however the card is styled. */}
+              <TeamPulse activity={activity} error={activityErr} onRetry={loadActivity} />
               <Citation
                 sanskrit={verse?.sanskrit || 'कर्मण्येवाधिकारस्ते मा फलेषु कदाचन'}
                 english={verse?.english || 'You have a right to action alone, never to its fruits.'}

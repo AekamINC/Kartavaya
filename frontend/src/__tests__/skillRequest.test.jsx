@@ -37,6 +37,7 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../lib/api', () => ({
@@ -138,7 +139,11 @@ function wire({ caps = CAPS, org = ORG_SKILLS() } = {}) {
 
 async function mount({ packs = [pack()], costs = COSTS, canManage = false } = {}) {
   await act(async () => {
+    /* MemoryRouter: "What it needs" is a `<Link to="?open=…">` now, so a pack
+       can be opened in a second tab or sent to whoever approves it. The tab
+       reads the location to build that address. */
     root.render(
+      <MemoryRouter initialEntries={['/hub/clients/c1?tab=catalog']}>
       <ToastProvider>
         <CatalogTab
           clientId="c1"
@@ -149,7 +154,8 @@ async function mount({ packs = [pack()], costs = COSTS, canManage = false } = {}
           onCreate={() => {}}
           onChanged={() => {}}
         />
-      </ToastProvider>,
+      </ToastProvider>
+      </MemoryRouter>,
     );
   });
   await settle();
@@ -161,7 +167,16 @@ const btn = (label) =>
 const drawer = () => container.querySelector('.mk-dr');
 
 async function openDrawer() {
-  await act(async () => { btn('What it needs').click(); });
+  /* "What it needs" is a `<Link to="?open=<id>">` now, not a button: a pack
+     had no address, so it could not be opened in a second tab or sent to
+     whoever approves the assignment (see `hooks/useOpenRecord.js`). The href is
+     asserted too — a `<Link to="">` still renders an `<a>` and still goes
+     nowhere. */
+  const opener = [...container.querySelectorAll('a')]
+    .find(a => a.textContent.trim() === 'What it needs');
+  expect(opener, 'nothing on the card opens the pack').toBeTruthy();
+  expect(opener.getAttribute('href')).toContain('open=');
+  await act(async () => { opener.click(); });
   await settle();
 }
 
@@ -174,7 +189,13 @@ describe('the way out of a terminal card', () => {
     await mount();
 
     expect(drawer()).toBeNull();
-    expect(btn('What it needs')).toBeTruthy();
+    /* The opener is a LINK, and that is the assertion worth making: a button
+       would look and behave identically until somebody tried to ctrl-click it,
+       which is exactly how this went unnoticed. */
+    const opener = [...container.querySelectorAll('a')]
+      .find(a => a.textContent.trim() === 'What it needs');
+    expect(opener).toBeTruthy();
+    expect(opener.getAttribute('href')).toContain('open=');
 
     await openDrawer();
 

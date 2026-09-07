@@ -21,6 +21,8 @@
 // Enrolment was a text box asking the user to type comma-separated contact
 // UUIDs. It is now a picker over `/v1/graha/contacts`.
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -32,7 +34,11 @@ export default function SequencesTab({ onChanged }) {
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
   const [form, setForm] = useState(null);
-  const [openId, setOpenId] = useState(null);
+  /* The open sequence is in the URL — see `hooks/useOpenRecord.js`. This tab
+     swaps the whole panel for the detail rather than opening a drawer over it,
+     which made the missing address even more costly: a refresh threw the reader
+     back to the list with nothing naming where they had been. */
+  const { openId, close, hrefFor } = useOpenRecord();
 
   const { data, loading, error, reload } = useResource(
     () => api.get('/v1/prachar/sequences').then(rows), [],
@@ -59,7 +65,7 @@ export default function SequencesTab({ onChanged }) {
     return (
       <SequenceDetail
         seq={list.find((s) => s.id === openId) || { id: openId }}
-        onBack={() => { setOpenId(null); refresh(); }}
+        onBack={() => { close(); refresh(); }}
       />
     );
   }
@@ -154,9 +160,9 @@ export default function SequencesTab({ onChanged }) {
               <Td align="right" mono>{Number(s.active_enrollments || 0)}</Td>
               <td className="pr__step-when">{s.exit_on_reply ? 'Stops' : 'Keeps sending'}</td>
               <td>
-                <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={() => setOpenId(s.id)}>
+                <Link className="k-btn k-btn--ghost k-btn--sm" to={hrefFor(s.id)}>
                   Open
-                </button>
+                </Link>
               </td>
             </tr>
           ))}

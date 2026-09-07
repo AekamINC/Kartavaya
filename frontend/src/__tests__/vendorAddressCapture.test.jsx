@@ -46,6 +46,11 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+/* MemoryRouter: these lists keep the open record in the URL now — a
+   drawer with no address cannot be opened in a second tab or survive a
+   refresh (see `hooks/useOpenRecord.js`) — so the components read the
+   location and need a Router the way they always needed a DOM. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../lib/api', async (importOriginal) => ({
@@ -140,7 +145,9 @@ const settle = async (rounds = 6) => {
 };
 
 const mount = async (ui) => {
-  await act(async () => { root.render(<ToastProvider>{ui}</ToastProvider>); });
+  await act(async () => {
+    root.render(<MemoryRouter><ToastProvider>{ui}</ToastProvider></MemoryRouter>);
+  });
   await settle();
 };
 

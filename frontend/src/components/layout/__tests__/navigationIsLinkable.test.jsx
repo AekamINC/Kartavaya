@@ -44,10 +44,10 @@ const read = (rel) => readFileSync(path.join(SRC, rel), 'utf8');
 
 /** Source with comments removed — these files EXPLAIN what they no longer do. */
 const live = (rel) => read(rel)
-  .replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n')
   .filter((l) => !l.trim().startsWith('//'))
-  .join('\n');
+  .join('\n')
+  .replace(/\/\*[\s\S]*?\*\//g, '');
 
 let host;
 

@@ -1,5 +1,6 @@
 // Ganit · contracts — the agreements invoices are raised against.
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -9,6 +10,7 @@ import { Badge, CONTRACT_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import ContractDetail from './ContractDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import DateInput from '../../components/ui/DateInput';
 import { apiErrorText } from '../../lib/apiError';
 
@@ -28,7 +30,10 @@ export default function ContractsTab() {
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [contacts, setContacts] = useState([]);
-  const [openId, setOpenId] = useState(null);
+  /* The open record is in the URL — see `hooks/useOpenRecord.js`. A drawer
+     with no address cannot be opened in a second tab, sent to a colleague, or
+     survive a refresh. */
+  const { openId, close, hrefFor } = useOpenRecord();
   const [form, setForm] = useState({ ...BLANK });
   const [saving, setSaving] = useState(false);
 
@@ -166,7 +171,11 @@ export default function ContractsTab() {
       ) : (
         <div className="gn-list">
           {contracts.map(c => (
-            <button type="button" key={c.id} className="gn-row" onClick={() => setOpenId(c.id)}>
+            /* A link, not a button: the row still opens the contract on a plain
+               click, and now also answers ctrl-click, middle-click and "Open
+               link in new tab". `a.gn-row` is in the stylesheet beside
+               `button.gn-row` so the two render identically. */
+            <Link key={c.id} className="gn-row" to={hrefFor(c.id)}>
               <span className="gn-row__head">
                 <span className="gn-row__t">{c.title}</span>
                 <span className="gn-row__r">
@@ -180,7 +189,7 @@ export default function ContractsTab() {
                   {c.start_date && `${c.start_date} → ${c.end_date || '…'}`}
                 </span>
               </span>
-            </button>
+            </Link>
           ))}
         </div>
       )}
@@ -188,7 +197,7 @@ export default function ContractsTab() {
       {openId && (
         <ContractDetail
           contractId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={close}
           onChanged={load}
         />
       )}

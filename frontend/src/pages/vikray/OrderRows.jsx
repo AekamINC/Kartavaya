@@ -27,11 +27,32 @@
 // were not looking at, and a Columns control has no room there. Without `cols`
 // this renders the shipped layout, which is the same list `ORDER_COLUMNS`
 // declares — one source, two callers, no drift.
+//
+// ── Why the row is now an <a> and not a <button> ───────────────────────
+//
+// The button was right about the keyboard and wrong about the browser. A
+// salesperson chasing four orders wants four tabs, and a <button> that
+// navigates in JS has no href — so ctrl-click, middle-click and "Open link in
+// new tab" all had nothing to act on. The address existed the whole time;
+// `orderPath` has spelled it since the record became a routed sibling.
+//
+// An anchor keeps everything the button won: it is focusable, it is in DOM
+// order, Enter activates it. Space does not — see the handler below.
+//
+// A plain left click is still handed to `onOpen`, because the three tabs that
+// are NOT the Orders list funnel their drill-in through `VikrayPage`'s shell
+// and would otherwise lose that. Only the clicks a SPA must not swallow fall
+// through to the browser.
 import React from 'react';
+import { useLocation } from 'react-router-dom';
 import Tag from '../../components/ui/Tag';
 import { inrShort } from '../../lib/inr';
 import { orderColor, ORDER_LABELS } from '../../lib/statusColors';
-import { ORDER_FLOW, flowIndex, attention, ORDER_COLUMNS } from './_shared';
+import { ORDER_FLOW, flowIndex, attention, ORDER_COLUMNS, orderPath } from './_shared';
+
+/* The same set react-router's own <Link> refuses to intercept. */
+const browserHandles = (e) =>
+  e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
 
 function Progress({ status }) {
   const done = flowIndex(status);
@@ -81,6 +102,11 @@ const track = (c) => {
 };
 
 export default function OrderRows({ orders, onOpen, cols }) {
+  /* `location.search` rides into the record's address so the list BEHIND the
+     drawer is the one the reader left — `_shared.jsx:orderPath` carries the
+     whole finding. It matters twice as much on a link: a new tab has no history
+     to fall back on, so whatever the href names is all it will ever show. */
+  const { search } = useLocation();
   const arrangement = cols || SHIPPED;
   // One template for the head and the rows, off one list. A header whose
   // columns can drift from its rows is worse than no header.
@@ -96,12 +122,16 @@ export default function OrderRows({ orders, onOpen, cols }) {
         const flag = attention(o);
         const party = o.contact_name || o.contact_company;
         return (
-          <button
+          <a
             key={o.id}
-            type="button"
+            href={orderPath(o.id, search)}
             style={style}
             className={`vko__row${flag ? ` vko__row--${flag.tone}` : ''}`}
-            onClick={() => onOpen(o.id)}
+            onClick={(e) => { if (browserHandles(e)) return; e.preventDefault(); onOpen(o.id); }}
+            /* An anchor activates on Enter for free; Space scrolls the page
+               instead. The button this replaced answered both, so without this
+               the change would cost a keyboard user half their activation. */
+            onKeyDown={(e) => { if (e.key !== ' ') return; e.preventDefault(); onOpen(o.id); }}
           >
             {arrangement.gridCells({
               order: <span className="vko__id">{o.order_number}</span>,
@@ -122,7 +152,7 @@ export default function OrderRows({ orders, onOpen, cols }) {
                 </span>
               ),
             }, { className: 'vko__cell' })}
-          </button>
+          </a>
         );
       })}
     </div>

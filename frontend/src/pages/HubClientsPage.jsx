@@ -24,7 +24,7 @@
  * `r.data.data || []` is gone.
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, rows as asRows } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader } from '../components/editorial';
@@ -46,7 +46,6 @@ const autoSlug = (name) =>
 
 export default function HubClientsPage() {
   const { pushToast } = useToast();
-  const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState(null);
@@ -170,11 +169,14 @@ export default function HubClientsPage() {
       {!loading && !loadErr && clients.length > 0 && (
         <div className="hcl-grid">
           {clients.map(c => (
-            <button
+            /* A link, so a client workspace can be opened in a second tab —
+               the reason `components/ui/Button.jsx` grew a `to` prop. A button
+               that navigates in JS has no href for ctrl-click, middle-click or
+               the browser's own "Open link in new tab" to act on. */
+            <Link
               key={c.id}
-              type="button"
               className="hcl-card"
-              onClick={() => navigate(`/hub/clients/${c.id}`)}
+              to={`/hub/clients/${c.id}`}
             >
               <span className="hcl-card__head">
                 <span className="hcl-card__mono" aria-hidden="true">
@@ -188,7 +190,7 @@ export default function HubClientsPage() {
               <span className="hcl-card__foot">
                 <span>{c.industry || '—'}</span>
               </span>
-            </button>
+            </Link>
           ))}
         </div>
       )}

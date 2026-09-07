@@ -14,8 +14,17 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import ModuleTabs from '../ModuleTabs';
 import CustomizeTabs from '../CustomizeTabs';
+
+/* The strip renders each tab as a real `<a href>` so it can be opened in a
+   second tab, and it builds that address from the current location — so it now
+   needs a Router the way it always needed a DOM. `/graha` because these
+   fixtures are CRM's real tabs; nothing here asserts on the pathname. */
+const Router = ({ children }) => (
+  <MemoryRouter initialEntries={['/graha']}>{children}</MemoryRouter>
+);
 
 // CRM's real seventeen — the overflow shape the component was written for.
 const CRM = [
@@ -45,7 +54,9 @@ afterEach(() => {
 const mount = (props = {}) => {
   const onChange = vi.fn();
   act(() => root.render(
-    <ModuleTabs tabs={props.tabs ?? SMALL} value={props.value ?? 'dashboard'} onChange={onChange} {...props} />,
+    <Router>
+      <ModuleTabs tabs={props.tabs ?? SMALL} value={props.value ?? 'dashboard'} onChange={onChange} {...props} />
+    </Router>,
   ));
   return onChange;
 };
@@ -54,7 +65,13 @@ const $  = (s) => container.querySelector(s);
 const $$ = (s) => [...container.querySelectorAll(s)];
 const tabs = () => $$('[role="tab"]');
 const more = () => $('.mt__more');
-const click = (el) => act(() => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+/* `cancelable: true` — a real browser click is, and the strip's tabs are now
+   anchors whose handler calls preventDefault to keep a plain click inside the
+   SPA. On a non-cancelable event that call is a no-op, so jsdom followed the
+   href and logged "Not implemented: navigation" under every passing test. */
+const click = (el) => act(() => {
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+});
 
 describe('ModuleTabs · the always-there More', () => {
   it('still renders NO More when everything fits and there is no onCustomize', () => {
@@ -231,7 +248,7 @@ describe('ModuleTabs + CustomizeTabs · keyboard focus across the sheet', () => 
   };
 
   it('hands focus to the trigger as the sheet opens, so the trap has a live return target', () => {
-    act(() => root.render(<Wired />));
+    act(() => root.render(<Router><Wired /></Router>));
     openSheet();
     // The menuitem that opened the sheet no longer exists; the captured
     // element must be the trigger, which is still on the page. (In the
@@ -241,7 +258,7 @@ describe('ModuleTabs + CustomizeTabs · keyboard focus across the sheet', () => 
   });
 
   it('returns focus to the More trigger when the sheet closes by Cancel', async () => {
-    act(() => root.render(<Wired />));
+    act(() => root.render(<Router><Wired /></Router>));
     openSheet();
     const cancel = $$('button').find((b) => b.textContent.trim() === 'Cancel');
     await act(async () => { cancel.click(); });
@@ -249,7 +266,7 @@ describe('ModuleTabs + CustomizeTabs · keyboard focus across the sheet', () => 
   });
 
   it('returns focus to the More trigger when the sheet closes by Escape', async () => {
-    act(() => root.render(<Wired />));
+    act(() => root.render(<Router><Wired /></Router>));
     openSheet();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));

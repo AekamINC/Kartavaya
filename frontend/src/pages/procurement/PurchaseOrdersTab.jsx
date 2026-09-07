@@ -7,6 +7,7 @@
 // document generator (approval, revisions, receipts, the three-way match)
 // lives in the record drawer, where it appears only once it is relevant.
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { StatTile } from '../../components/editorial';
@@ -15,6 +16,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import DateInput from '../../components/ui/DateInput';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { Secondary } from '../../components/Bilingual';
 import { inr } from '../../lib/inr';
 import PurchaseOrderDetail from './PurchaseOrderDetail';
@@ -41,7 +43,10 @@ export default function PurchaseOrdersTab() {
   const [showForm, setShowForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [openId, setOpenId] = useState(null);
+  /* The open record is in the URL — see `hooks/useOpenRecord.js`. A drawer with
+     no address cannot be opened in a second tab, sent to a colleague, or
+     survive a refresh. */
+  const { openId, open, close, hrefFor } = useOpenRecord();
   const [form, setForm] = useState({ ...BLANK_PO, line_items: [{ ...EMPTY_LINE }] });
 
   const load = useCallback(async () => {
@@ -122,7 +127,10 @@ export default function PurchaseOrdersTab() {
       setForm({ ...BLANK_PO, line_items: [{ ...EMPTY_LINE }] });
       await load();
       await loadCommitted();
-      setOpenId(body(r).data?.id || null);
+      /* Show the order that was just created. `open` ignores a missing id
+         rather than closing something, which is what `setOpenId(… || null)`
+         did — there is no drawer to close at this point anyway. */
+      open(body(r).data?.id);
     } catch (e2) {
       pushToast({
         title: apiErrorText(e2, 'Could not create the purchase order'),
@@ -378,7 +386,10 @@ export default function PurchaseOrdersTab() {
       ) : (
         <div className="gn-list">
           {orders.map(o => (
-            <button type="button" key={o.id} className="gn-row" onClick={() => setOpenId(o.id)}>
+            /* A link: a purchase order is a record somebody checks against a
+               second tab. `a.gn-row` sits beside `button.gn-row` in ganit.css so
+               the two render identically. */
+            <Link key={o.id} className="gn-row" to={hrefFor(o.id)}>
               <span className="gn-row__head">
                 <span>
                   <span className="gn-row__t">{o.vendor_name}</span>
@@ -397,7 +408,7 @@ export default function PurchaseOrdersTab() {
                   {o.revision > 0 && ` · revision ${o.revision}`}
                 </span>
               </span>
-            </button>
+            </Link>
           ))}
         </div>
       )}
@@ -405,7 +416,7 @@ export default function PurchaseOrdersTab() {
       {openId && (
         <PurchaseOrderDetail
           poId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={close}
           onChanged={() => { load(); loadCommitted(); }}
         />
       )}

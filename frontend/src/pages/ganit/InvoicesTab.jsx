@@ -4,6 +4,7 @@
 // record is `InvoiceDetail` (a drawer, per the owner's request), the create
 // form is `InvoiceForm`, and what remains here is the list.
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows } from '../../lib/api';
 // `EmptyState` directly, not the `Empty` wrapper in editorial/ModuleUI: that
 // wrapper forwards its `icon` prop into a three-entry GLYPHS map (check, clock,
@@ -19,6 +20,7 @@ import InvoiceDetail from './InvoiceDetail';
 import { currentUser } from '../../lib/auth';
 import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
 import useTableView from '../../hooks/useTableView';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
 // `CreatedHead` and `ByHead` are gone from this file: both headers are now
@@ -112,7 +114,10 @@ export default function InvoicesTab({ newNonce = 0 }) {
   const [newType, setNewType] = useState('tax_invoice');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [openId, setOpenId] = useState(null);
+  /* The open invoice is in the URL. A drawer with no address cannot be opened
+     in a second tab, linked to a colleague, or survive a refresh — see
+     `hooks/useOpenRecord.js` for the whole finding. */
+  const { openId, open, close, hrefFor } = useOpenRecord();
   // A failed load left `invoices` at [] and painted "No invoices yet — create
   // your first invoice". On a finance ledger that is the worst version of this
   // bug: an empty receivables list is a number the user may act on, and it is
@@ -265,16 +270,21 @@ export default function InvoicesTab({ newNonce = 0 }) {
             </thead>
             <tbody>
               {view.rows.map(inv => (
-                <tr key={inv.id} className="gn-tbl__row" onClick={() => setOpenId(inv.id)}>
+                <tr key={inv.id} className="gn-tbl__row" onClick={() => open(inv.id)}>
                   {cols.cells({
                   invoice_number: (
                   <td>
-                    {/* A real button inside the row, so the record is reachable
-                        by keyboard. The row's onClick alone was mouse-only. */}
-                    <button type="button" className="gn-link gn-tbl__id"
-                      onClick={e => { e.stopPropagation(); setOpenId(inv.id); }}>
+                    {/* A real link inside the row, so the record is reachable by
+                        the keyboard AND by the browser: the row's onClick alone
+                        was mouse-only, and a button that opens a drawer has no
+                        href for ctrl-click or "Open link in new tab" to act on.
+                        stopPropagation so the row's own handler does not also
+                        fire and push a second history entry. */}
+                    <Link className="gn-link gn-tbl__id"
+                      to={hrefFor(inv.id)}
+                      onClick={e => e.stopPropagation()}>
                       {inv.invoice_number}
-                    </button>
+                    </Link>
                   </td>
                   ),
                   contact_name: <td>{inv.contact_name || '—'}</td>,
@@ -375,7 +385,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
       {openId && (
         <InvoiceDetail
           invoiceId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={close}
           onChanged={load}
         />
       )}

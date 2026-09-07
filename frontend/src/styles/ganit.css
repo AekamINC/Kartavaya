@@ -543,8 +543,15 @@
 }
 
 /* A record name that opens its editor. Underlined so it reads as actionable
-   without borrowing link blue — it does not navigate. */
+   without borrowing link blue.
+   ⚠ "it does not navigate" was true here until 2026-09-07 and is not any more:
+   the invoice number is a `<Link>` to `?open=<id>`, so the record can be opened
+   in a second tab. `display: inline-block` is what keeps that from LOOKING
+   different — an anchor is `display: inline` where a button is `inline-block`,
+   and an inline box breaks at word boundaries, so a two-word record name
+   wrapped where it used to run on. No-op for a button. */
 .gn-link {
+  display: inline-block;
   background: none;
   border: 0;
   padding: 0;
@@ -632,11 +639,17 @@
   font: inherit;
   color: inherit;
 }
-/* A row that opens a record is a <button>. It was a <div> with onClick, which
-   is unreachable by keyboard and invisible to a screen reader. */
-button.gn-row { cursor: pointer; display: block; }
-button.gn-row:hover { background: var(--s-low); border-color: var(--outline-variant); }
-button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+/* A row that opens a record is a <button>, and now an <a>. It was a <div> with
+   onClick, which is unreachable by keyboard and invisible to a screen reader;
+   the button fixed that and left the BROWSER out — no href, so ctrl-click,
+   middle-click and "Open link in new tab" had nothing to act on.
+   ⚠ These three are ELEMENT-scoped, so `a.gn-row` had to be named explicitly:
+   without it an anchor row loses `display: block`, its hover and its focus
+   ring, and there is no error to notice. `components.css:1108` widens `.chip`
+   the same way for the same reason. */
+button.gn-row, a.gn-row { cursor: pointer; display: block; }
+button.gn-row:hover, a.gn-row:hover { background: var(--s-low); border-color: var(--outline-variant); }
+button.gn-row:focus-visible, a.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .gn-row__head {
   display: flex;
   justify-content: space-between;

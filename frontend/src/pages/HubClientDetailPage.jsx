@@ -7,7 +7,7 @@
 // manual-token fields for Telegram / Reddit / Pinterest, and the expired-token
 // warning on a stale OAuth connection.
 import React, { useState, useCallback, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
@@ -30,7 +30,6 @@ const TABS = ['overview', 'generate', 'content', 'chat', 'knowledge', 'publish',
 
 export default function HubClientDetailPage() {
   const { clientId } = useParams();
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const p = params.get('tab');
@@ -87,9 +86,11 @@ export default function HubClientDetailPage() {
 
   return (
     <div className="hb-page">
-      <button type="button" className="k-backbtn hb-page__back" onClick={() => navigate('/hub/clients')}>
+      {/* A link: the list this came from is a place, and a place should be
+          openable in a second tab beside the record. */}
+      <Link className="k-backbtn hb-page__back" to="/hub/clients">
         ← Back to clients
-      </button>
+      </Link>
 
       <ModuleHeader
         module="hub"
@@ -146,10 +147,10 @@ export default function HubClientDetailPage() {
                   Skill packs have their own screen — assigning, running and building templates each
                   need room, and the catalog is shared across every client in the organisation.
                 </p>
-                <button type="button" className="k-btn k-btn--primary"
-                  onClick={() => navigate(`/hub/clients/${clientId}/skills`)}>
+                <Link className="k-btn k-btn--primary"
+                  to={`/hub/clients/${clientId}/skills`}>
                   Open skill packs for {client?.name || 'this client'}
-                </button>
+                </Link>
               </div>
             )}
           </div>

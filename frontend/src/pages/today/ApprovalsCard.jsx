@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '../../components/editorial';
 import { Avatar } from '../../components/ui';
 import { SkeletonText } from '../../components/ui/Skeleton';
@@ -53,7 +54,7 @@ function metaOf(r) {
   return bits.join(' · ');
 }
 
-export default function ApprovalsCard({ onOpenApprovals }) {
+export default function ApprovalsCard({ approvalsHref = '/approvals' }) {
   const { pushToast } = useToast();
   const [rows,    setRows]    = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +100,9 @@ export default function ApprovalsCard({ onOpenApprovals }) {
     : error ? null
     : rows.length > 0
       ? <span className="k-approvals__waiting">{rows.length} waiting</span>
-      : <button className="k-link" onClick={onOpenApprovals}>History →</button>;
+      /* Links, both of them. Clearing decisions is exactly the work somebody
+         does in a second tab while the first stays on Today. */
+      : <Link className="k-link" to={approvalsHref}>History →</Link>;
 
   return (
     <Card title="Approvals" sanskrit="सम्मति" right={head}>
@@ -202,9 +205,9 @@ export default function ApprovalsCard({ onOpenApprovals }) {
             );
           })}
           {rows.length > 4 && (
-            <button className="k-link k-approvals__more" onClick={onOpenApprovals}>
+            <Link className="k-link k-approvals__more" to={approvalsHref}>
               {rows.length - 4} more →
-            </button>
+            </Link>
           )}
         </div>
       )}

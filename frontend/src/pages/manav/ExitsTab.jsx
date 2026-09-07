@@ -19,7 +19,9 @@
 // advance — and the whole defect above came from conflating "has resigned" with
 // "has gone".
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
@@ -169,7 +171,12 @@ export default function ExitsTab({ onUpdate }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...BLANK_EXIT });
   const [saving, setSaving] = useState(false);
-  const [openId, setOpenId] = useState(null);
+  /* Which exit is expanded is in the URL — see `hooks/useOpenRecord.js`. An
+     exit is a record HR chases across screens, and it had no address: it could
+     not be sent to whoever owns the clearance, and a refresh collapsed it.
+     `open` is destructured under another name because the row below already
+     binds `open` to "is THIS row the expanded one". */
+  const { openId, open: openRecord, close, hrefFor } = useOpenRecord();
   const [busy, setBusy] = useState('');
   const [confirm, setConfirm] = useState(null);
   const [interviewFor, setInterviewFor] = useState(null);
@@ -395,11 +402,21 @@ export default function ExitsTab({ onUpdate }) {
                 const open = openId === r.id;
                 return (
                   <React.Fragment key={r.id}>
-                    <tr className="mn-t__row--click" onClick={() => setOpenId(open ? null : r.id)}>
+                    <tr className="mn-t__row--click" onClick={() => (open ? close() : openRecord(r.id))}>
                       {cols.cells({
                         employee_name: (
                           <td>
-                            <div className="gr__td--name">{r.employee_name}</div>
+                            {/* The name is a link so the row can be opened in a
+                                second tab; the row's own click still toggles it
+                                in place. stopPropagation so one press is not
+                                also read as a toggle. */}
+                            <Link
+                              className="gr__td--name gr__link"
+                              to={hrefFor(r.id)}
+                              onClick={e => e.stopPropagation()}
+                            >
+                              {r.employee_name}
+                            </Link>
                             {r.employee_code && <div className="gr__ls">{r.employee_code}</div>}
                           </td>
                         ),

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
+import useOpenRecord from '../hooks/useOpenRecord';
 import { PageHeader, PriorityDot } from '../components/editorial';
 import { userInitials } from '../lib/utils';
 import { avatarBg } from '../components/ui/Avatar';
@@ -30,7 +31,13 @@ export default function TeamsPage() {
   // actively misleading.
   const [projects,       setProjects]       = useState(null);
   const [projectsErr,    setProjectsErr]    = useState(null);
-  const [selectedId,     setSelectedId]     = useState('');
+  /* WHICH project's roster is on screen lives in the URL — see
+     `hooks/useOpenRecord.js`. It was component state, so the pane could not be
+     linked to and a refresh threw the reader back to the first project in the
+     list. Derived, with the first project as the fallback: the URL carries a
+     DELIBERATE choice, and the default never writes itself into the address. */
+  const { openId, open: openTeam } = useOpenRecord();
+  const selectedId = openId || (projects || [])[0]?.team_id || '';
   // Read inside async callbacks, where `selectedId` would be the value
   // captured when the fetch STARTED rather than the one on screen now.
   const selectedIdRef = useRef('');
@@ -51,7 +58,6 @@ export default function TeamsPage() {
     const res = await api.get('/teams');
     const list = Array.isArray(res.data) ? res.data : [];
     setProjects(list);
-    if (!selectedId && list.length) setSelectedId(list[0].team_id);
   };
 
   // ⚠ THE ID THE ROSTER ON SCREEN WAS LOADED FOR. Every write below sends this
@@ -216,7 +222,10 @@ export default function TeamsPage() {
               <select
                 className="inp"
                 value={selectedId}
-                onChange={e => { setSelectedId(e.target.value); resetAddForm(); }}
+                /* `replace`, not push: a native select fires `change` on every
+                   arrow key, so pushing would leave a history entry behind each
+                   option passed over and Back would walk the dropdown. */
+                onChange={e => { openTeam(e.target.value, { replace: true }); resetAddForm(); }}
               >
                 {projects.map(p => (
                   <option key={p.team_id} value={p.team_id}>{p.name}</option>

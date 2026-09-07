@@ -47,6 +47,7 @@ vi.mock('../../../../lib/api', () => ({
 }));
 
 import { api } from '../../../../lib/api';
+import { MemoryRouter } from 'react-router-dom';
 import { ToastProvider } from '../../../../components/ui/toast';
 import CatalogTab from '../CatalogTab';
 
@@ -110,7 +111,12 @@ const settle = async (rounds = 5) => {
 /** Mount the tab with one pack and whatever else the case needs. */
 async function mount({ packs = [pack()], costs = COSTS, canManage = true } = {}) {
   await act(async () => {
+    /* MemoryRouter because "What it needs" is a real `<Link to="?open=…">`
+       now — a pack can be opened in a second tab, or sent to whoever has to
+       approve the assignment. The tab reads the location to build that address.
+       `/hub/clients/c1?tab=catalog` is where this shelf actually lives. */
     root.render(
+      <MemoryRouter initialEntries={['/hub/clients/c1?tab=catalog']}>
       <ToastProvider>
         <CatalogTab
           clientId="c1"
@@ -121,7 +127,8 @@ async function mount({ packs = [pack()], costs = COSTS, canManage = true } = {})
           onCreate={() => {}}
           onChanged={() => {}}
         />
-      </ToastProvider>,
+      </ToastProvider>
+      </MemoryRouter>,
     );
   });
   await settle();

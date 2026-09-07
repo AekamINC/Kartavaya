@@ -145,8 +145,13 @@ const mountAt = async (path) => {
 /** The drawer portals to <body>, so the record is never inside `container`. */
 const drawer = () => document.querySelector('[role="dialog"]');
 const drawerText = () => drawer()?.textContent || '';
+/* `cancelable: true` — the deal title is an `<a href>` now and its handler
+   calls preventDefault to keep a plain click inside the SPA. On a
+   non-cancelable event that call does nothing and jsdom follows the href. */
 const click = async (el) => {
-  await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  await act(async () => {
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  });
   await settle();
 };
 const dealReads = () => api.get.mock.calls
@@ -177,9 +182,14 @@ describe('Graha · a deal is a URL', () => {
     });
     await settle();
 
-    const title = [...container.querySelectorAll('button')]
-      .find(b => b.textContent === DEAL.title);
+    /* An ANCHOR, not a button. The title has always opened the deal's own URL;
+       it emits that URL as an href now, so the same row can be ctrl-clicked
+       into a second tab. The href is asserted as well as the click, because a
+       `<Link to="">` would still render an `<a>` and still go nowhere. */
+    const title = [...container.querySelectorAll('a')]
+      .find(a => a.textContent === DEAL.title);
     expect(title).toBeTruthy();
+    expect(title.getAttribute('href')).toBe(`/graha/deals/${ID}`);
     await click(title);
 
     // Was: a form appeared in place of the card and the URL never moved.

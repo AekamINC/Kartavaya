@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 
 /**
  * Button — seven variants, three sizes (02-common-components.md §1).
@@ -46,6 +47,27 @@ import React from 'react';
 const VARIANTS = ['fill', 'tonal', 'out', 'text', 'ghost', 'danger', 'dangerfill'];
 const SIZES = { sm: 'btn--sm', md: '', lg: 'btn--lg' };
 
+/**
+ * `to` is the eighth thing this component does, and the reason is a complaint
+ * rather than an inventory.
+ *
+ * The owner, twice: "user cannot open anything in new tab ... they cannot work
+ * two different module at same time". A `<button onClick={() => navigate(to)}>`
+ * and a `<Link to>` look identical, behave identically on a plain click, and
+ * differ completely on the click that matters — ctrl, cmd, shift, middle, and
+ * the browser's own "Open link in new tab". A button has no href, so none of
+ * those have anything to act on, and the failure is invisible in every
+ * screenshot and in every click-through test.
+ *
+ * Putting it HERE rather than at each call site is the point: the seven
+ * variants, the three sizes and the loading state stay in one place, and a call
+ * site opts into being a real link by naming its destination instead of
+ * describing a navigation in JS.
+ *
+ * A `disabled` or `loading` button stays a `<button>`. Neither attribute exists
+ * on an anchor — `<a disabled>` is inert markup that navigates anyway — so a
+ * link that must not be followed has to be the element that can refuse.
+ */
 export default function Button({
   variant = 'ghost',
   size = 'md',
@@ -54,11 +76,26 @@ export default function Button({
   className = '',
   children,
   onClick,
+  to,
   ...rest
 }) {
   const v = VARIANTS.includes(variant) ? variant : 'ghost';
   const cls = ['btn', `btn--${v}`, SIZES[size] ?? '', loading ? 'is-loading' : '', className]
     .filter(Boolean).join(' ');
+  if (to && !loading && !rest.disabled) {
+    /* `type` is not forwarded — on an anchor it means something else entirely
+       (the MIME type of the destination), so every link would ship
+       `type="button"` as a content-type hint. `disabled` is dropped for the
+       same reason it gates this branch: it is not an anchor attribute. */
+    const linkRest = { ...rest };
+    delete linkRest.disabled;
+    return (
+      <Link to={to} className={cls} onClick={onClick} {...linkRest}>
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <button
       type={type}

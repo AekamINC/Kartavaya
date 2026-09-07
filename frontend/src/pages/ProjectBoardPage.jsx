@@ -24,7 +24,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 
 import { api }         from '../lib/api';
 import { currentUser } from '../lib/auth';
@@ -82,7 +82,6 @@ function monthToDate(today = new Date()) {
 
 export default function ProjectBoardPage() {
   const { projectId } = useParams();
-  const navigate      = useNavigate();
   const me            = currentUser();
 
   const [project,       setProject]       = useState(null);
@@ -247,9 +246,9 @@ export default function ProjectBoardPage() {
             >
               + Save view
             </button>
-            <button type="button" className="k-link" onClick={() => navigate('/projects')}>
+            <Link className="k-link" to="/projects">
               ← Projects
-            </button>
+            </Link>
           </div>
         }
       />

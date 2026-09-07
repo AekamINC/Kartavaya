@@ -40,7 +40,23 @@ input, textarea, select { font-family: inherit; color: inherit; }
    accent value that never flips. As a link colour on #12151A it is 1.9:1.
    --primary-text is the token 00 §12 created for primary-coloured TEXT and is
    the accent's light value in dark mode. */
-.k-link    { color: var(--primary-text); font-weight: 500; cursor: pointer; }
+/* `font-size: inherit` is not decoration — it is what makes `.k-link` mean the
+   same thing on a `<button>` and on an `<a>`.
+   The reset above gives a button `font-family: inherit` but NOT `font-size`, so
+   a `<button class="k-link">` sat at the UA's 13.333px while an
+   `<a class="k-link">` inherited the 14px around it. Both already shipped —
+   `ui/AddressBlock.jsx` and `sahayak/assistant/AnswerBody.jsx` are anchors,
+   the Today cards' "Try again" are buttons — so the class was two sizes
+   depending on which element reached it, and 13.333px was never a designed
+   value: it is the browser's default leaking through a reset that stopped one
+   property short. Inheriting is what a link inside a line of text should do,
+   and it is the same answer for both elements. */
+.k-link    { color: var(--primary-text); font-weight: 500; cursor: pointer; font-size: inherit; display: inline-block; }
+/* `display: inline-block` is a NO-OP for the buttons — that is already their UA
+   default — and the fix for the anchors. Measured in a 300px column: an
+   `<a class="k-link">` is `display: inline`, so "History →" broke across two
+   lines with the arrow stranded on the second, while the button beside it kept
+   one line and overflowed. Declaring it means the class decides, not the tag. */
 .k-link:hover { color: var(--primary-text); text-decoration: underline; text-underline-offset: 3px; }
 
 /* ── App shell (01-navigation.md §1 · Shell) ─────────────────────────────

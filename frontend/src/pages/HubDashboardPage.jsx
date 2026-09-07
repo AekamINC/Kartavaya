@@ -7,6 +7,7 @@
 // between them (the client-detail Publish tab had no calendar, no platform
 // allow-list and four fewer platforms) is gone with it.
 import React, { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
@@ -29,7 +30,24 @@ const TABS = ['generate', 'content', 'chat', 'knowledge', 'publish', 'brand', 'c
 
 export default function HubDashboardPage() {
   const meta = moduleMeta('hub');
-  const [tab, setTab] = useState('generate');
+  /* `?tab=`, like the other twelve module pages — this one and HubSkillsPage
+     were the last two holding the open tab in component state.
+     `ModuleTabs` now renders each tab as a real link, and a link is only worth
+     having if the address it names does something on arrival: with the tab in
+     state, opening `…/hub?tab=knowledge` in a second tab landed on Generate
+     and the link would have been a lie. Same shape as `GrahaPage:103` —
+     precedence is URL then the shipped opening tab, `replace: true` so hopping
+     tabs does not fill the history stack. */
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.includes(urlTab) ? urlTab : 'generate';
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const { key: panelKey, ...motion } = useTabPanelMotion(TABS, tab);
 
   const [state, setState] = useState({ loading: true, error: '', data: null });

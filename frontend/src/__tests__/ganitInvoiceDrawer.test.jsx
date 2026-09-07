@@ -20,6 +20,11 @@
 import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
+/* MemoryRouter: these lists keep the open record in the URL now — a
+   drawer with no address cannot be opened in a second tab or survive a
+   refresh (see `hooks/useOpenRecord.js`) — so the components read the
+   location and need a Router the way they always needed a DOM. */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 const get = vi.fn();
@@ -91,12 +96,20 @@ async function openInvoice(phone) {
     return Promise.resolve({ data: { data: [LIST_ROW] } });
   });
 
-  await act(async () => { root.render(<ToastProvider><InvoicesTab /></ToastProvider>); });
+  await act(async () => {
+    root.render(<MemoryRouter><ToastProvider><InvoicesTab /></ToastProvider></MemoryRouter>);
+  });
   await act(async () => {});
 
-  const trigger = [...container.querySelectorAll('button')]
-    .find(b => b.textContent.trim() === 'INV-2607');
-  expect(trigger, 'the invoice number should be a button that opens the record').toBeTruthy();
+  /* The invoice number is a LINK now, not a button. The record had no address
+     at all — it could not be opened in a second tab, sent to whoever is chasing
+     the payment, or survive a refresh (see `hooks/useOpenRecord.js`). The href
+     is asserted as well as the click, because a `<Link to="">` would still
+     render an `<a>` and still go nowhere. */
+  const trigger = [...container.querySelectorAll('a')]
+    .find(a => a.textContent.trim() === 'INV-2607');
+  expect(trigger, 'the invoice number should be a link that opens the record').toBeTruthy();
+  expect(trigger.getAttribute('href')).toContain('open=inv-1');
 
   await act(async () => { trigger.click(); });
   await act(async () => {});

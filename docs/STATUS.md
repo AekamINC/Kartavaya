@@ -12,6 +12,224 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-07 (later) — ✅ A RECORD THAT IS OPEN NOW HAS AN ADDRESS (`?open=<id>`)
+
+The third and largest pass at the owner's complaint. The shell was made linkable
+on 09-01, the module tab strip earlier today — and neither touched the thing a
+CRM person actually spends the day in. **Seventeen list surfaces opened a record
+into a drawer with no URL at all**, and the defect was one line, copied verbatim
+into twelve files:
+
+    const [openId, setOpenId] = useState(null);
+
+A record opened that way cannot be put in a second tab, cannot be sent to a
+colleague, cannot be bookmarked, and does not survive a refresh — the reader
+lands back on the list having lost the row they were reading. None of it shows
+in a screenshot, because opening the drawer works perfectly.
+
+### The shape: a query parameter, not a route
+
+`graha/deals/:dealId` and `vikray/orders/:orderId` solved this by promoting the
+record to a ROUTE. That is right when a record has its own screen and its own
+fetch; it is too much machinery for a drawer that renders over the list it
+belongs to, and it would need a route entry per tab across nine module pages.
+`?open=<id>` says the same thing — *this list, with this row open* — and needs
+no route. `hooks/useOpenRecord.js` is the one implementation.
+
+### Sixteen surfaces converted
+
+| module | lists |
+| --- | --- |
+| Ganit | Invoices · Contracts · Payables |
+| Graha | **Clients · Contacts** — the CRM records this module exists for |
+| Procurement | Purchase orders · PO approvals |
+| Prachar | Sequences · Events |
+| Sahayak | Data runs · Skill-pack catalog |
+| Manav | Exits |
+| Dristi | Scheduled reports |
+| eSign | Documents |
+| — | Teams (project roster) |
+
+The row's own click still opens the record in place; the identifying cell — the
+invoice number, the client name, the order — is a real `<Link>`, so ctrl-click,
+middle-click and "Open link in new tab" all work.
+
+### The history contract, which is the part that is easy to get wrong
+
+Opening **pushes**. That is not incidental: it is what makes Back close the
+record instead of leaving the module, which is what every reader expects Back to
+do and what none of these screens did. Closing then has two correct answers:
+
+- opened here → `navigate(-1)`, consuming the entry. Without it, closing pushes
+  a **third** entry and Back re-opens what the reader just dismissed;
+- arrived cold, on a pasted link or a second tab → drop the parameter with
+  `replace`. `navigate(-1)` there walks out of the app.
+
+Two options exist for one caller each, and both earn their place. **`replace`**
+— `TeamsPage`'s project `<select>` fires `change` on every arrow key, so pushing
+would make Back walk the dropdown. **`params`** — `EsignPage` opens a document
+and switches tab at once; as two calls in one tick that silently loses one,
+because `setParams` is a navigate and the second reads a location the first has
+not landed yet.
+
+### Two ways a link here could lie, and both are closed
+
+- **`basePath`.** `/graha/deals/:dealId` renders as a CHILD of the module page,
+  so Clients and Contacts are still mounted beneath an open deal. A row link
+  built from `useLocation()` would read `/graha/deals/d1?open=c1` and reopen the
+  deal. Graha's two list tabs pass `/graha`.
+- **Gating on the record instead of the id.** `ClientsTab` and `ContactsTab`
+  fetch the record; a cold arrival has the id before it has the answer, so
+  gating the screen on `detail` painted the LIST until the fetch landed. Both
+  gate on `openId` and show a skeleton, and both guard the late answer so
+  switching records quickly cannot let the first request land last.
+
+### ⚠ `button.gn-row` was ELEMENT-scoped
+
+Three rules in `ganit.css` were `button.gn-row`, so an anchor row silently lost
+`display: block`, its hover and its focus ring — no error, no warning. Widened
+to `a.gn-row`, the way `components.css:1108` already widens `.chip`.
+`.gn-link` also declared no `display`, so as an anchor a record name wrapped
+mid-name. All eight converted control classes were then measured against the
+buttons they replaced in a browser, against the built stylesheet: **identical
+size, display, colour, decoration, padding, border and client rects.**
+
+One appearance change is deliberate and is the exception to that: `manav/ExitsTab`
+rendered its employee name as plain text, because nothing but the row opened the
+record. It now carries `gr__link` like every other record name in the product —
+weight 600→700 and the same faint underline. Measured: the cell is **109px either
+way**, so the `--row-h` contract is untouched; the name simply looks like the
+link it now is.
+
+### 🟡 Two surfaces deliberately NOT converted
+
+Written down because the next person to run the grep will find them:
+
+- **`sahayak/SkillsTab`** — an accordion FORM, not a record view. Its toggle
+  clears the last result, resets the image option and re-seeds the parameter
+  box; a URL would have to reproduce all of it on a screen that spends credits.
+- **`pahchan/Register`** — a keyboard review CURSOR. The open row is driven by
+  the `O` key and by a click that also moves the cursor, so a reviewer sweeping
+  a day of punches would push one history entry per row and Back would walk
+  every one.
+
+`hooks/__tests__/openRecordIsInTheUrl.test.jsx` holds both exclusions as
+assertions, so they read as decisions rather than omissions.
+
+### The ratchet, with its negative controls run
+
+62 assertions: the address, the history contract, and — the part that matters
+next year — that none of the sixteen keeps its open record in `useState`. Three
+controls were run and each failed only its intended tests before being restored:
+a list reverted to `useState` (2 failed), `hrefFor` dropping the other query
+parameters (3), and `close()` always calling `navigate(-1)` (2).
+
+**Frontend: 3,541 tests pass** across 223 files (62 new). `npm run check` exit 0,
+`npm run build` exit 0.
+
+---
+
+## 2026-09-07 — ✅ THE MODULE TABS ARE LINKS · the second half of "open in a new tab"
+
+The owner's complaint of 2026-09-01 — "user cannot open anything in new tab ...
+they cannot work two different module at same time" — was answered for the
+SHELL that day (`layout/__tests__/navigationIsLinkable`: the sidebar, the admin
+sidebar, the mobile bar). It came back on 09-07 because the shell was never
+where the work is. A CRM person does not want Graha in one tab and Ganit in
+another; they want **Graha's Deals in one and its Follow-ups in the other** —
+and that is `ModuleTabs`, whose ~110 tabs across **fourteen** module pages were
+every one a `<button>`.
+
+Nothing blocked it. The address existed the whole time: the open tab has been
+`?tab=` in the URL since `GrahaPage` stopped holding it in state. The strip
+simply never emitted it, so ctrl-click, middle-click, cmd-click and the
+browser's own "Open link in new tab" had nothing to act on.
+
+### What now carries an href
+
+| surface | was | is |
+| --- | --- | --- |
+| Module tab strip · 14 pages | `<button role="tab">` | `<a href="?tab=…" role="tab">` |
+| The More overflow menu | `<button role="menuitem">` | `<a href>` — 9 of Graha's 17 live there |
+| Vikray order row (4 tabs share it) | `<button class="vko__row">` | `<a href={orderPath(id, search)}>` |
+| Graha deal title, Edit, Notes | `<button onClick={navigate}>` | `<Link to={dealPath(id)}>` |
+| Project cards + "Open" | `<button onClick={navigate}>` | `<Link>` / `<Button to>` |
+| Hub client cards, both back links, "Open skill packs" | `<button onClick={navigate}>` | `<Link>` |
+| Today: "Open projects", "History", "N more", "All activity" | `onOpenX` callback | `<Link to>` — the cards name their own destination |
+| Boards "Open project", Board "← Projects" | `<button onClick={navigate}>` | `<Link>` |
+
+`components/ui/Button.jsx` grew a **`to`** prop, so any call site opts into being
+a real link without restyling anything. A `disabled` or `loading` button stays a
+`<button>`: neither attribute exists on an anchor, and `<a disabled>` navigates
+anyway.
+
+### Two ways this could have shipped a link that LIES, and both are closed
+
+An href that goes nowhere is worse than no href — a wrong link is followed, a
+missing one is only missed.
+
+- **`HubDashboardPage` and `HubSkillsPage` held their tab in `useState`.** They
+  would have emitted `?tab=x` and opened on their default. Both are `?tab=`
+  backed now, so all fourteen are.
+- **`/graha/deals/:dealId` and `/vikray/orders/:orderId` render as CHILDREN of
+  their module page**, so the strip is mounted at the RECORD's pathname. An
+  address built from `useLocation()` would read `/vikray/orders/123?tab=orders`
+  and reopen the order. `basePath` is why it does not.
+
+### The half that makes an href more than decoration
+
+A handler that swallows every click leaves the link ornamental. Plain left click
+is still handed to the page's own `onChange` — `replace: true`, `EsignPage`'s
+`switchTab`, `HubClientDetailPage`'s `selectTab` all survive. Ctrl, cmd, shift
+and middle clicks fall through to the browser untouched, and `role="tab"` still
+answers Space, which an anchor does not do by itself.
+
+### Two CSS classes were a different size depending on their element
+
+`.k-link` and `.gr__link` declared no `font-size` and no `display`. The global
+reset gives a button `font-family: inherit` but **not** `font-size`, so a
+`<button class="k-link">` sat at the UA's 13.333px while an
+`<a class="k-link">` inherited 14px — and both already shipped
+(`ui/AddressBlock.jsx` and `sahayak/assistant/AnswerBody.jsx` are anchors).
+Measured in a 300px column, the anchor also **wrapped mid-label**, stranding
+"→" on a second line, because an anchor is `display: inline` where a button is
+`inline-block`. Both classes now declare `font-size: inherit` and
+`display: inline-block` — a no-op for every existing button, and the fix for
+every anchor. Verified by computed style: all seven converted control types now
+measure byte-identical to the buttons they replaced.
+
+### A ratchet, and a bug found in the last one
+
+`components/module/__tests__/tabsAreLinkable.test.jsx` — 33 assertions. It
+checks the rendered hrefs, that a modified click is NOT prevented, that Space
+still activates, and — the part that matters next year — that **every one of the
+fourteen consumer pages reads `?tab=` from the URL**.
+
+⚠ Its first run failed for the wrong reason, and the finding is worth keeping:
+the source-reading helper stripped **block** comments before line comments, so a
+slash-star written inside a `//` line — `HubClientDetailPage` has one, in the
+words "the `hub/*` components" — began a block that ran hundreds of lines and
+took the real code with it. Here that produced a RED test. In a check written to
+assert absence it produces a **GREEN** one, because a ratchet handed an empty
+string passes everything. `navigationIsLinkable` carried the same order and was
+fixed with it.
+
+### 🟡 What is still not linkable, and why it is a separate job
+
+Seventeen list surfaces open a record into an in-page **drawer with no URL at
+all** — `graha/ClientsTab`, `graha/ContactsTab`, `ganit/{Invoices,Contracts,
+Payables}Tab`, `manav/ExitsTab`, `prachar/{Events,Sequences}Tab`,
+`procurement/{PurchaseOrders,POApprovals}Tab`, `sahayak/{Skills,DataRuns}Tab`,
+`hub/skills/CatalogTab`, `pahchan/Register`, `dristi/ReportsTab`, `TeamsPage`.
+**There is nothing to link to yet.** Giving each an address (`?open=<id>`, the
+shape `orderPath` and `dealPath` already prove) is the next piece, and it buys
+refresh-survival and shareable record links along with the second tab.
+
+**Frontend: 3,479 tests pass** across 222 files (33 new). `npm run check` exit 0,
+`npm run build` exit 0.
+
+---
+
 ## 2026-09-06 — AN EMPTY ANSWER WAS BEING SOLD AS AN ANSWER (Sentry PYTHON-FASTAPI-6)
 
 `POST /api/v1/hub/org/skills/{skill_id}/run` 500'd on

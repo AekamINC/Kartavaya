@@ -31,7 +31,7 @@
  * that and the envelope both.
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { api, rows as asRows } from '../lib/api';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, DueChip } from '../components/editorial';
@@ -391,10 +391,15 @@ export default function ProjectsPage() {
             const kicker = p.category || p.name.split(' ').pop().toUpperCase().slice(0, 10);
 
             return (
-              <button
+              /* A `<Link>`, not a `<button onClick={navigate}>`. The two look
+                 the same and behave the same on a plain click; only one of them
+                 can be ctrl-clicked, middle-clicked or opened from the
+                 browser's context menu into a second tab — which is the whole
+                 way somebody works two projects at once. */
+              <Link
                 key={p.team_id}
                 className="k-pcard"
-                onClick={() => navigate(`/projects/${p.team_id}`)}
+                to={`/projects/${p.team_id}`}
               >
                 <div className="k-pcard__head">
                   <span className="k-pcard__bar prj-card__bar" style={{ '--c': color }} />
@@ -446,7 +451,7 @@ export default function ProjectsPage() {
                     {p.due_at && <DueChip date={p.due_at} />}
                   </div>
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>
@@ -472,8 +477,7 @@ export default function ProjectsPage() {
                   </div>
                 </div>
                 <div className="wf-acts">
-                  <Button variant="ghost" size="sm"
-                          onClick={() => navigate(`/projects/${p.team_id}`)}>
+                  <Button variant="ghost" size="sm" to={`/projects/${p.team_id}`}>
                     Open
                   </Button>
                   {p.can_admin && (

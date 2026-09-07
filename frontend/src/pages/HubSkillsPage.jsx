@@ -11,7 +11,7 @@
 //  · Create Template was offered to everyone and 403'd on submit. The grant is
 //    checked up front, and the tab says what is missing.
 import React, { useState, useCallback, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import KpiStrip from '../components/module/KpiStrip';
@@ -37,9 +37,20 @@ const TABS = ['assigned', 'catalog', 'create', 'requests', 'guide'];
 
 export default function HubSkillsPage() {
   const { clientId } = useParams();
-  const navigate = useNavigate();
   const me = currentUser();
-  const [tab, setTab] = useState('assigned');
+  /* `?tab=`, for the reason given in `HubDashboardPage` — ModuleTabs renders
+     links now, and a tab held in component state gives that link an address
+     that arrives on the wrong panel. */
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.includes(urlTab) ? urlTab : 'assigned';
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
   const { key: panelKey, ...motion } = useTabPanelMotion(TABS, tab);
 
   const assigned = useList(`/v1/hub/clients/${clientId}/skills`, [clientId]);
@@ -99,9 +110,11 @@ export default function HubSkillsPage() {
 
   return (
     <div className="hb-page">
-      <button type="button" className="k-backbtn hb-page__back" onClick={() => navigate(`/hub/clients/${clientId}`)}>
+      {/* A link — the client this came from is a place, openable beside this
+          screen rather than only instead of it. */}
+      <Link className="k-backbtn hb-page__back" to={`/hub/clients/${clientId}`}>
         ← Back to {clientName || 'the client'}
-      </button>
+      </Link>
 
       <ModuleHeader
         module="hub"

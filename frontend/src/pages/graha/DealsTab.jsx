@@ -22,7 +22,7 @@
 // banner's Fix lands on — that one is a backlog tool, and making the reader
 // open each of hundreds of deals to clear it would undo the screen.
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -171,8 +171,10 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
   const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '', assigned_to: '', pipeline_id: '' });
   const [saving, setSaving] = useState(false);
 
-  /** Open one deal. The single door — see the note at the top of this file. */
-  const openDeal = id => navigate(dealPath(id));
+  /* `openDeal = id => navigate(dealPath(id))` was here. Every caller is now a
+     `<Link to={dealPath(id)}>` instead — the door is the same, but a link is a
+     door the browser can also open into a second tab. `dealPath` stays the one
+     place the address is spelled. */
 
   /* One counter, bumped by every control that changes what the list means, and
      read here as the only automatic trigger. Depending on the filter VALUES
@@ -633,11 +635,14 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
             <div key={d.id} className={`gr__card${pending.has(d.id) ? ' ix-pending' : ''}`}>
               <div className="gr__crow">
                 <div>
-                  {/* Was a <span onClick>. A control that opens an editor has
-                      to be a button or it does not exist for the keyboard.
-                      It opens the deal's own URL now, so the same press is
-                      also a link somebody can copy out of the address bar. */}
-                  <button type="button" className="gr__link" onClick={() => openDeal(d.id)}>{d.title}</button>
+                  {/* Was a <span onClick>, then a <button>. A control that opens
+                      an editor has to be reachable by keyboard, and this one is
+                      now also reachable by the BROWSER: `<Link>` renders a real
+                      `<a href>`, so ctrl-click, middle-click and "Open link in
+                      new tab" put the deal in a second tab. A button navigating
+                      in JS looks identical and can do none of it — the deal's
+                      URL existed all along, the list just never emitted it. */}
+                  <Link className="gr__link" to={dealPath(d.id)}>{d.title}</Link>
                   {d.client_name && <span className="gr__kbco"> {d.client_name}</span>}
                   {d.contact_name && <span className="gr__ls"> {d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
                 </div>
@@ -662,9 +667,12 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
                 )}
                 {/* Both open the record. Editing a deal and writing a note
                     on it are the same screen there, which is what stops the
-                    two from holding different ideas of the same row. */}
-                <button className="k-btn k-btn--ghost" onClick={() => openDeal(d.id)}>Edit</button>
-                <button className="k-btn k-btn--ghost" onClick={() => openDeal(d.id)}>Notes</button>
+                    two from holding different ideas of the same row.
+                    Links for the same reason the title is one: a salesperson
+                    working three deals at once wants three tabs, and these are
+                    the two controls they reach for. */}
+                <Link className="k-btn k-btn--ghost" to={dealPath(d.id)}>Edit</Link>
+                <Link className="k-btn k-btn--ghost" to={dealPath(d.id)}>Notes</Link>
                 <button className="k-btn k-btn--reject" onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
                 {/* The sweep does this by itself after seven days; these are
                     for doing it now, and for undoing it. */}

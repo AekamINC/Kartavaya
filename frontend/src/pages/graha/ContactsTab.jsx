@@ -10,7 +10,9 @@
 // rule distinguishing them, and `r.data.data || []` silently becomes `[]` under
 // the other shape — an empty list is indistinguishable from a broken one.
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
@@ -137,6 +139,12 @@ export default function ContactsTab({ crm = true }) {
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
+  /* WHICH contact is open lives in the URL; WHAT it contains stays here. A
+     contact had no address at all — it could not be opened in a second tab,
+     sent to a colleague, or survive a refresh. See `hooks/useOpenRecord.js`.
+     `basePath` is `/graha` because `/graha/deals/:dealId` renders as a CHILD of
+     this module, so with a deal open this list is still mounted beneath it. */
+  const { openId, open, close, hrefFor } = useOpenRecord({ basePath: '/graha' });
   const [clientOptions, setClientOptions] = useState([]);
   const [editContact, setEditContact] = useState(null);
   const [editSaving, setEditSaving] = useState(false);
@@ -226,6 +234,9 @@ export default function ContactsTab({ crm = true }) {
     finally { setEditSaving(false); }
   }
 
+  /* Still called directly by the paths that REFRESH an already-open record —
+     an edit, a conversion, a label removed. Opening is the effect below, so
+     that a pasted link works: a cold arrival has no click to have fired. */
   async function loadDetail(id) {
     setDetailErr(null);
     try {
@@ -245,7 +256,7 @@ export default function ContactsTab({ crm = true }) {
     try {
       await api.delete(`/v1/graha/contacts/${id}`);
       setContacts(prev => prev.filter(c => c.id !== id));
-      if (detail?.contact?.id === id) setDetail(null);
+      if (detail?.contact?.id === id) close();
       pushToast({ title: 'Contact deleted', type: 'success' });
     } catch { pushToast({ title: 'Could not delete contact', type: 'error' }); }
   }
@@ -345,14 +356,43 @@ export default function ContactsTab({ crm = true }) {
      opening a contact renders fewer hooks than the list did. */
   const cols = useColumnPrefs('graha.contacts', CONTACT_COLUMNS);
 
-  if (detail) {
-    const c = detail.contact;
-    const back = () => { setDetail(null); setEditContact(null); setDetailErr(null); };
+  /* Opening is driven by the URL, and this sits with the other hooks ABOVE the
+     early return for the reason spelled out at `useTableView`: a hook below it
+     is a hook the record screen does not run. `dead` guards the late answer —
+     switching records quickly would otherwise let the first request land last
+     and paint the wrong contact. */
+  useEffect(() => {
+    if (!openId) { setDetail(null); setDetailErr(null); return undefined; }
+    const signal = { dead: false };
+    setDetail(null);
+    (async () => {
+      try {
+        const r = await api.get(`/v1/graha/contacts/${openId}`);
+        if (!signal.dead) setDetail(body(r));
+      } catch (e) {
+        if (signal.dead) return;
+        setDetailErr(e);
+        setDetail({ contact: { id: openId } });
+        pushToast({ title: 'Failed to load contact', type: 'error' });
+      }
+    })();
+    return () => { signal.dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
+
+  /* Gated on `openId`, not on `detail`: a cold arrival has the id before it has
+     the record, and gating on the record painted the LIST until the fetch
+     landed. */
+  if (openId) {
+    const c = detail?.contact || { id: openId };
+    const back = () => { setEditContact(null); setDetailErr(null); close(); };
     return (
       <div>
         <button className="k-btn k-btn--ghost gr__back" onClick={back}>← Back to list</button>
 
-        {detailErr ? (
+        {!detail && !detailErr ? (
+          <SkeletonRegion label="Loading contact"><SkeletonList rows={4} /></SkeletonRegion>
+        ) : detailErr ? (
           <ErrorState kind={errorKind(detailErr)} onRetry={() => loadDetail(c.id)} />
         ) : (<>
           {editContact ? (
@@ -739,20 +779,23 @@ export default function ContactsTab({ crm = true }) {
             </thead>
             <tbody>
               {view.rows.map(c => (
-                <tr key={c.id} className="gr__tr--click" onClick={() => loadDetail(c.id)}>
+                <tr key={c.id} className="gr__tr--click" onClick={() => open(c.id)}>
                   {cols.cells({
                     /* The only focusable thing in this row was Delete, so a
                        keyboard could reach the destructive action and not the
                        record itself. */
                     name: (
                       <td className="gr__td--name">
-                        <button
-                          type="button"
+                        {/* A link, so the contact can be opened in a second tab.
+                            stopPropagation so the row's own handler does not
+                            also fire and push a second history entry. */}
+                        <Link
                           className="gr__link"
-                          onClick={e => { e.stopPropagation(); loadDetail(c.id); }}
+                          to={hrefFor(c.id)}
+                          onClick={e => e.stopPropagation()}
                         >
                           {c.name}
-                        </button>
+                        </Link>
                       </td>
                     ),
                     /* The client's name, with the old free-text `company` as

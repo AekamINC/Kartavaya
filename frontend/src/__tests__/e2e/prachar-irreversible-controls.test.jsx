@@ -199,8 +199,15 @@ function sequenceRoutes() {
 }
 
 async function openSequence() {
-  const open = [...host.container.querySelectorAll('button')]
-    .find(b => b.textContent.trim() === 'Open');
+  /* An ANCHOR, not a button. A sequence had no address at all — it could not be
+     opened in a second tab or sent to a colleague — so opening one is a
+     `<Link to="?open=<id>">` now (see `hooks/useOpenRecord.js`). The href is
+     asserted as well as the click, because a `<Link to="">` would still render
+     an `<a>` and still go nowhere. */
+  const open = [...host.container.querySelectorAll('a')]
+    .find(a => a.textContent.trim() === 'Open');
+  expect(open, 'nothing on this list opens a sequence').toBeTruthy();
+  expect(open.getAttribute('href')).toContain('open=');
   await host.click(open);
 }
 

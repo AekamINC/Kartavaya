@@ -11,7 +11,9 @@
 // approve: who is late, what has arrived unbilled, and which supplier is about
 // to cross the 194Q line.
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, body, rows } from '../../lib/api';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { useToast } from '../../components/ui/toast';
 import { DataTable, Td, StatTile } from '../../components/editorial';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -59,7 +61,8 @@ export default function POApprovalsTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [busyId, setBusyId] = useState(null);
-  const [openId, setOpenId] = useState(null);
+  /* The open record is in the URL — see `hooks/useOpenRecord.js`. */
+  const { openId, close, hrefFor } = useOpenRecord();
 
   const load = useCallback(async () => {
     setErr(null);
@@ -145,9 +148,11 @@ export default function POApprovalsTab() {
           {queue.map(q => (
             <tr className="gn-tbl__row" key={q.id}>
               <Td bold>
-                <button type="button" className="gn-link" onClick={() => setOpenId(q.id)}>
+                {/* A link, so an approver can open the order in a second tab
+                    and keep the queue in this one. */}
+                <Link className="gn-link" to={hrefFor(q.id)}>
                   {q.po_number || 'Draft'}
-                </button>
+                </Link>
               </Td>
               <Td>{q.vendor_name}</Td>
               <Td>{q.rule || '—'}</Td>
@@ -245,7 +250,7 @@ export default function POApprovalsTab() {
       {openId && (
         <PurchaseOrderDetail
           poId={openId}
-          onClose={() => setOpenId(null)}
+          onClose={close}
           onChanged={() => { load(); loadReports(); }}
         />
       )}

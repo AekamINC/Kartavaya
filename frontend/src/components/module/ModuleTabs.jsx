@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { TAB_HI, tabEn } from './tabLabels';
 import { Secondary } from '../Bilingual';
 
@@ -68,9 +69,64 @@ import { Secondary } from '../Bilingual';
  * Display only: which tab OPENS is the pages' business, decided through
  * useTabPrefs.
  */
+/*
+ * `basePath` — every tab is a real link, and this is the address it points at.
+ *
+ * ── THE COMPLAINT, A SECOND TIME ───────────────────────────────────────────
+ * The owner, 2026-09-01: "user cannot open anything in new tab ... they cannot
+ * work two different module at same time". `layout/__tests__/navigationIsLinkable`
+ * fixed the SHELL — the sidebar, the admin sidebar, the mobile bar — and the
+ * complaint came back on 09-07, because the shell was never where the work is.
+ * A CRM person does not want Graha and Ganit in two tabs; they want Graha's
+ * Deals in one and Graha's Follow-ups in the other. That is this strip, and
+ * every one of its ~110 tabs across fourteen module pages was a `<button>`.
+ *
+ * Nothing BLOCKED it — the tab has been in the URL as `?tab=` since the day
+ * `GrahaPage` stopped holding it in state, so the address existed the whole
+ * time. The strip simply never rendered it, so ctrl-click, middle-click and
+ * the browser's "Open link in new tab" had nothing to act on.
+ *
+ * ── WHY A PROP AND NOT `useLocation().pathname` ────────────────────────────
+ * Because on two modules that would be a link that LIES. `/graha/deals/:dealId`
+ * and `/vikray/orders/:orderId` render as CHILDREN of their module (see
+ * `vikray/VikrayModule.jsx` for why), so this strip is mounted with the record's
+ * pathname, not the module's. Defaulting to `pathname` there would emit
+ * `/vikray/orders/123?tab=orders`, which opens the record again rather than the
+ * tab it names — worse than the button it replaced, because a wrong link is
+ * followed and a missing one is only missed.
+ *
+ * So a module with a nested record route passes its own root; everything else
+ * omits it and the current pathname is correct by construction.
+ *
+ * ── WHY THE CLICK IS STILL `onChange` ──────────────────────────────────────
+ * A plain left click is intercepted and handed to `onChange` exactly as before,
+ * so every page keeps its own switching behaviour — `replace: true` on the
+ * history entry, `EsignPage`'s `switchTab`, `HubClientDetailPage`'s `selectTab`.
+ * Only the clicks a SPA must not swallow — ctrl, cmd, shift, alt, middle — fall
+ * through to the browser, which is the entire feature.
+ */
+/* The clicks a single-page app must NOT swallow — the same set react-router's
+   own `<Link>` checks before it calls preventDefault. A modified click and a
+   middle click are the reader asking the BROWSER for a second tab or window;
+   intercepting either is the whole way a link stops being a link. */
+const browserHandles = (e) =>
+  e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
+
 export default function ModuleTabs({
   tabs, value, onChange, label = 'Sections', max = 8, onCustomize, defaultTab,
+  basePath,
 }) {
+  const { pathname, search } = useLocation();
+  /* The other params are carried, not dropped: Vikray's order-status filter and
+     Dristi's window both live beside `tab`, and a tab link that reset them
+     would open a second tab showing a different set of rows than the one the
+     reader is looking at. */
+  const hrefFor = (id) => {
+    const p = new URLSearchParams(search);
+    p.set('tab', id);
+    return `${basePath ?? pathname}?${p.toString()}`;
+  };
+
   const [openMore, setOpenMore] = useState(false);
   const wrapRef = useRef(null);
   const listRef = useRef(null);
@@ -209,14 +265,20 @@ export default function ModuleTabs({
   const Tab = ({ t }) => {
     const on = t.id === value;
     return (
-      <button
+      <a
         role="tab"
+        href={hrefFor(t.id)}
         id={`mt-tab-${t.id}`}
         aria-selected={on}
         aria-controls={`mt-panel-${t.id}`}
         tabIndex={on ? 0 : -1}
         className={`mt__b${on ? ' on' : ''}`}
-        onClick={() => onChange(t.id)}
+        onClick={(e) => { if (browserHandles(e)) return; e.preventDefault(); onChange(t.id); }}
+        /* An anchor activates on Enter for free. `role="tab"` owes Space as
+           well (APG · Tabs), and Space on an anchor scrolls the page instead
+           of activating it — so the button's keyboard contract is only kept if
+           this handler puts it back. */
+        onKeyDown={(e) => { if (e.key !== ' ') return; e.preventDefault(); onChange(t.id); }}
       >
         <span className="mt__en">{t.label}</span>
         {TAB_HI[t.id] && <Secondary className="mt__hi" value={TAB_HI[t.id]} />}
@@ -227,7 +289,7 @@ export default function ModuleTabs({
             <span className="k-sr-only">Opens here</span>
           </span>
         )}
-      </button>
+      </a>
     );
   };
 
@@ -313,13 +375,23 @@ export default function ModuleTabs({
                   ? `${tail.length} more · ${norm.length} tabs in all`
                   : `${norm.length} tabs in all`}
               </div>
+              {/* Links too, and on Graha this is where it matters most: nine of
+                  its seventeen tabs live in this menu and none of them was
+                  openable in a second tab. A modified click leaves the menu
+                  standing — the browser put the tab in the background, this
+                  page did not move, and closing the menu would claim it had. */}
               {tail.map(t => (
-                <button
+                <a
                   key={t.id}
                   role="menuitem"
+                  href={hrefFor(t.id)}
                   tabIndex={-1}
                   className="mt__pop-row"
-                  onClick={() => { onChange(t.id); setOpenMore(false); moreRef.current?.focus(); }}
+                  onClick={(e) => {
+                    if (browserHandles(e)) return;
+                    e.preventDefault();
+                    onChange(t.id); setOpenMore(false); moreRef.current?.focus();
+                  }}
                 >
                   <span className="mt__pop-en">{t.label}</span>
                   {/* The star follows the default wherever it renders. A
@@ -332,7 +404,7 @@ export default function ModuleTabs({
                     </span>
                   )}
                   {TAB_HI[t.id] && <Secondary className="mt__pop-hi" value={TAB_HI[t.id]} />}
-                </button>
+                </a>
               ))}
               {/* Below a divider, never mixed into the tabs: everything above
                   this line NAVIGATES, this row CONFIGURES, and a menu that

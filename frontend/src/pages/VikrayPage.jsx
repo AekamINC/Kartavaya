@@ -232,6 +232,11 @@ export default function VikrayPage() {
         onChange={setTab}
         label="Vikray sections"
         defaultTab={prefs.defaultTab}
+        /* `/vikray`, not the current pathname — `/vikray/orders/:orderId`
+           renders as a child of this page (see `vikray/VikrayModule.jsx`), so
+           with an order open the tab links would be built from the RECORD's
+           address and each would reopen the order instead of its tab. */
+        basePath="/vikray"
         // Pin the open tab first — a new "opens here" must not yank the panel.
         onCustomize={() => { setTab(tab); setCustomize(true); }}
       />

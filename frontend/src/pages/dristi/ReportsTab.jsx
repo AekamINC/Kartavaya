@@ -19,7 +19,9 @@
 // once — and a 403 from the source-module check now surfaces as a message
 // rather than a blank tab.
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { useToast } from '../../components/ui/toast';
 import { Badge, Empty, Shimmer } from '../../components/editorial';
 import { Panel, NUM, DataTable, Td, useDristiWindow, windowQuery } from './_shared';
@@ -46,7 +48,13 @@ export default function ReportsTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [view, setView] = useState('list');
-  const [selected, setSelected] = useState(null);
+  /* WHICH scheduled report is open lives in the URL — see
+     `hooks/useOpenRecord.js`. A schedule is a thing people argue about ("why
+     did finance get this on a Monday"), so it wants an address somebody can
+     paste; it had none, and a refresh dropped the reader back to the list.
+     `selected` is derived from the id rather than stored, so the row and the
+     detail cannot hold two different ideas of the same report. */
+  const { openId, open: openRecord, close, hrefFor } = useOpenRecord();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [logs, setLogs] = useState({ rows: null, err: '' });
@@ -93,7 +101,7 @@ export default function ReportsTab() {
     try {
       await api.delete(`/v1/dristi/scheduled-reports/${id}`);
       pushToast({ type: 'success', title: 'Schedule deleted' });
-      if (view === 'detail') { setView('list'); setSelected(null); }
+      if (openId) close();
       load();
     } catch (e) {
       pushToast({ type: 'error', title: apiErrorText(e, 'Could not delete') });
@@ -109,12 +117,13 @@ export default function ReportsTab() {
     }
   };
 
-  const openDetail = async (r) => {
-    setSelected(r);
-    setView('detail');
+  /* The delivery history follows whichever report the URL names. Driven by an
+     effect rather than by the click, so a pasted link works — a cold arrival
+     has no click to have fired. */
+  const loadLogs = useCallback(async (id) => {
     setLogs({ rows: null, err: '' });
     try {
-      const res = await api.get(`/v1/dristi/scheduled-reports/${r.id}/logs`);
+      const res = await api.get(`/v1/dristi/scheduled-reports/${id}/logs`);
       // The endpoint answers `{logs: [...]}`; the old code assigned the whole
       // object to a list and then called `.length` on it, so a report WITH
       // delivery history rendered the "No logs yet" empty state.
@@ -122,7 +131,15 @@ export default function ReportsTab() {
     } catch (e) {
       setLogs({ rows: null, err: apiErrorText(e, 'Delivery history did not load.') });
     }
-  };
+  }, []);
+
+  useEffect(() => { if (openId) loadLogs(openId); }, [openId, loadLogs]);
+
+  /* Derived, never stored: `reports` is the one copy of what a schedule says.
+     Keeping a second in state is how a row and its detail come to disagree
+     after an edit. Falls back to a stub so a link to a report this list has not
+     loaded still renders the frame rather than bouncing to the list. */
+  const selected = openId ? (reports || []).find(r => r.id === openId) || null : null;
 
   const openCreate = () => {
     setForm({
@@ -313,11 +330,10 @@ export default function ReportsTab() {
   }
 
   // ── Detail ────────────────────────────────────────────────────────────────
-  if (view === 'detail' && selected) {
+  if (openId && selected) {
     return (
       <div className="dstack">
-        <button type="button" className="k-backbtn"
-          onClick={() => { setView('list'); setSelected(null); }}>← Back</button>
+        <button type="button" className="k-backbtn" onClick={close}>← Back</button>
 
         <Panel title={selected.name} hi="रिपोर्ट विवरण"
           right={<Badge color={FREQ_COLORS[selected.frequency]}>{selected.frequency}</Badge>}>
@@ -346,7 +362,7 @@ export default function ReportsTab() {
             <div className="note note--warn" role="status">
               <span><b>This did not load.</b> {logs.err}</span>
               <button type="button" className="k-btn k-btn--ghost k-btn--sm dret"
-                onClick={() => openDetail(selected)}>Retry</button>
+                onClick={() => loadLogs(openId)}>Retry</button>
             </div>
           ) : !logs.rows ? <Shimmer count={3} />
             : logs.rows.length === 0 ? (
@@ -390,7 +406,9 @@ export default function ReportsTab() {
           <ul className="dlist">
             {reports.map(r => (
               <li key={r.id} className="dlist__i">
-                <button type="button" className="dlist__main" onClick={() => openDetail(r)}>
+                {/* A link: a schedule is a record somebody sends to whoever
+                    asked why they are getting it. */}
+                <Link className="dlist__main" to={hrefFor(r.id)}>
                   <span className="dlist__t">{r.name}</span>
                   <span className="dlist__m">
                     <Badge>{r.report_type}</Badge>
@@ -402,7 +420,7 @@ export default function ReportsTab() {
                       <span className="dmeta__i">Last {new Date(r.last_sent_at).toLocaleDateString()}</span>
                     )}
                   </span>
-                </button>
+                </Link>
                 <span className="dlist__act">
                   <button type="button" className={`chip${r.is_active ? ' on' : ''}`}
                     aria-pressed={r.is_active} onClick={() => toggleActive(r)}>

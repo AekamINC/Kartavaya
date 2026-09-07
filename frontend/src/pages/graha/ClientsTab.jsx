@@ -7,6 +7,7 @@
 // the product. They are `.k-input` now, which is also why they pick up focus
 // rings and the dark theme for free.
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -20,6 +21,7 @@ import CoordinateCapture from '../../components/CoordinateCapture';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
 // `CreatedHead` is gone: the header is rendered from the column declaration
@@ -85,6 +87,17 @@ export default function ClientsTab() {
   const [search, setSearch] = useState('');
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
+  /* WHICH client is open lives in the URL; WHAT it contains stays here.
+     A CRM client is the record this module exists for, and it had no address
+     at all: it could not be opened in a second tab, sent to a colleague, or
+     survive a refresh — the reader landed back on the list having lost the row
+     they were reading. See `hooks/useOpenRecord.js`.
+
+     `basePath` is `/graha` and not the current pathname because
+     `/graha/deals/:dealId` renders as a CHILD of this module (see
+     `GrahaModule.jsx`), so with a deal open this list is still mounted beneath
+     it and a row link built from `useLocation()` would reopen the deal. */
+  const { openId, open, close, hrefFor } = useOpenRecord({ basePath: '/graha' });
   /* 8.3 — the locations panel, closed by default.
      Closed because it is a second reading of a table the user came here to
      read, not because it is unimportant; the toggle carries the headline count
@@ -150,30 +163,46 @@ export default function ClientsTab() {
   function openEdit(c) {
     setEditId(c.id);
     setForm({ name: c.name, ref_no: c.ref_no || '', gstin: c.gstin || '', website: c.website || '', notes: c.notes || '', address: c.address || {} });
-    setDetail(null);
+    /* `close()`, not `setDetail(null)`. The open record is the URL's now, so
+       clearing only the local copy would leave `?open=` standing and the effect
+       above would immediately fetch it back over the form. */
+    close();
     setShowForm(true);
   }
 
-  async function openDetail(id) {
+  /* Driven by the URL rather than by the click, which is what makes a pasted
+     link work: arriving cold on `?open=<id>` has no click to have fired.
+     `dead` guards the late answer — switching records quickly would otherwise
+     let the FIRST request land last and paint the wrong client. */
+  const loadDetail = useCallback(async (id, signal) => {
     setDetailErr(null);
     try {
       const r = await api.get(`/v1/graha/clients/${id}`);
-      setDetail(body(r));
+      if (!signal?.dead) setDetail(body(r));
     } catch (e) {
+      if (signal?.dead) return;
       // Was: toast and stay on the list. The click then looked like it had
       // simply not registered.
       setDetailErr(e);
       setDetail({ id });
       pushToast({ title: 'Failed to load client', type: 'error' });
     }
-  }
+  }, [pushToast]);
+
+  useEffect(() => {
+    if (!openId) { setDetail(null); setDetailErr(null); return undefined; }
+    const signal = { dead: false };
+    setDetail(null);
+    loadDetail(openId, signal);
+    return () => { signal.dead = true; };
+  }, [openId, loadDetail]);
 
   async function remove(id) {
     if (!window.confirm('Delete this client? This cannot be undone.')) return;
     try {
       await api.delete(`/v1/graha/clients/${id}`);
       pushToast({ title: 'Client deleted', type: 'success' });
-      setDetail(null);
+      close();
       load();
     } catch { pushToast({ title: 'Could not delete client', type: 'error' }); }
   }
@@ -181,12 +210,19 @@ export default function ClientsTab() {
   if (loading) return <SkeletonRegion label="Loading clients"><SkeletonList rows={6} /></SkeletonRegion>;
   if (err) return <ErrorState kind={errorKind(err)} onRetry={load} />;
 
-  if (detail) {
+  /* Gated on `openId`, not on `detail`. A cold arrival — a pasted link, a
+     second tab — has the id before it has the record, and gating on the record
+     painted the LIST for as long as the fetch took before swapping to the
+     panel. The id is the truth about which screen this is; the record is only
+     how much of it has arrived. */
+  if (openId) {
     return (
       <div>
-        <button className="k-btn k-btn--ghost gr__back" onClick={() => { setDetail(null); setDetailErr(null); }}>← Back to clients</button>
-        {detailErr ? (
-          <ErrorState kind={errorKind(detailErr)} onRetry={() => openDetail(detail.id)} />
+        <button className="k-btn k-btn--ghost gr__back" onClick={close}>← Back to clients</button>
+        {!detail && !detailErr ? (
+          <SkeletonRegion label="Loading client"><SkeletonList rows={4} /></SkeletonRegion>
+        ) : detailErr ? (
+          <ErrorState kind={errorKind(detailErr)} onRetry={() => loadDetail(openId)} />
         ) : (
           <div className="gr__dsplit">
             <div className="gr__dmain">
@@ -389,21 +425,24 @@ export default function ClientsTab() {
             </thead>
             <tbody>
               {view.rows.map(c => (
-                <tr key={c.id} className="gr__tr--click" onClick={() => openDetail(c.id)}>
-                  {/* A real button on the name, so the record is reachable by
-                      keyboard — the row's onClick alone was mouse-only, and
-                      nothing else in the row opened it. Same shape as
-                      `ganit/InvoicesTab` and `graha/DealsTab`. */}
+                <tr key={c.id} className="gr__tr--click" onClick={() => open(c.id)}>
+                  {/* A real LINK on the name, so the record is reachable by the
+                      keyboard AND by the browser — the row's onClick alone was
+                      mouse-only, and a button that opens a panel has no href
+                      for ctrl-click or "Open link in new tab" to act on. Same
+                      shape as `ganit/InvoicesTab` and `graha/DealsTab`.
+                      stopPropagation so the row's own handler does not also
+                      fire and push a second history entry. */}
                   {cols.cells({
                     name: (
                       <td className="gr__td--name">
-                        <button
-                          type="button"
+                        <Link
                           className="gr__link"
-                          onClick={e => { e.stopPropagation(); openDetail(c.id); }}
+                          to={hrefFor(c.id)}
+                          onClick={e => e.stopPropagation()}
                         >
                           {c.name}
-                        </button>
+                        </Link>
                       </td>
                     ),
                     ref_no: <td className="gr__td--mute">{c.ref_no || '—'}</td>,

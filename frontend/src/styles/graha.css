@@ -235,6 +235,12 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
 /* The deal title doubles as the edit affordance. It is a real <button> so it is
    reachable by keyboard — it was a <span> with an onClick, which is not. */
 .gr__link {
+  /* `display: inline-block` for the same reason `.k-link` carries it: this is a
+     `<Link>` now, so a deal can be opened in a second tab, and an anchor is
+     `display: inline` where the `<button>` it replaced was `inline-block`. An
+     inline box breaks at word boundaries, so a long title wrapped where it used
+     to run on. No-op for a button; the whole point for an anchor. */
+  display: inline-block;
   background: none; border: none; padding: 0; cursor: pointer; font: inherit;
   font-weight: 700; font-size: 14px; color: inherit; text-align: left;
   text-decoration: underline; text-decoration-color: var(--rule-soft);

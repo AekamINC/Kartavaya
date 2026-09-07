@@ -3,7 +3,7 @@
  * Route: /boards
  */
 import React, { useState, useEffect, useCallback, lazy, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api }          from '../lib/api';
 import { currentUser }  from '../lib/auth';
 import { navContext }   from '../components/layout/navConfig';
@@ -32,7 +32,6 @@ import { Secondary } from '../components/Bilingual';
 import { apiErrorText } from '../lib/apiError';
 
 export default function BoardsPage() {
-  const navigate  = useNavigate();
   const me        = currentUser();
   // The SAME predicate as the route guard — see the note in `TasksListPage`.
   // A portal client cannot reach `/boards` at all, and every other request on
@@ -223,9 +222,14 @@ export default function BoardsPage() {
             >
               Fields
             </button>
-            <button type="button" className="k-link" onClick={() => activeId && navigate(`/projects/${activeId}`)}>
-              Open project →
-            </button>
+            {/* A link when there is a project to name, and nothing at all
+                when there is not — the button rendered either way and did
+                nothing on press with no `activeId`, which reads as broken. */}
+            {activeId && (
+              <Link className="k-link" to={`/projects/${activeId}`}>
+                Open project →
+              </Link>
+            )}
           </div>
         }
       />

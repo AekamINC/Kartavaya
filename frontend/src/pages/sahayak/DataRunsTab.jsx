@@ -1,6 +1,8 @@
 // Sahayak → Data runs. Past runs, and the table each one produced.
 import React, { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
+import useOpenRecord from '../../hooks/useOpenRecord';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import { Resource, StatusPill, ErrorNote, Shim, useList, errText } from '../hub/_shared';
@@ -10,13 +12,14 @@ const PAGE = 100;
 
 export default function DataRunsTab({ initialRunId, onConsumeInitial }) {
   const runs = useList('/v1/scrapers/runs', []);
-  const [openId, setOpenId] = useState(null);
+  /* The open run is in the URL — see `hooks/useOpenRecord.js`. */
+  const { openId, open, close, hrefFor } = useOpenRecord();
 
   useEffect(() => {
-    if (initialRunId) { setOpenId(initialRunId); onConsumeInitial?.(); }
+    if (initialRunId) { open(initialRunId); onConsumeInitial?.(); }
   }, [initialRunId, onConsumeInitial]);
 
-  if (openId) return <RunDetail id={openId} onBack={() => { setOpenId(null); runs.reload(); }} />;
+  if (openId) return <RunDetail id={openId} onBack={() => { close(); runs.reload(); }} />;
 
   return (
     <Resource
@@ -27,7 +30,9 @@ export default function DataRunsTab({ initialRunId, onConsumeInitial }) {
     >
       <div className="hb-list">
         {runs.items?.map(r => (
-          <button type="button" className="hb-card sr-run" key={r.id} onClick={() => setOpenId(r.id)}>
+          /* A link — a run is a result somebody compares against another run
+             in a second tab. See `hooks/useOpenRecord.js`. */
+          <Link className="hb-card sr-run" key={r.id} to={hrefFor(r.id)}>
             <span className="sr-run__id">
               <b className="sr-run__t">{r.scraper_name}</b>
               <span className="hb-cap hb-mono">{stamp(r.created_at)}</span>
@@ -37,7 +42,7 @@ export default function DataRunsTab({ initialRunId, onConsumeInitial }) {
               {r.result_count ?? 0} {r.result_count === 1 ? 'result' : 'results'}
             </span>
             <span className="sr-run__c hb-mono">{r.credits_charged ?? 0} cr</span>
-          </button>
+          </Link>
         ))}
       </div>
     </Resource>

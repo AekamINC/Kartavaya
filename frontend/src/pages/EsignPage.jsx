@@ -29,6 +29,7 @@ import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
+import useOpenRecord from '../hooks/useOpenRecord';
 import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import Note from '../components/module/Note';
@@ -71,14 +72,26 @@ export default function EsignPage() {
     }, { replace: true });
   }, [setParams]);
   const [customize, setCustomize] = useState(false);
-  const [openId, setOpenId] = useState(null);
+  /* The open document is in the URL too — see `hooks/useOpenRecord.js`. An
+     eSign document is exactly the kind of record somebody sends a colleague a
+     link to, and it had none: only `?tab=` was addressable, so a document could
+     not be opened in a second tab and a refresh dropped back to the list. */
+  const { openId, open, close } = useOpenRecord();
   const meta = moduleMeta('esign');
 
   // These two now close over `setTab`, which is no longer a bare setState — it
   // writes the URL — so it belongs in the dependency list.
-  const openDoc = useCallback((id) => { setOpenId(id); setTab('documents'); }, [setTab]);
-  const closeDoc = useCallback(() => setOpenId(null), []);
-  const switchTab = useCallback((id) => { setOpenId(null); setTab(id); }, [setTab]);
+  /* ONE navigation, both keys. `open(id)` then `setTab('documents')` would be
+     two navigates in the same tick, and the second reads the location the first
+     has not landed yet — so the document id would be silently dropped. See the
+     `params` option on `useOpenRecord`. */
+  const openDoc = useCallback((id) => open(id, { params: { tab: 'documents' } }), [open]);
+  const closeDoc = close;
+  /* No `close()` here any more, and none is needed: the tab strip is not
+     rendered while a document is open (see `{!openId && …}` below), so this
+     cannot be reached with one open. Calling both would be the same
+     two-navigations-one-tick bug in the other direction. */
+  const switchTab = setTab;
 
   const panelFor = openId ? 'documents' : tab;
 
