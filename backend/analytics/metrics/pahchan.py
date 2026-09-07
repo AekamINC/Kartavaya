@@ -376,21 +376,97 @@ absent_metric(
            "row at the time it is written, not a query.",
 )
 
-absent_metric(
+#: The moment after which an arrival is late, in the org's own local time.
+#: `shift_start_time` is `time without time zone` and `grace_minutes` an
+#: integer, both on the ORG-level policy row.
+_LATE_AFTER = (
+    "(pol.shift_start_time + make_interval(mins => COALESCE(pol.grace_minutes, 0)))"
+)
+
+#: The arrival, as a local wall clock. `check_in` is timestamptz and the
+#: threshold above is a bare local time, so the two are only comparable in the
+#: same zone — the same IST convention the geofence metrics use, and for the
+#: same reason: a 09:00 IST arrival is 03:30 UTC, so a UTC comparison would
+#: score every morning in the country as four and a half hours early.
+_ARRIVAL = "((a.check_in AT TIME ZONE 'Asia/Kolkata')::time)"
+
+
+@metric(
     key="pahchan.late_arrivals",
     module="pahchan",
     label="Late arrivals vs shift policy",
     unit="count",
     grain="flow",
-    absent="The policy now exists — verified live 2026-08-25, "
-           "public.pahchan_policy carries grace_minutes and shift_start_time "
-           "on every row — but an ARRIVAL does not. An arrival is the first "
-           "'in' punch of a person's day, and isolating it needs a per-person "
-           "grouping that the DPDP boundary at the top of this file forbids "
-           "outright; counting late PUNCHES instead would score somebody who "
-           "punches in three times as three late arrivals, which is a "
-           "different question under this metric's name. "
-           "manav_attendance.status = 'late' is likewise the marking path's "
-           "own verdict, not a measurement against any policy. This is an "
-           "owner decision about the DPDP boundary, not a schema gap.",
+    dimensions=("team",),
+    description="Arrivals later than the org's shift start plus its grace "
+                "period, per bucket. The arrival is manav_attendance.check_in "
+                "— the bridge has already paired the day's punches into ONE "
+                "row per person per day (idx_manav_attendance_unique), so a "
+                "person who punches in three times is one arrival, not three. "
+                "Compared in IST, because the threshold is a local wall clock. "
+                "value counts late arrivals, on_time counts the rest, "
+                "arrivals is the pair's total, and worst_minutes_late is NULL "
+                "for a bucket where nobody was late rather than 0. "
+                "Aggregates only — no per-person series exists or will. "
+                "A day with no check_in is not an arrival and is not counted, "
+                "so this measures punctuality among people who came in, never "
+                "attendance. TWO EXCLUSIONS, both deliberate: an org with no "
+                "shift_start_time configured returns NO ROWS rather than a "
+                "convincing zero, and an overnight shift is excluded outright "
+                "because a wall-clock comparison cannot judge it. Per-site "
+                "policy overrides are NOT applied — no applied column links an "
+                "attendance row to a site — so this measures against the "
+                "org-level shift only.",
 )
+def late_arrivals(req: MetricRequest):
+    # ── WHY THIS IS NOT THE PER-PERSON QUERY THE ABSENCE REASON FEARED ───────
+    # It was declared absent until 2026-09-07 on the ground that "an arrival is
+    # the first 'in' punch of a person's day, and isolating it needs a
+    # per-person grouping that the DPDP boundary forbids outright". That is
+    # true of `pahchan_punches` and false of the table this reads:
+    # `services/attendance_bridge.py` ALREADY collapses a person-day to one
+    # `manav_attendance` row, and `check_in` on that row IS the arrival. The
+    # per-person grouping was done by the write path, hours before analytics
+    # sees it, so there is no window function and no PARTITION BY here.
+    #
+    # The boundary is untouched: employee_id appears only in the department
+    # join, every GROUP BY is positional, and no name-shaped column is read.
+    # The DPDP pin in test_metrics_pahchan.py counts on exactly that.
+    team_col, join, g2 = _team_parts(req)
+    period = bucket_expr(req.bucket, "a.date")
+    return (
+        f"SELECT {period} AS period{team_col}, "
+        f"COUNT(*) FILTER (WHERE {_ARRIVAL} > {_LATE_AFTER}) AS value, "
+        f"COUNT(*) FILTER (WHERE {_ARRIVAL} <= {_LATE_AFTER}) AS on_time, "
+        "COUNT(*) AS arrivals, "
+        # NULL, not 0, when nobody was late: "nobody was late" and "the worst
+        # offender was bang on the threshold" are different facts and a 0 here
+        # would render as the second.
+        "MAX(EXTRACT(EPOCH FROM "
+        f"({_ARRIVAL} - {_LATE_AFTER})) / 60.0) "
+        f"FILTER (WHERE {_ARRIVAL} > {_LATE_AFTER})::float AS worst_minutes_late "
+        "FROM public.manav_attendance a "
+        # INNER, and the org policy is one row (org_id is its primary key). An
+        # org that has never configured a shift therefore returns no rows at
+        # all — deliberate: with no threshold there is nothing to be late
+        # against, and shipping 0 would be a convincing zero of exactly the
+        # kind proposal 62 §10 refuses.
+        "JOIN public.pahchan_policy pol ON pol.org_id = a.org_id "
+        + join +
+        "WHERE a.org_id = $1::uuid "
+        "AND a.date BETWEEN $2::date AND $3::date "
+        # An arrival needs an arrival time. A holiday, a leave day or a day
+        # somebody never came in has no check_in and is not a late arrival —
+        # nor an on-time one, which is why it leaves the denominator too.
+        "AND a.check_in IS NOT NULL "
+        "AND pol.shift_start_time IS NOT NULL "
+        # An overnight shift starts 22:00 and its arrivals land either side of
+        # midnight, so `arrival::time > 22:00` calls a punctual 01:00 arrival
+        # early and a 23:00 one late. `attendance_bridge._day_of` carries the
+        # same subtlety for the same reason. Excluded rather than answered
+        # wrongly; the honest number for those orgs is no number.
+        "AND NOT COALESCE(pol.overnight_shift, false) "
+        f"GROUP BY 1{g2} "
+        f"ORDER BY 1{g2}",
+        [req.org_id, req.window.start, req.window.end],
+    )

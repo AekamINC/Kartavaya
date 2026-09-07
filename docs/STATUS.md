@@ -135,7 +135,38 @@ Prachar writes per-recipient `prachar_campaign_contacts` · Sahayak calls
 `credits.refund(tx_id)` on failure · Dristi writes **nothing** outside `dristi_`
 tables · Vetana reads `manav_attendance`, so attendance does roll up.
 
-### ⚠ PAHCHAN'S LATENESS CLAIM — SETTLED, AND IT IS FALSE (4th module doc)
+### ✅ PAHCHAN'S LATENESS METRIC NOW EXISTS — the absence reason was wrong
+
+`pahchan.late_arrivals` was an `absent_metric` whose reason read as a
+principled DPDP refusal and was not one. It claimed an arrival *"is the first
+'in' punch of a person's day, and isolating it needs a per-person grouping that
+the DPDP boundary forbids outright"*. True of `pahchan_punches`; **false of
+`manav_attendance`**, where `attendance_bridge` has already collapsed a
+person-day into one row (`idx_manav_attendance_unique`) and `check_in` **is**
+the arrival. No window function, no `PARTITION BY`, boundary untouched — and
+the DPDP pin was mutation-tested against this metric specifically (grouping by
+`employee_id` turns it red).
+
+Compared in IST against `shift_start_time + grace_minutes`. Ships `value`,
+`on_time`, `arrivals` and a `FILTER`ed `worst_minutes_late` that is **NULL, not
+0**, for a bucket where nobody was late. Three exclusions in the SQL: a day with
+no `check_in` is not an arrival; an org with no shift returns **no rows** rather
+than a convincing zero; **overnight shifts are excluded** because a wall-clock
+comparison cannot judge them.
+
+Proved write-free against the live catalogue — the SQL runs (0 rows today,
+`pahchan_policy` is empty), and the classification was checked with literal
+inputs: 09:00 IST on time, **09:10 exactly on the grace boundary on time**,
+09:11 late by 1, 10:30 late by 80. 7 tests, 4 mutations, 1,599 analytics/
+metrics/registry/pahchan tests pass.
+
+⚠ **The lesson is about absence reasons, not attendance.** A stated absence is a
+claim, and this one had gone unchallenged because it named a real constraint —
+DPDP — that simply was not the binding one. `test_absent_reasons_may_not_rest_on
+_an_applied_migration` already existed to stop absences going stale on schema
+grounds; nothing was checking whether the *reasoning* still held.
+
+### ⚠ PAHCHAN'S LATENESS CLAIM — SETTLED, AND IT WAS FALSE (4th module doc)
 
 *"matched to a shift policy to decide lateness."* **Nothing computes lateness.**
 Three independent confirmations:

@@ -12097,3 +12097,83 @@ one that could actually happen* — deleting a component you just added is the
 first thing a careless refactor does.
 
 `npm run check` exit 0, `npm run build` exit 0, 33 pahchan vitest pass.
+
+## 2026-09-07 (metric) — late arrivals computes, and the absence reason was simply wrong
+
+`pahchan.late_arrivals` had been an `absent_metric` since proposal 62. Its
+reason read as a principled refusal:
+
+> an ARRIVAL does not [exist]. An arrival is the first 'in' punch of a person's
+> day, and isolating it needs a per-person grouping that the DPDP boundary at
+> the top of this file forbids outright
+
+**True of `pahchan_punches`. False of `manav_attendance`.**
+`services/attendance_bridge.py` has already collapsed a person-day into ONE row
+— `idx_manav_attendance_unique` on `(employee_id, date)` — and `check_in` on
+that row IS the arrival. The per-person grouping happened in the write path,
+hours before analytics sees anything. So the query has no window function and no
+`PARTITION BY`, and the DPDP boundary never comes into it.
+
+The punch-counting objection dissolves the same way: "somebody who punches in
+three times" is one `manav_attendance` row, not three.
+
+### What it computes
+
+Arrivals later than `shift_start_time + grace_minutes`, in **IST** — `check_in`
+is `timestamptz` and the threshold is a bare local time, so a UTC comparison
+would score every morning in the country as four and a half hours early. Ships
+`value`, `on_time`, `arrivals`, and `worst_minutes_late` **FILTERed to NULL**
+when nobody was late, because 0 would read as "the worst offender was exactly on
+the threshold". Cuts by team (department); never by person.
+
+Three exclusions, all in the SQL rather than only in prose:
+
+- a day with **no `check_in`** is not an arrival and leaves the denominator —
+  this is punctuality among people who came in, not attendance;
+- an org with **no `shift_start_time` returns NO ROWS**, not zero — proposal 62
+  §10's stated absence over a convincing zero;
+- **overnight shifts excluded** — a 22:00 shift has arrivals either side of
+  midnight, so `arrival::time > 22:00` calls a punctual 01:00 arrival early.
+  `attendance_bridge._day_of` carries the same subtlety.
+
+Per-site overrides are not applied: no applied column links an attendance row to
+a site, the same gap that keeps the shift cut absent.
+
+### Verified write-free, then mutated
+
+The SQL parses and runs against the live schema (0 rows — `pahchan_policy` holds
+none today, so an empty result was the honest answer, not evidence). The
+arithmetic was then proved with **literal inputs** rather than by writing rows:
+
+| arrival (IST) | late? | minutes vs threshold |
+|---|---|---|
+| 07:30 | no | −100 |
+| 09:00 | no | −10 |
+| **09:10 — exactly the grace** | **no** | 0 |
+| 09:11 | yes | 1 |
+| 10:30 | yes | 80 |
+
+`03:30Z → 09:00 IST` confirmed the zone conversion. 7 new tests, each
+mutation-proved:
+
+| Mutation | Tests killed |
+|---|---|
+| `GROUP BY a.employee_id` — **a real DPDP breach** | 2 |
+| reads `pahchan_punches` instead of the paired arrival | 2 |
+| drops the `check_in IS NOT NULL` gate | 1 |
+| judges overnight shifts instead of excluding them | 1 |
+
+That first row is the one that mattered: the module-wide DPDP pin had to be
+shown to catch a violation in the NEW metric, not just the old ones.
+
+1,599 analytics/metrics/registry/pahchan tests pass.
+
+### ⚠ The lesson is about absence reasons
+
+A stated absence is a claim with a shelf life, and this one survived because it
+named a real constraint — DPDP — that was not the binding one.
+`test_absent_reasons_may_not_rest_on_an_applied_migration` already existed to
+stop absences going stale on SCHEMA grounds, and it did its job. Nothing was
+checking whether the *reasoning* still held. Two of the four false module-doc
+claims this session were the same shape: a true-sounding mechanism that nobody
+re-derived.

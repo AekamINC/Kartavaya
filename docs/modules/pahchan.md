@@ -12,9 +12,25 @@ An employee enrols a face template once, then punches against it. Each punch rec
 
 - The bridge writes exactly two statuses — `STATUS_PRESENT = "present"` and `STATUS_INCOMPLETE = "incomplete"`. There is no `STATUS_LATE`.
 - `shift_start_time` is declared on the bridge's policy dataclass (`attendance_bridge.py:114`), selected from the DB and passed in — **and never read again**. `grace_minutes` is not referenced in the bridge at all; it exists only as a settings field that round-trips to the client.
-- `analytics/metrics/pahchan.py` registers `pahchan.late_arrivals` as an **`absent_metric`**, i.e. the codebase's own declaration that this is not built: *"The policy now exists … but an ARRIVAL does not."*
+- `analytics/metrics/pahchan.py` registered `pahchan.late_arrivals` as an **`absent_metric`** — the codebase's own declaration that it was not built: *"The policy now exists … but an ARRIVAL does not."* ✅ **Built 2026-09-07, see below.**
 
-`manav_attendance.status` does admit `'late'`, but the only writer is a **human** choosing it through the manual-attendance endpoint.
+`manav_attendance.status` does admit `'late'`, but the only writer is a **human** choosing it through the manual-attendance endpoint — it is the marking path's own verdict, never a measurement against a policy.
+
+## ✅ `pahchan.late_arrivals` now computes (2026-09-07)
+
+⚠ **The absence reason was wrong, and it is worth knowing why**, because it read as a principled refusal and was not one. It said an arrival *"is the first 'in' punch of a person's day, and isolating it needs a per-person grouping that the DPDP boundary forbids outright"*. That is true of `pahchan_punches` and **false of `manav_attendance`**: `services/attendance_bridge.py` has already collapsed a person-day into ONE row — `idx_manav_attendance_unique` on `(employee_id, date)` — and `check_in` on that row **is** the arrival. The per-person grouping happened in the write path, hours before analytics ever sees it. So there is no window function and no `PARTITION BY` in the query, and the DPDP boundary is untouched.
+
+The metric counts arrivals later than `shift_start_time + grace_minutes`, compared in **IST** because the threshold is a local wall clock and `check_in` is `timestamptz`. It ships `value` (late), `on_time`, `arrivals` and `worst_minutes_late` — the last `FILTER`ed so a clean bucket gets **NULL rather than 0**, since "nobody was late" and "the worst offender was exactly on the threshold" are different facts. Cuts by `team` (department), never by person.
+
+**Three deliberate exclusions**, each in the SQL rather than only in the description:
+
+- **A day with no `check_in` is not an arrival** and leaves the denominator too — this measures punctuality among people who came in, not attendance.
+- **An org with no `shift_start_time` returns NO ROWS**, not zero. With no threshold there is nothing to be late against, and a zero would be exactly the convincing-zero proposal 62 §10 refuses.
+- **Overnight shifts are excluded outright.** A shift starting 22:00 has arrivals either side of midnight, so `arrival::time > 22:00` calls a punctual 01:00 arrival early. `attendance_bridge._day_of` carries the same subtlety. Answering wrongly is worse than not answering.
+
+Per-site policy overrides are **not** applied — no applied column links an attendance row to a site, the same gap that keeps the shift cut absent.
+
+Verified against the live database, write-free: the SQL parses and runs (0 rows — `pahchan_policy` holds none today), and the classification was proved with literal inputs — 09:00 IST on time, **09:10 exactly on the grace boundary on time**, 09:11 late by 1, 10:30 late by 80, and `03:30Z → 09:00 IST` confirming the zone conversion. Pinned by 7 tests in `tests/test_metrics_pahchan.py`, mutation-proved: grouping by `employee_id` kills 2 (the DPDP pin catches it), reading `pahchan_punches` kills 2, dropping the `check_in` gate kills 1, judging overnight shifts kills 1.
 
 ## ✅ A latent 500 in `POST /attendance/publish` — found, then fixed
 

@@ -57,7 +57,7 @@ def test_the_batch_is_declared_as_specified():
         "pahchan.hours_worked": ("flow", "hours", ("team",)),
         "pahchan.vetana_reconciliation": ("flow", "days", ()),
         "pahchan.attendance_by_shift": ("flow", "pct", ()),
-        "pahchan.late_arrivals": ("flow", "count", ()),
+        "pahchan.late_arrivals": ("flow", "count", ("team",)),
         "pahchan.geofence_exceptions": ("flow", "count", ()),
         "pahchan.offline_reconciliation": ("flow", "count", ()),
     }
@@ -132,15 +132,17 @@ def test_absent_reasons_may_not_rest_on_an_applied_migration():
     rows, with lat, lng, distance_m, geofence_id and flags all populated on
     every row), staging.pahchan_sites (9) and staging.pahchan_policy (2).
 
-    So the assertion is inverted. Two metrics moved out of the absent set and
-    compute; the two that remain are blocked by a missing WRITE (no shift is
-    stamped on any attendance or punch row) and by the DPDP boundary at the
-    top of the module — neither of which a migration closes. No pahchan
-    absence may lean on that migration again."""
-    assert ABSENT_KEYS == [
-        "pahchan.attendance_by_shift",
-        "pahchan.late_arrivals",
-    ]
+    So the assertion is inverted. Three metrics have now moved out of the
+    absent set and compute; the ONE that remains is blocked by a missing WRITE
+    — no shift is stamped on any attendance or punch row — which no migration
+    in the ledger closes. No pahchan absence may lean on that migration
+    again."""
+    # late_arrivals LEFT this set on 2026-09-07 — see its own tests below.
+    # Its reason was not a schema gap and not the DPDP boundary either: it
+    # claimed an arrival needed per-person grouping to isolate, which is true
+    # of pahchan_punches and false of manav_attendance, where the write path
+    # has already collapsed a person-day into one row carrying check_in.
+    assert ABSENT_KEYS == ["pahchan.attendance_by_shift"]
     for key in ABSENT_KEYS:
         m = REGISTRY[key]
         assert m.sql is None
@@ -267,3 +269,86 @@ def test_reconciliation_is_the_same_single_row_under_every_bucket():
     for b in sorted(BUCKETS):
         sql, _ = build("pahchan.vetana_reconciliation", bucket=b)
         assert sql.startswith("SELECT vetana_days - attendance_days AS value"), b
+
+
+# ── late_arrivals ────────────────────────────────────────────────────────────
+# Absent until 2026-09-07 on a reason that was simply wrong: "an arrival is the
+# first 'in' punch of a person's day, and isolating it needs a per-person
+# grouping that the DPDP boundary forbids outright". True of pahchan_punches,
+# false of manav_attendance — `services/attendance_bridge.py` has already
+# collapsed a person-day to ONE row (idx_manav_attendance_unique on
+# (employee_id, date)) and `check_in` on that row IS the arrival. The
+# per-person grouping happened in the write path, hours before analytics.
+#
+# The boundary itself is untouched and is still pinned by the DPDP test above,
+# which runs over every metric including this one.
+
+def test_late_arrivals_reads_the_paired_arrival_not_raw_punches():
+    """The whole reason this metric can exist. Reading pahchan_punches would
+    score three punches as three late arrivals; manav_attendance.check_in is
+    one arrival per person per day because the bridge made it so."""
+    sql, _ = build("pahchan.late_arrivals")
+    assert "FROM public.manav_attendance a" in sql
+    assert "pahchan_punches" not in sql
+    assert "a.check_in" in sql
+    # No window function, no per-person partition — the collapse is upstream.
+    assert "PARTITION BY" not in sql
+    assert "ROW_NUMBER" not in sql
+
+
+def test_late_arrivals_compares_in_ist_against_shift_plus_grace():
+    sql, _ = build("pahchan.late_arrivals")
+    assert "(a.check_in AT TIME ZONE 'Asia/Kolkata')::time" in sql
+    assert "pol.shift_start_time + make_interval(mins => COALESCE(pol.grace_minutes, 0))" in sql
+    # Strictly greater: an arrival exactly on the grace boundary is on time.
+    assert ">" in sql and "<=" in sql
+
+
+def test_late_arrivals_counts_only_days_somebody_arrived():
+    """A holiday, a leave day or a no-show has no check_in. It is not a late
+    arrival and it is not an on-time one either, so it leaves the denominator
+    — this metric is punctuality among people who came in, not attendance."""
+    sql, _ = build("pahchan.late_arrivals")
+    assert "AND a.check_in IS NOT NULL" in sql
+
+
+def test_late_arrivals_refuses_an_org_with_no_shift_and_refuses_overnight():
+    """Two stated exclusions, both of which must be in the SQL rather than in
+    the description. Without a shift there is no threshold, and shipping 0
+    would be a convincing zero; an overnight shift cannot be judged by a
+    wall-clock comparison at all."""
+    sql, _ = build("pahchan.late_arrivals")
+    assert "JOIN public.pahchan_policy pol ON pol.org_id = a.org_id" in sql
+    assert "AND pol.shift_start_time IS NOT NULL" in sql
+    assert "AND NOT COALESCE(pol.overnight_shift, false)" in sql
+
+
+def test_late_arrivals_ships_the_pair_and_a_null_worst_when_nobody_was_late():
+    """value alone is unreadable — 3 late is different in a team of 4 and a
+    team of 400 — so on_time and arrivals ride with it. worst_minutes_late is
+    FILTERed so a bucket with nobody late gets NULL, not 0: "nobody was late"
+    and "the worst offender was bang on the threshold" are different facts."""
+    sql, _ = build("pahchan.late_arrivals")
+    assert "AS value" in sql
+    assert "AS on_time" in sql
+    assert "COUNT(*) AS arrivals" in sql
+    assert "AS worst_minutes_late" in sql
+    worst = sql[sql.index("MAX(EXTRACT(EPOCH"):sql.index("AS worst_minutes_late")]
+    assert "FILTER (WHERE" in worst, "an unfiltered MAX reports 0 for a clean bucket"
+
+
+def test_late_arrivals_cuts_by_team_positionally():
+    sql, _ = build("pahchan.late_arrivals", group_by="team")
+    assert "COALESCE(NULLIF(e.department, ''), 'No department') AS team" in sql
+    assert "GROUP BY 1, 2" in sql
+    # And the DPDP join is the only employee_id in it — the module-wide pin
+    # asserts this too, restated here so this metric's own file is complete.
+    assert sql.count("employee_id") == 1
+    assert "JOIN public.manav_employees e ON e.id = a.employee_id" in sql
+
+
+def test_late_arrivals_has_no_drill_and_no_person_dimension():
+    m = REGISTRY["pahchan.late_arrivals"]
+    assert m.drill is None
+    assert m.dimensions == ("team",)
+    assert "employee" not in m.dimensions and "person" not in m.dimensions
