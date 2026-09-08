@@ -58,10 +58,17 @@ box clamps and reports 210mm whether the page fits exactly or is clipped by
 20mm. Verified against a deliberately broken sheet.
 
 ⚠ **The tightest sheets are the OVERVIEW ones, not the dense new ones.**
-Measured after the depth sheets landed: `kray/Overview` has **0.7mm** of slack
-and `graha`, `ganit` and `manav` overviews are all within 6mm. The Capabilities
-sheets have ~5mm, Proof ~8mm, In practice ~32mm. **Adding a sentence to an
-overview sheet will overflow it** — the build will catch you, but expect it.
+Re-measured 2026-09-08: `manav/Overview` has **0.6mm** of slack and
+`kray/Overview` **0.7mm**; `graha`, `ganit`, `vetana` and `sanvaad` overviews
+are all within 6mm. The Capabilities sheets have ~6mm, Proof ~8mm, In practice
+~32mm. **Adding a sentence to an overview sheet will overflow it** — the build
+will catch you, but expect it.
+
+⚠ **The `built` column is THREE bullets on every sheet, and that is a size
+constraint, not a style.** Adding a fourth to Pahchan overflowed its overview by
+**11.7mm** on the first try. Fold the new fact into an existing bullet instead;
+`docs/marketing/README.md` is where you will look for this after the build has
+already failed on you.
 
 **A capability heading that wraps is silent too, and it is ugly.**
 `.cap__label` is a non-wrapping flex row; when the heading and its note are too

@@ -705,7 +705,7 @@ const MODULES = [
       ['Punch',    'Clock-in captures a photo, a location and the device. Three facts, not one tap.'],
       ['Place',    'The punch is checked against a <b>geofence</b> — attendance is placed, not merely timed.'],
       ['Queue',    'No signal? The punch is held <b>on the device</b> and reconciled later, inside a <b>72-hour</b> buffer.'],
-      ['Roll up',  'Punches pair into a day, and the days-worked figure flows into Vetana for the month.'],
+      ['Roll up',  'Punches pair into a day. A day the system <b>cannot price</b> is withheld and listed, never guessed at, and the rest flows into Vetana.'],
     ],
     gives: [
       'Site and field staff can clock in where there is no network.',
@@ -714,7 +714,7 @@ const MODULES = [
     ],
     built: [
       '<b>Offline-first, 72-hour buffer</b> — the punch survives the dead zone.',
-      'Shift and geofence policy is set per org and <b>overridden per site or group</b>, so a branch is governed by rule rather than by habit.',
+      'Shift and geofence policy per org, <b>overridden per site</b> — and <b>late arrivals measured against it</b>, by team and day.',
       'Attendance detail is visible only at the highest access tier, under DPDP.',
     ],
     to: [['Manav','मानव'],['Vetana','वेतन']],
@@ -1404,8 +1404,9 @@ pahchan: {
     ]],
     ['Sites and policy', 'rules per place', [
       '<b>Sites</b> with geofences — a head office, a branch, a project site.',
-      'Shift, overtime and geofence settings live in policy, with the <b>effective</b> policy readable for any person.',
+      'Shift, overtime and geofence settings live in policy — start time, grace period, thresholds.',
       '<b>Policy scopes</b> — an override for one site or one group, with the <b>effective</b> policy readable for any person.',
+      '<b>Late arrivals are measured against it</b>: arrivals past shift start plus grace, cut by team and day.',
       'So “which rule applied to me on that day” has an answer, rather than an argument.',
     ]],
     ['Corrections', 'the real world happens', [
@@ -1413,6 +1414,7 @@ pahchan: {
       'Employees see their own requests; approvers work a queue.',
       '<b>Manual attendance</b> entry, recorded as manual rather than disguised as a punch.',
       'A <b>register</b> view of the month, and a <b>publish</b> step before it goes to payroll.',
+      'A day with <b>one punch and no pair</b> is withheld from payroll and listed for regularisation — not filed as absent, which would assert somebody did not work.',
       'An employee sees <b>their own</b> attendance — so a query about a missing day starts with them, not with HR.'],
     ],
     ['Consent and DPDP', 'this is biometric data', [
@@ -1878,7 +1880,7 @@ dristi: {
   caps: [
     ['The standing views', 'one per spine', [
       '<b>Overview</b> — the firm on one screen.',
-      '<b>Revenue</b> from Ganit, <b>pipeline</b> from Graha, <b>sales</b> from Vikray, <b>HR</b> from Manav.',
+      '<b>Revenue</b> from Ganit, <b>pipeline</b> from Graha, <b>sales</b> from Vikray, <b>HR</b> from Manav, <b>attendance and punctuality</b> from Pahchan.',
       'Computed at read time, so a figure is as current as the record behind it.',
       'No nightly copy and no warehouse to fall behind.',
       '<b>Support tickets and outbound</b> are in scope too — service load and what the firm sent, beside revenue and headcount.',
