@@ -95,10 +95,19 @@ export function waLink(phone, text) {
  * states are duplicated here rather than fetched because the alternative is a
  * round trip to learn what the row in hand already says.
  *
- * The base URL is an env var falling back to this origin. `pay.kartavaya.com`
- * is NOT pointed anywhere yet — it still serves the staging SPA — so today the
- * fallback is the only thing that produces a working link, and the day the
- * subdomain exists this changes in Vercel rather than in the source.
+ * ⚠ THE BASE IS THE INVOICE HOST, NOT THIS ORIGIN — corrected 2026-09-08.
+ *
+ * This used to read "`pay.kartavaya.com` is NOT pointed anywhere yet — it still
+ * serves the staging SPA — so today the fallback is the only thing that
+ * produces a working link." That stopped being true on 2026-08-30, and the note
+ * outlived it: `VITE_PAY_BASE_URL` was set in no env file, so the fallback
+ * below stayed live and every link this button minted carried
+ * `window.location.origin` — `app.kartavaya.com` — which staff then sent to
+ * their customers. Emailed invoices were never affected; those are built from
+ * the backend's `PAY_URL` (`services/invoice_email.py:53`).
+ *
+ * `.env.production` now sets it. The fallback stays for localhost and previews,
+ * where this origin genuinely is the only host that can serve the link.
  */
 const PAY_BASE = import.meta.env.VITE_PAY_BASE_URL || '';
 const SHAREABLE_DOC = ['final', 'sent', 'viewed'];

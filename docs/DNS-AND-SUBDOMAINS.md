@@ -159,30 +159,60 @@ Both directions now live in `frontend/src/lib/platform.js`:
 |---|---|---|
 | `isAppHost()` | outbound | `app.` skips the landing page and opens the form |
 | `signInHref()` | inbound | the landing page's Sign in is absolute, to `app.` |
-| `offHostRedirect()` | inbound | **the whole marketing surface** — called in `index.jsx` *before* React mounts |
+| `offHostRedirect()` | inbound | **all three doors** — called in `index.jsx` *before* React mounts |
 
 ⚠ **`www.` had to be handled as its own host, not assumed away.** The table
 above said "redirect to the apex"; it is not — measured 2026-09-08, it answers
 `200` with no `Location` and serves the same build. A rule written from the doc
 would have policed one marketing host and left the other wide open.
 
-`offHostRedirect()` is an **allowlist**: `kartavaya.com` and `www.` may serve
-`/` and the four legal documents (`/privacy`, `/subprocessors`, `/security`,
-`/dpa` — owner's call 2026-09-08: their readers are strangers with no account,
-and they are the marketing domain's indexable surface). `/i/**` goes to `pay.`;
-**everything else goes to `app.`**, so a route added tomorrow is on the app host
-by default and only an explicit line moves it.
+**The three doors, as `hostFor()` states them.** Phrased per host rather than
+per path, because `/` legitimately means something different at each one:
+
+| Door | May serve | Everything else |
+|---|---|---|
+| `kartavaya.com`, `www.` | `/` and the four legal documents | `/i/**` → `pay.`, rest → `app.` |
+| `pay.kartavaya.com` | **`/i/**` and nothing else** | `/` + legal → the apex, rest → `app.` |
+| `app.kartavaya.com` | everything, legal pages included | **only `/i/**` leaves**, to `pay.` |
+
+The marketing door is an **allowlist**, so a route added tomorrow is on `app.`
+by default and only an explicit line moves it. The legal four sit there because
+their readers are strangers with no account and they are the marketing domain's
+indexable surface (owner's call 2026-09-08); `/` stays at `app.` because
+`isAppHost()` deliberately makes it the sign-in form.
+
+⚠ **`pay.` WAS A WHOLE-PRODUCT HOST UNTIL 2026-09-08.** Measured in a browser,
+not inferred: `pay.kartavaya.com/` served the full marketing landing page —
+hero, Plans, "Request a demo" — and `pay.kartavaya.com/login` served a working
+sign-in form, password field and all. That makes this sentence from
+`email_service.py:25` false in production:
+
+> Keeping it on its own host means an invoice link can never be mistaken for a
+> session
+
+It could, because you could sign in on one. `/i/**` is the only path `PAY_URL`
+is ever used to build (`services/invoice_email.py:53` is the single call site),
+so locking the door turns nothing legitimate away.
+
+⚠ **AND THE APP WAS MINTING INVOICE LINKS ON ITS OWN ORIGIN.**
+`VITE_PAY_BASE_URL` was set in **no env file**, so `payLink()` in
+`pages/ganit/_shared.jsx` fell back to `window.location.origin` and produced
+`app.kartavaya.com/i/<token>` — which staff copied and sent to their customers.
+Emailed invoices were never affected; those come from the backend's `PAY_URL`.
+Fixed at the source in `frontend/.env.production`, and `app./i/**` → `pay.`
+catches the links already sitting in inboxes and WhatsApp threads.
 
 ⚠ **It fires BEFORE `createRoot`, and that ordering is the point.** A route
 guard would mount the page first — firing its API calls and writing to the wrong
 origin's storage — and only then navigate away.
 
-⚠ **Only the two marketing hosts are policed.** `localhost`, `*.pages.dev` and
-`app.`/`pay.` themselves are untouched: `e2e-real/diag.config.ts` drives
-`kartavaya.pages.dev`, and a rule that bounced it to production `app.` would
-move every suite off the build under test.
+⚠ **Only our three named hosts are policed.** `localhost`, `*.pages.dev` and
+`staging.` are untouched: `e2e-real/diag.config.ts` drives `kartavaya.pages.dev`,
+and a rule that bounced it to production would move every suite off the build
+under test. `app.` is matched **exactly**, not by the `app.` prefix
+`isAppHost()` uses, for the same reason.
 
-Pinned by `frontend/src/lib/__tests__/hostSplit.test.js` (39 cases), which is
+Pinned by `frontend/src/lib/__tests__/hostSplit.test.js` (65 cases), which is
 the only thing that can go red here — **mutation-checked**: reverting
 `signInHref()` to `/login` and emptying the `pay.` prefix list fails 3 tests.
 

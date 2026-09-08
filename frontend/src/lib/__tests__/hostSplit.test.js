@@ -142,13 +142,92 @@ describe('offHostRedirect — what the marketing host may serve', () => {
   it.each([
     ['app.kartavaya.com', '/dashboard'],
     ['app.kartavaya.com', '/login'],
+    ['app.kartavaya.com', '/'],
     ['pay.kartavaya.com', '/i/abc123'],
     ['kartavaya.pages.dev', '/login'],
     ['kartavaya.pages.dev', '/dashboard'],
+    ['kartavaya.pages.dev', '/i/abc123'],
     ['localhost', '/dashboard'],
+    ['localhost', '/i/abc123'],
     ['staging.kartavaya.com', '/login'],
-  ])('leaves %s%s entirely alone — only the marketing hosts are policed', (host, path) => {
+  ])('leaves %s%s where it is', (host, path) => {
     expect(offHostRedirect(loc(host, path))).toBeNull();
+  });
+
+  it('leaves app.kartavaya.com/ alone — `/` is the SIGN-IN FORM there', () => {
+    // `isAppHost()` sends a logged-out visitor at `app.` to the form instead of
+    // the landing page, on purpose. A rule that said "`/` belongs to marketing"
+    // would undo that and bounce every bookmarked app. visitor to the website.
+    expect(offHostRedirect(loc('app.kartavaya.com', '/'))).toBeNull();
+  });
+});
+
+describe('offHostRedirect — the invoice host serves ONE thing', () => {
+  // `email_service.py:25`: the reader is the customer's customer, has no
+  // account and never will, and keeping the invoice on its own host means "an
+  // invoice link can never be mistaken for a session."
+  //
+  // That sentence was FALSE in production until 2026-09-08 — measured in a
+  // browser, pay.kartavaya.com/ served the full marketing landing page and
+  // /login served a working sign-in form, password field and all.
+
+  it('keeps the invoice itself', () => {
+    expect(offHostRedirect(loc('pay.kartavaya.com', '/i/abc123'))).toBeNull();
+  });
+
+  it('refuses to serve the sign-in form — the whole reason this host exists', () => {
+    expect(offHostRedirect(loc('pay.kartavaya.com', '/login')))
+      .toBe('https://app.kartavaya.com/login');
+  });
+
+  it.each(['/dashboard', '/graha', '/accept-invite'])(
+    'sends %s to the app host',
+    (path) => {
+      expect(offHostRedirect(loc('pay.kartavaya.com', path)))
+        .toBe(`https://app.kartavaya.com${path}`);
+    },
+  );
+
+  it('sends the bare host to the landing page, not the sign-in form', () => {
+    // Someone who trimmed the URL down has no invoice and no account. "What is
+    // this?" is the honest answer. Owner's call, 2026-09-08.
+    expect(offHostRedirect(loc('pay.kartavaya.com', '/')))
+      .toBe('https://kartavaya.com/');
+  });
+
+  it('sends a legal page to the marketing host, where it is indexed', () => {
+    expect(offHostRedirect(loc('pay.kartavaya.com', '/privacy')))
+      .toBe('https://kartavaya.com/privacy');
+  });
+});
+
+describe('offHostRedirect — an invoice minted on the app host still lands right', () => {
+  // VITE_PAY_BASE_URL was set in no env file, so `payLink()` fell back to
+  // `window.location.origin` and the app's own copy button minted
+  // app.kartavaya.com/i/<token>. Fixed at the source in .env.production — but
+  // those links are already in customers' inboxes and WhatsApp threads.
+
+  it('moves it to the invoice host', () => {
+    expect(offHostRedirect(loc('app.kartavaya.com', '/i/abc123')))
+      .toBe('https://pay.kartavaya.com/i/abc123');
+  });
+
+  it('carries the query across', () => {
+    expect(offHostRedirect(loc('app.kartavaya.com', '/i/abc123', '?utm=wa')))
+      .toBe('https://pay.kartavaya.com/i/abc123?utm=wa');
+  });
+
+  it('does not move anything else off the app host', () => {
+    // The legal pages stay: someone inside the product reading the DPA should
+    // not be thrown onto the marketing site to do it.
+    expect(offHostRedirect(loc('app.kartavaya.com', '/privacy'))).toBeNull();
+    expect(offHostRedirect(loc('app.kartavaya.com', '/inbox'))).toBeNull();
+  });
+
+  it('is matched exactly, not by the `app.` prefix isAppHost() uses', () => {
+    // A future app.<something-else> is a different environment. Throwing it at
+    // PRODUCTION pay. would take it out of the deploy under test.
+    expect(offHostRedirect(loc('app.kartavaya.dev', '/i/abc123'))).toBeNull();
   });
 
   it('returns null with no window rather than throwing', () => {

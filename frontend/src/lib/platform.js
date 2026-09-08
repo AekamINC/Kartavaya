@@ -116,6 +116,12 @@ export function isAppHost() {
 const APP_HOST = 'app.kartavaya.com';
 const PAY_HOST = 'pay.kartavaya.com';
 
+/**
+ * Where a page that belongs to nobody in particular goes — the apex, not `www.`,
+ * because the apex is what the CTA and every printed mention point at.
+ */
+const MARKETING_HOST = 'kartavaya.com';
+
 /** The path the sign-in form lives at, on every host that serves it. */
 const LOGIN_PATH = '/login';
 
@@ -183,10 +189,10 @@ function normalisePath(pathname) {
  * for it to fire its API calls and write to the wrong origin's storage, and
  * only then navigating away.
  *
- * ⚠ ONLY the marketing hosts are policed. `localhost`, a `*.pages.dev` preview
- * and `app.`/`pay.` themselves are left entirely alone — on those the app IS
- * the origin you are on. `frontend/e2e-real/diag.config.ts` drives
- * `kartavaya.pages.dev`, and sending it to production `app.` would take the
+ * ⚠ ONLY OUR THREE NAMED HOSTS are policed — see `hostFor()` for each door.
+ * `localhost`, a `*.pages.dev` preview and `staging.` are left entirely alone:
+ * on those the app IS the origin you are on. `frontend/e2e-real/diag.config.ts`
+ * drives `kartavaya.pages.dev`, and sending it to production would take the
  * suite out of the build under test and into a different deploy.
  *
  * Takes the location rather than reading the global, so the test can drive it
@@ -194,15 +200,81 @@ function normalisePath(pathname) {
  */
 export function offHostRedirect(loc) {
   const here = loc || (typeof window === 'undefined' ? null : window.location);
-  if (!here || !MARKETING_HOSTS.has(here.hostname)) return null;
+  if (!here) return null;
 
   const path = normalisePath(here.pathname);
-  if (MARKETING_PATHS.has(path)) return null;
+  const host = hostFor(here.hostname, path);
+  if (!host) return null;
 
-  const host = PAY_PREFIXES.some((p) => path.startsWith(p)) ? PAY_HOST : APP_HOST;
   // The ORIGINAL pathname, not the normalised one: this is where the visitor
   // was going, and `?from=`, `?expired=1` and `#anchor` are read on arrival.
   return `https://${host}${here.pathname || '/'}${here.search || ''}${here.hash || ''}`;
+}
+
+/** `/i/<token>` — the one path the invoice host owns. */
+function isPayPath(path) {
+  return PAY_PREFIXES.some((p) => path.startsWith(p));
+}
+
+/**
+ * The host this path belongs on, or `null` when it is already there.
+ *
+ * Read it as three separate doors, because that is what they are — a rule
+ * phrased as "path X lives on host Y" cannot express `/`, which legitimately
+ * means something different at each door: the landing page at the apex, the
+ * sign-in form at `app.` (`isAppHost()` above, deliberate), and nothing at all
+ * at `pay.`.
+ */
+function hostFor(hostname, path) {
+  // ── The marketing door ──────────────────────────────────────────────────────
+  if (MARKETING_HOSTS.has(hostname)) {
+    if (MARKETING_PATHS.has(path)) return null;
+    return isPayPath(path) ? PAY_HOST : APP_HOST;
+  }
+
+  // ── The invoice door ────────────────────────────────────────────────────────
+  //
+  // ⚠ THE STRICTEST OF THE THREE, and the reason the host exists at all.
+  // `email_service.py:25`: "the person opening it is the customer's customer,
+  // has no account here and never will… keeping it on its own host means an
+  // invoice link can never be mistaken for a session."
+  //
+  // That sentence was false in production until 2026-09-08. `pay.` served the
+  // full marketing landing page at `/` and a WORKING SIGN-IN FORM at `/login` —
+  // measured in a browser, password field and all. An invoice link could be
+  // mistaken for a session, because you could sign in on one.
+  //
+  // `/i/**` is the ONLY path `PAY_URL` is ever used to build (`invoice_email.py:53`
+  // is the single call site), so nothing legitimate is turned away here.
+  if (hostname === PAY_HOST) {
+    if (isPayPath(path)) return null;
+    // A stranger who trimmed the URL to the bare host has no invoice and no
+    // account. "What is this?" is the honest answer, so they get the landing
+    // page — never the sign-in form this door must not offer. Owner's call.
+    return MARKETING_PATHS.has(path) ? MARKETING_HOST : APP_HOST;
+  }
+
+  // ── The app door ────────────────────────────────────────────────────────────
+  //
+  // Only `/i/**` leaves. The legal pages stay: someone inside the product
+  // reading the DPA should not be thrown onto the marketing site to do it.
+  //
+  // This one is not hypothetical either. `VITE_PAY_BASE_URL` was set in no env
+  // file, so the app's own copy-link button fell back to `window.location.origin`
+  // (`pages/ganit/_shared.jsx`) and minted `app.kartavaya.com/i/<token>` — which
+  // staff then sent to their customers. That is fixed at the source, but those
+  // links are already in inboxes and WhatsApp threads, and this is what lands
+  // them on the right door.
+  //
+  // Matched exactly, not by the `app.` prefix `isAppHost()` uses: a future
+  // `app.<something-else>` is a different environment, and throwing it at
+  // PRODUCTION `pay.` would take it out of the deploy under test.
+  if (hostname === APP_HOST) {
+    return isPayPath(path) ? PAY_HOST : null;
+  }
+
+  // localhost, a `*.pages.dev` preview, anything else — left alone entirely.
+  return null;
 }
 
 /**

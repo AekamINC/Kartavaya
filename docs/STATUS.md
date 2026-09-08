@@ -67,6 +67,40 @@ works is: wait for the OLD chunk to stop being served, then grep the chunk
 production actually serves for the rule itself — the allowlist is in there:
 `new Set(["/","/privacy","/subprocessors","/security","/dpa"])`.
 
+### Then the same sweep found `pay.` was worse — fixed the same day
+
+Asked to check the remaining hosts. `www.` was already covered. **`pay.` was
+not**, and it failed the one promise it exists to keep. Measured in a browser:
+
+- `pay.kartavaya.com/` served the **full marketing landing page** — hero, Plans,
+  "Request a demo".
+- `pay.kartavaya.com/login` served a **working sign-in form**, password field
+  and all.
+
+`email_service.py:25` says the host exists so that *"an invoice link can never
+be mistaken for a session."* It could be — you could sign in on one.
+
+⚠ **And the app was minting invoice links on its own origin.**
+`VITE_PAY_BASE_URL` was set in **no env file**, so `payLink()`
+(`pages/ganit/_shared.jsx`) fell back to `window.location.origin` and produced
+`app.kartavaya.com/i/<token>`, which staff copied and sent to their customers.
+**Emailed invoices were never affected** — those come from the backend's
+`PAY_URL`. The stale comment beside it still claimed `pay.` "is NOT pointed
+anywhere yet", which stopped being true on 2026-08-30.
+
+Fixed together (owner's call, option A):
+
+| Door | May serve | Everything else |
+|---|---|---|
+| `kartavaya.com`, `www.` | `/` + the four legal documents | `/i/**` → `pay.`, rest → `app.` |
+| `pay.kartavaya.com` | **`/i/**` and nothing else** | `/` + legal → the apex, rest → `app.` |
+| `app.kartavaya.com` | everything, legal included | **only `/i/**` leaves**, to `pay.` |
+
+`.env.production` now sets `VITE_PAY_BASE_URL`, so new links mint on `pay.`; the
+`app./i/**` → `pay.` rule catches the ones already in inboxes and WhatsApp
+threads. `/i/**` is the only path `PAY_URL` ever builds
+(`services/invoice_email.py:53`), so nothing legitimate is turned away.
+
 Full write-up: `docs/DNS-AND-SUBDOMAINS.md` → *the split is enforced in the bundle*.
 
 ---

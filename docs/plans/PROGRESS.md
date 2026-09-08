@@ -12381,3 +12381,50 @@ ASKED, never that the database could answer."* All ~15k tests are mock-based, so
 CLAUDE.md's "never ship a router without one test that executes its SQL against
 the real schema" has **no mechanism in this suite to satisfy it**. Worth naming
 as a standing gap rather than re-discovering per router.
+
+---
+
+## 2026-09-08 (later) — the same defect was on `pay.`, and it was worse
+
+Owner swept the remaining hosts: *"check if www.kartavaya.com also redirects
+properly"*, then *"check pay.kartavaya.com too"*.
+
+`www.` was already covered — but only because it was named explicitly, and it
+was named explicitly only because the doc's claim that it "redirects to the
+apex" had been **measured and found false** (200, no `Location`). A rule written
+from the doc would have policed one marketing host and left the other open.
+
+⚠ **A trap in the tooling, worth recording.** The browser pane STRIPS `www.`
+from the URL it displays. The first `www.` check appeared to start on the apex,
+which would have proved nothing. `location.href` evaluated inside the page is
+what settles it — `https://www.kartavaya.com/privacy` had genuinely stayed, and
+`https://www.kartavaya.com/login` had genuinely become
+`https://app.kartavaya.com/login`. **Do not trust the pane's URL for a host
+test.**
+
+`pay.` was not covered, and it failed the one promise it exists to keep:
+
+- `pay.kartavaya.com/` served the full marketing landing page.
+- `pay.kartavaya.com/login` served a working sign-in form, password field and all.
+
+`email_service.py:25` justifies the whole host on *"an invoice link can never be
+mistaken for a session."* It could be. You could sign in on one.
+
+**And a second defect fell out of checking the first.** `VITE_PAY_BASE_URL` was
+set in no env file, so `payLink()` fell back to `window.location.origin` and the
+app's own copy button minted `app.kartavaya.com/i/<token>` — sent by staff to
+their customers. Emailed invoices were never wrong; they come from the backend's
+`PAY_URL`. The comment beside the fallback still said `pay.` "is NOT pointed
+anywhere yet", eight days after it was pointed.
+
+⚠ **Two lessons, and they are the same lesson.** The first fix looked complete
+because the reported symptom was gone. It was not complete, because the RULE had
+only been applied at one of three doors. And the stale comment is how the second
+defect survived: it described a world from before 2026-08-30 and read as current.
+**A fix that closes one door is a description, not a rule, until every door is
+checked.**
+
+`hostFor()` now states all three doors explicitly, phrased per HOST rather than
+per path — because `/` legitimately differs at each: the landing page at the
+apex, the sign-in form at `app.` (`isAppHost()`, deliberate), and nothing at all
+at `pay.`. 65 cases pin it.
