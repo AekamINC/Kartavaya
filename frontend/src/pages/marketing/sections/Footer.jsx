@@ -1,5 +1,6 @@
 import React from 'react';
 import { KLogo, KWordmark } from '../../../lib/brand';
+import { signInHref } from '../../../lib/platform';
 
 /**
  * Footer.
@@ -31,7 +32,12 @@ const COLUMNS = [
       { label: 'Modules',      href: '#modules' },
       { label: 'How it works', href: '#features' },
       { label: 'Plans',        href: '#pricing' },
-      { label: 'Sign in',      href: '/login' },
+      /* A getter, and absolute off this host: `/login` here kept the visitor on
+         the marketing origin, where the app runs but the session it builds is
+         invisible to `app.kartavaya.com` and to every link the backend mails.
+         See `signInHref()`. Computed at render, not at module load, so this
+         array can be imported anywhere without freezing a hostname into it. */
+      { label: 'Sign in',      get href() { return signInHref(); } },
     ],
   },
   {

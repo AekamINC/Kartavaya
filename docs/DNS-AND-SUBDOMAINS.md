@@ -16,7 +16,7 @@ they pointed at a dead Vercel deployment) and nothing replaced them. So
 | Host | What it is | Points at | Proxy | Set by |
 |---|---|---|---|---|
 | `kartavaya.com` | the front door / marketing | Cloudflare Pages | 🟠 Proxied | — |
-| `www.kartavaya.com` | redirect to the apex | Cloudflare Pages | 🟠 Proxied | — |
+| `www.kartavaya.com` | ⚠ **NOT a redirect — a second live marketing host** (measured 2026-09-08: `200`, no `Location`) | Cloudflare Pages | 🟠 Proxied | — |
 | **`app.kartavaya.com`** | **the product** | Cloudflare Pages | 🟠 Proxied | `FRONTEND_URL` |
 | **`pay.kartavaya.com`** | **the public invoice** | Cloudflare Pages | 🟠 Proxied | `PAY_URL` |
 | `api.kartavaya.com` | the backend | Railway (production) | 🟠 **Proxied** | `BACKEND_URL` |
@@ -134,14 +134,61 @@ when there is, so a single build already serves both faces. `/i/:token` is owned
 by a Pages Function (`frontend/functions/i/[token].js`), so `pay.` needs no
 separate deployment either.
 
-⚠ **One consequence worth deciding.** Because it is one build, a logged-out
-visitor to `app.kartavaya.com` gets the **landing page**, not the login form.
-The owner's intent is "app is where login goes". Two ways:
+### ✅ RESOLVED 2026-09-08 — the split is enforced IN THE BUNDLE, both directions
 
-- **A Cloudflare Redirect Rule** — on hostname `app.kartavaya.com`, path `/`,
-  redirect to `/login`. No deploy, no code. Recommended.
-- A hostname check in `RootGate`, alongside the `isInstalledApp()` branch that
-  already does exactly this for the installed app.
+One build serving four hosts means **every host already serves every route and
+none of them 404s.** So the topology above was a description, not a rule, and it
+drifted for months with nothing going red:
+
+- **Inbound.** The landing page shipped `<a href="/login">`. Relative — so
+  clicking **Sign in** on `kartavaya.com` left the visitor on
+  `kartavaya.com/login`, where the form renders, the password works, and the
+  whole product then runs from the marketing origin.
+- **Outbound.** A logged-out visitor to `app.kartavaya.com` got the landing
+  page instead of the form.
+
+⚠ **The damage is not a 404 — it is a session on the WRONG ORIGIN.**
+`localStorage` is per-origin, so signing in at the apex builds a session
+`app.kartavaya.com` cannot read, while every link the backend mails is built
+from `FRONTEND_URL` and lands on `app.`. The person is asked to log in again by
+a product that believes they already are, and no screen can explain it.
+
+Both directions now live in `frontend/src/lib/platform.js`:
+
+| Function | Direction | What it does |
+|---|---|---|
+| `isAppHost()` | outbound | `app.` skips the landing page and opens the form |
+| `signInHref()` | inbound | the landing page's Sign in is absolute, to `app.` |
+| `offHostRedirect()` | inbound | **the whole marketing surface** — called in `index.jsx` *before* React mounts |
+
+⚠ **`www.` had to be handled as its own host, not assumed away.** The table
+above said "redirect to the apex"; it is not — measured 2026-09-08, it answers
+`200` with no `Location` and serves the same build. A rule written from the doc
+would have policed one marketing host and left the other wide open.
+
+`offHostRedirect()` is an **allowlist**: `kartavaya.com` and `www.` may serve
+`/` and the four legal documents (`/privacy`, `/subprocessors`, `/security`,
+`/dpa` — owner's call 2026-09-08: their readers are strangers with no account,
+and they are the marketing domain's indexable surface). `/i/**` goes to `pay.`;
+**everything else goes to `app.`**, so a route added tomorrow is on the app host
+by default and only an explicit line moves it.
+
+⚠ **It fires BEFORE `createRoot`, and that ordering is the point.** A route
+guard would mount the page first — firing its API calls and writing to the wrong
+origin's storage — and only then navigate away.
+
+⚠ **Only the two marketing hosts are policed.** `localhost`, `*.pages.dev` and
+`app.`/`pay.` themselves are untouched: `e2e-real/diag.config.ts` drives
+`kartavaya.pages.dev`, and a rule that bounced it to production `app.` would
+move every suite off the build under test.
+
+Pinned by `frontend/src/lib/__tests__/hostSplit.test.js` (39 cases), which is
+the only thing that can go red here — **mutation-checked**: reverting
+`signInHref()` to `/login` and emptying the `pay.` prefix list fails 3 tests.
+
+A Cloudflare Redirect Rule was the alternative and was **not** taken: it cannot
+express the allowlist, and a rule kept in a dashboard is a rule the next person
+reading this repo cannot see.
 
 ---
 

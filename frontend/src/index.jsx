@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "./index.css";
 import App from "./App";
+import { offHostRedirect } from "./lib/platform";
 
 // No web analytics is loaded here. `@vercel/analytics` used to be injected at
 // this point; the site is served from Cloudflare Pages, whose SPA fallback
@@ -52,6 +53,27 @@ window.addEventListener('unhandledrejection', (e) => {
 // during HTML parse, before any script runs, and it costs no request at all.
 // It now carries `%VITE_BACKEND_URL%`, so it points at the API this build
 // actually talks to.
+
+// ── The host split, enforced before anything renders ──────────────────────────
+//
+// `kartavaya.com` is the landing page and the legal documents. Everything else
+// belongs on `app.` (the product) or `pay.` (the public invoice) — see
+// `offHostRedirect()` for the map and for why one build serving four hosts has
+// to police this itself.
+//
+// BEFORE `createRoot`, not inside a route guard, and that ordering is the
+// point. Mounting first means a protected page renders on the wrong origin for
+// a beat: it fires its API calls, reads a session that is not there and writes
+// one that nothing else can see — all of it discarded a moment later by the
+// navigation. Leaving is cheaper than arriving and then leaving.
+//
+// `replace`, not `assign`: back out of the app must not return to a redirector.
+// Wrapped, because a redirect that throws must not take the page down with it —
+// the old behaviour (the right page on the wrong host) beats a blank screen.
+try {
+  const belongsAt = offHostRedirect();
+  if (belongsAt) window.location.replace(belongsAt);
+} catch { /* serve it here rather than nothing */ }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(

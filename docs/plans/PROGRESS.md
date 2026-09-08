@@ -12264,3 +12264,59 @@ Wrong, and from a bad measurement — `git ls-files frontend/ios` run from INSID
 project). Only the synced web assets under `assets/public` are ignored, which is
 why the `cap sync` runs left the tree clean and why these version edits are
 committable.
+
+---
+
+## 2026-09-08 — the host split was a description, not a rule
+
+Owner: *"I click login on kartavaya.com and it's not redirecting me to
+app.kartavaya.com."* Measured before touching anything — the deployed chunk
+`assets/LandingPage-DvD1_0n8.js` carries `{label:"Sign in",href:"/login"}`,
+twice (nav, footer). Relative. The click never left the marketing origin.
+
+**Why nobody caught it.** All four web hosts are ONE Cloudflare Pages project
+and ONE build. `kartavaya.com/login`, `app.kartavaya.com/login` and
+`pay.kartavaya.com/login` all return the same 8,637-byte shell and the same
+entry chunk — verified by diffing the three responses, which are byte-identical
+apart from the Cloudflare ray id. So the wrong host does not 404, does not
+error, and does not fail a test. It just works, on the wrong origin.
+
+**What the wrong origin costs.** `localStorage` is per-origin. Signing in at the
+apex builds a session `app.kartavaya.com` cannot read, while `FRONTEND_URL` —
+`https://app.kartavaya.com`, `email_service.py:23` — is the base of every invite,
+approval, password reset and task link the backend sends. The user is asked to
+log in again by a product that believes they already are. Nothing logs it.
+
+**The fix, after the owner widened the scope** ("kartavaya.com only landing or
+cta, all other needs to go app.kartavaya.com, pay: pay.kartavaya.com"):
+`offHostRedirect()` in `lib/platform.js`, called from `index.jsx` **before
+`createRoot`**. An allowlist — `/` and the four legal pages stay; `/i/**` goes
+to `pay.`; everything else goes to `app.` — so a route added tomorrow lands on
+the app host by default.
+
+Three things worth keeping:
+
+⚠ **Before mount, not in a route guard.** A guard mounts the page first, which
+fires its API calls and writes to the wrong origin's storage, and only then
+navigates away. Leaving is cheaper than arriving and then leaving.
+
+⚠ **An allowlist, not a redirect list.** The inverse would name sixty-odd routes
+and would silently keep serving the sixty-first. The mistake has to fall towards
+`app.`, not away from it.
+
+⚠ **Only the two marketing hosts are policed.** `e2e-real/diag.config.ts` drives
+`kartavaya.pages.dev`; a rule that bounced it to production `app.` would move
+every suite off the build under test and nothing would say so.
+
+**Measured, not assumed, before pointing anyone at them:** `app.` and `pay.`
+both answer 200 with the same build, and a preflight from
+`https://app.kartavaya.com` comes back with that exact origin allowed. The
+redirect targets are real doors.
+
+`hostSplit.test.js` — 39 cases — is the only thing that can go red here, so it
+was **mutation-checked**: restoring the `/login` bug and emptying the `pay.`
+prefix list fails 3 tests. A green suite that cannot fail is the trap this repo
+keeps re-learning.
+
+🟡 Code only. It is ✅ when a click on the live `kartavaya.com` lands on
+`app.kartavaya.com/login`.

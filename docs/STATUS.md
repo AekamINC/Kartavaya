@@ -12,6 +12,49 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-08 — 🟡 THE HOST SPLIT IS ENFORCED IN THE BUNDLE (code shipped, not yet deployed)
+
+**Reported by the owner:** clicking **Sign in** on `kartavaya.com` did not go to
+`app.kartavaya.com`. Measured, not assumed — the deployed chunk
+`assets/LandingPage-DvD1_0n8.js` carries `{label:"Sign in",href:"/login"}`, in
+the nav and again in the footer. Relative. So the click stayed on the marketing
+origin, where the form renders and the password works.
+
+⚠ **This was invisible because nothing was broken.** All four web hosts are ONE
+Cloudflare Pages project and ONE build, so every host serves every route and
+none of them 404s. The failure is a **session on the wrong origin**:
+`localStorage` is per-origin, so signing in at the apex builds a session
+`app.kartavaya.com` cannot read, while every link the backend mails comes from
+`FRONTEND_URL` (`https://app.kartavaya.com`) and lands on `app.`. The person is
+asked to log in again by a product that believes they already are.
+
+**Owner's scope, widened mid-fix:** `kartavaya.com` serves the landing/CTA page
+only; everything else goes to the host that owns it. Now in
+`frontend/src/lib/platform.js`, called from `index.jsx` **before React mounts**:
+
+| Path on `kartavaya.com` / `www.` | Goes to |
+|---|---|
+| `/`, `/privacy`, `/subprocessors`, `/security`, `/dpa` | **stays** — the only surface with no account behind it (owner's call) |
+| `/i/**` | `pay.kartavaya.com` — the reader is the customer's customer |
+| everything else | `app.kartavaya.com` |
+
+An **allowlist**, so a route added tomorrow is on `app.` by default. Only the
+two marketing hosts are policed — `localhost`, `*.pages.dev` and `app.`/`pay.`
+are untouched, because `e2e-real/diag.config.ts` drives `kartavaya.pages.dev`
+and bouncing it to production would move the suites off the build under test.
+
+**Verified so far:** `app.` and `pay.` both answer 200 with the same build
+(`index-O3qLpaxk.js`) and CORS admits `https://app.kartavaya.com`, so the
+redirect targets are real. 39 unit cases pass and are **mutation-checked** —
+restoring the `/login` bug and emptying the `pay.` prefix list fails 3 of them.
+
+🟡 **NOT ✅.** Nothing is deployed. This is code plus a green test, which is
+exactly the code-without-data state the 84–90 era was about. It becomes ✅ when
+a click on the live `kartavaya.com` lands on `app.kartavaya.com/login`.
+Full write-up: `docs/DNS-AND-SUBDOMAINS.md` → *the split is enforced in the bundle*.
+
+---
+
 ## 2026-09-08 — ✅ THE CAPACITOR CONTAINER IS VERSIONED, AND IT IS ITS OWN PRODUCT
 
 It shipped the template default — `versionName "1.0"`, `versionCode 1` — because

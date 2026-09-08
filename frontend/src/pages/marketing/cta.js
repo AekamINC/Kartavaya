@@ -44,6 +44,8 @@
  * The rest of the page does not depend on which option is picked.
  */
 
+import { signInHref } from '../../lib/platform';
+
 /** Trimmed, because an env var set to a stray space is not a destination. */
 const configured = (import.meta.env.VITE_LEAD_CTA_HREF || '').trim();
 
@@ -52,9 +54,18 @@ export const PRIMARY_CTA = {
   href: configured,
 };
 
+/**
+ * The one CTA on this page that was never in doubt — and was still wrong.
+ *
+ * `href` is a getter, not a value, for the reason `platform.js` states about
+ * `isInstalledApp()`: read at call time, never frozen at module load. Nothing
+ * about a hostname changes mid-document, but this module is imported by three
+ * sections and by tests, and a value computed once at import is a value the
+ * next reader has to prove is still true. A getter cannot go stale.
+ */
 export const SECONDARY_CTA = {
   label: 'Sign in',
-  href: '/login',
+  get href() { return signInHref(); },
 };
 
 /** True once the primary CTA has somewhere to go. */
