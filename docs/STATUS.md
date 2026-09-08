@@ -12,7 +12,7 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
-## 2026-09-08 — 🟡 THE HOST SPLIT IS ENFORCED IN THE BUNDLE (code shipped, not yet deployed)
+## 2026-09-08 — ✅ THE HOST SPLIT IS ENFORCED IN THE BUNDLE, AND VERIFIED LIVE
 
 **Reported by the owner:** clicking **Sign in** on `kartavaya.com` did not go to
 `app.kartavaya.com`. Measured, not assumed — the deployed chunk
@@ -48,9 +48,25 @@ and bouncing it to production would move the suites off the build under test.
 redirect targets are real. 39 unit cases pass and are **mutation-checked** —
 restoring the `/login` bug and emptying the `pay.` prefix list fails 3 of them.
 
-🟡 **NOT ✅.** Nothing is deployed. This is code plus a green test, which is
-exactly the code-without-data state the 84–90 era was about. It becomes ✅ when
-a click on the live `kartavaya.com` lands on `app.kartavaya.com/login`.
+✅ **DEPLOYED AND EXERCISED IN A REAL BROWSER, 2026-09-08.** Not "the code
+shipped" — every rule was driven on the live site:
+
+| Entered on `kartavaya.com` | Ends at |
+|---|---|
+| `/` | stays — the landing page |
+| `/privacy` | stays |
+| **clicking Sign in** | **`app.kartavaya.com`, sign-in form rendered** |
+| `/login` | `app.kartavaya.com`, sign-in form rendered |
+| `/dashboard` | `app.kartavaya.com` |
+| `/i/<token>` | `pay.kartavaya.com` |
+
+⚠ **The deployed entry chunk is `index-4oZbIv_U.js`; the identical local build
+produced `index-Cy1HrdB2.js`.** A deploy check written against the local hash
+would have waited forever on a deploy that had already landed. The check that
+works is: wait for the OLD chunk to stop being served, then grep the chunk
+production actually serves for the rule itself — the allowlist is in there:
+`new Set(["/","/privacy","/subprocessors","/security","/dpa"])`.
+
 Full write-up: `docs/DNS-AND-SUBDOMAINS.md` → *the split is enforced in the bundle*.
 
 ---

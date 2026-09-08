@@ -12318,5 +12318,14 @@ was **mutation-checked**: restoring the `/login` bug and emptying the `pay.`
 prefix list fails 3 tests. A green suite that cannot fail is the trap this repo
 keeps re-learning.
 
-🟡 Code only. It is ✅ when a click on the live `kartavaya.com` lands on
-`app.kartavaya.com/login`.
+✅ Deployed and exercised in a real browser the same day. Clicking Sign in on
+the live `kartavaya.com` lands on `app.kartavaya.com` with the form rendered;
+`/dashboard` goes to `app.`, `/i/<token>` to `pay.`, and `/` and `/privacy`
+stay put.
+
+⚠ **One last trap, met on the way out.** The deploy check was first written
+against my LOCAL bundle hash. Production built the same commit to a different
+hash — `index-4oZbIv_U.js` against a local `index-Cy1HrdB2.js` — so that check
+would have waited forever on a deploy that had already landed. Wait for the OLD
+chunk to stop being served, then grep the chunk production actually serves for
+the rule itself. The hash is not the check; the marker is.
