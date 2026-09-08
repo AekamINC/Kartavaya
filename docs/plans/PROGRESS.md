@@ -12329,3 +12329,55 @@ hash — `index-4oZbIv_U.js` against a local `index-Cy1HrdB2.js` — so that che
 would have waited forever on a deploy that had already landed. Wait for the OLD
 chunk to stop being served, then grep the chunk production actually serves for
 the rule itself. The hash is not the check; the marker is.
+
+## 2026-09-08 — the ganit_payments gap: two unknowns, one of them now closed
+
+`ganit_payments` held 0 rows and STATUS called it "not a code defect, the
+largest remaining coverage hole". That claim had never been measured — and two
+STATUS claims had already turned out false this session — so it was measured.
+
+### Unknown one: is the write path broken? NO — proved write-free
+
+| Probe | Result |
+|---|---|
+| `INSERT INTO ganit_payments (…8 cols)` via `EXPLAIN` | plans clean; every NOT NULL without a default is covered |
+| `UPDATE ganit_invoices SET amount_paid, balance_due, payment_status` | plans clean |
+| `GET /collections` — the real query, executed | returns UNX-2026-0001 with the scan LATERAL resolving |
+| `GET /cash-position` — the real CTE, executed | 12 buckets × 3 days, correct shape |
+| `candidates` vs `match` | coherent — candidates returns PAYMENTS, match expects a payment id |
+
+⚠ **`match` does not create a payment, it LINKS one.** record receipt → import
+statement → match. "Paid comes from bank reconciliation" means no gateway
+decides it, not that the match writes the row. The one-line summary reads the
+other way and misleads.
+
+### Unknown two: the row. Seeded in SQL, on the owner's instruction
+
+`UNX-2026-0001` (Unicode Group, a test org) settled in two payments — ₹20,000
+then ₹33,100 — each one atomic statement mirroring `record_payment`. Both
+branches of `new_status` exercised: **partial**, then **paid**.
+
+Downstream, exercised for the first time: cash-position inflow 0 → **₹53,100**,
+`amount_paid` = `SUM(payments)` **reconciles**, and the collections list drops
+from 1 to **0** now the invoice is paid — which proves the filter responds to
+payment_status rather than merely running.
+
+### ⚠ Why this is 🟡 and not ✅
+
+The row was written by SQL. It did not exercise the credit-note guard, the draft
+guard, the HTTP route, the auth gate, or the `payment_recorded` Niyam event —
+that event did not fire, so rules keyed on it stay unproven. **Had the guards
+been broken, this seed would have hidden it rather than found it**, which is
+exactly why both rows carry a `notes` value saying what they are.
+
+The offer stands in STATUS: one payment over HTTPS takes this to ✅.
+
+### The suite cannot help here, and that is architectural
+
+`tests/conftest.py` sets a fake DSN and `make_pool()` returns a `MagicMock`.
+`test_receipts_and_stats_refuse_the_wrong_document.py` says it plainly: *"a fake
+cursor resolves any table handed to it, so an HTTP test proves the handler
+ASKED, never that the database could answer."* All ~15k tests are mock-based, so
+CLAUDE.md's "never ship a router without one test that executes its SQL against
+the real schema" has **no mechanism in this suite to satisfy it**. Worth naming
+as a standing gap rather than re-discovering per router.

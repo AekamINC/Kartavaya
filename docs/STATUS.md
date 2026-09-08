@@ -107,6 +107,89 @@ silently replacing whatever production bundle is in the containers. Build Gradle
 directly on an already-synced container instead.
 
 
+## 2026-09-08 — `ganit_payments` 0 → 2, AND WHAT THAT DOES AND DOES NOT PROVE
+
+The largest remaining coverage hole, measured rather than assumed. CLAUDE.md:
+a table at 0 rows is TWO unknowns — is the write broken, or merely unexercised?
+**Answered: unexercised.** Every half of the path was executed or planned
+against the live schema, write-free.
+
+| Probe | Result |
+|---|---|
+| `INSERT INTO ganit_payments (…8 cols)` — `EXPLAIN`, not executed | **plans clean**; every NOT NULL without a default is covered |
+| `UPDATE ganit_invoices SET amount_paid, balance_due, payment_status` | **plans clean** |
+| `GET /collections` — the full query, run | **returns UNX-2026-0001**, ₹53,100, Sundaram Textiles, scan LATERAL resolving 0/0/null |
+| `GET /cash-position` — the full CTE, run | **12 buckets × 3 days**, correct shape, all zero |
+| `GET /bank-statements/{id}/candidates` vs `POST …/match` | **coherent** — candidates returns PAYMENTS, match expects a payment id |
+
+⚠ **`match` does not create a payment — it links an existing one.** The flow is
+record receipt → import statement → match. "Paid comes from bank reconciliation"
+means no gateway decides it, not that the match writes the row. Worth stating
+because the one-line summary reads the other way.
+
+### What is actually missing, and it is two things
+
+1. **No test executes any of this against a real schema.** `tests/conftest.py`
+   sets a fake DSN (`postgresql://test:test@localhost/test`) and `make_pool()`
+   returns a `MagicMock`. `test_receipts_and_stats_refuse_the_wrong_document.py`
+   says it outright: *"a fake cursor resolves any table handed to it, so an HTTP
+   test proves the handler ASKED, never that the database could answer."*
+   That is **suite-wide architecture**, not a payments gap — all ~15k tests are
+   mock-based. CLAUDE.md's "never ship a router without one test that executes
+   its SQL against the real schema" has no mechanism in this suite to satisfy it.
+2. **No row.** ✅ needs a payment recorded **through the product over HTTPS** —
+   the 2026-09-01 precedent is explicit: *"Four flows PROVEN by driving the
+   product over HTTPS — never SQL."*
+
+⚠ **A SQL-inserted payment would be WORSE than the gap.** It bypasses the
+credit-note guard, the draft guard, the transaction and the invoice-total
+update, so `ganit_payments` would go non-zero while the write path stayed
+unexercised — a known gap converted into a hidden one, and a row that looks
+like evidence while proving nothing.
+
+### 🟡 SEEDED IN SQL, on the owner's instruction — 2026-09-08
+
+`UNX-2026-0001` (Unicode Group, a **test org**) settled in two payments, each a
+single atomic statement mirroring `record_payment`'s transaction:
+
+| | amount | amount_paid | balance_due | payment_status |
+|---|---|---|---|---|
+| NEFT-SEED-0001 | ₹20,000 | 20,000.00 | 33,100.00 | **partial** |
+| NEFT-SEED-0002 | ₹33,100 | 53,100.00 | 0.00 | **paid** |
+
+Both branches of `new_status` exercised, and the running total accumulates.
+`recorded_by` is the real user who raised the invoice; both `notes` say in the
+row itself that it was seeded and what it does not prove.
+
+**The downstream is now exercised for the first time:**
+
+| Probe | Before | After |
+|---|---|---|
+| `ganit_payments` rows | 0 | **2** |
+| cash-position inflow | 0 | **₹53,100** in the current bucket |
+| `amount_paid` = `SUM(payments)` | vacuous | **YES** |
+| collections list | 1 unpaid | **0** — the paid invoice correctly drops off |
+
+⚠ **THIS IS 🟡 AND NOT ✅, AND THE DISTINCTION IS THE WHOLE POINT.** CLAUDE.md:
+✅ means a customer completed the flow end to end. This row was written by SQL,
+so it did **not** exercise the credit-note guard, the draft guard, the HTTP
+route, the auth gate, or the `payment_recorded` Niyam event — that event did
+**not** fire, so any rule keyed on it is still unproven. What it does prove is
+that the schema accepts the write, the arithmetic reconciles, and the four
+readers behind it compute correctly on real data instead of on zero.
+
+**Still open:** one payment recorded **over HTTPS** would take this to ✅ and
+costs nothing to do — the invoice is settled now, so it needs a fresh one.
+And the bank-statement **match** flow remains unexercised: it needs a
+`ganit_bank_statement_lines` row, of which there are 0, so `candidates` has
+nothing to offer against these two payments.
+
+⚠ **A SQL-inserted payment is weaker evidence than it looks**, which is why the
+rows say so. It bypasses everything between the request and the table; had the
+guards been broken, this seed would have hidden it rather than found it.
+
+---
+
 ## 2026-09-07 (last) — ✅ THE MODULE SHEETS ARE FOUR PAGES, AND THE SCREEN COUNT WAS WRONG
 
 Marketing collateral only — **no product code changed**. Each module PDF was one
