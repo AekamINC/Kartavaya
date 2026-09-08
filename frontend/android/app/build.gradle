@@ -7,8 +7,25 @@ android {
         applicationId "com.aekam.kartavaya"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
+        // ── The container's OWN version, independent of the RN app ──────────
+        // `com.aekam.kartavaya` (this shell around the web app) and
+        // `com.aekaminc.Kartavaya` (mobile/, the native React Native app) are
+        // two different applications with two different package ids. They
+        // install side by side and are versioned separately on purpose; do NOT
+        // try to keep this in step with `mobile/app.json`, which is at 2.0.4 —
+        // nothing enforces that and the two would drift the first time somebody
+        // bumped one and forgot the other.
+        //
+        // ⚠ `versionCode` ONLY EVER GOES UP. Play refuses an upload whose code
+        // is not greater than the last, and on a device a build that reuses a
+        // code is indistinguishable from the one already installed — it looks
+        // like the update did nothing. Bump it on every build you hand to
+        // anybody, even a debug one.
+        //
+        // `versionName` is the string a person reads; it has no ordering rules
+        // and is free to say whatever the release is called.
         versionCode 1
-        versionName "1.0"
+        versionName "1.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

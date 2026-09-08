@@ -12,6 +12,42 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-08 — ✅ THE CAPACITOR CONTAINER IS VERSIONED, AND IT IS ITS OWN PRODUCT
+
+It shipped the template default — `versionName "1.0"`, `versionCode 1` — because
+nobody had ever set one. Now `1.0.0` / `1` on both platforms
+(`android/app/build.gradle`, and the two Xcode configurations in
+`ios/App/App.xcodeproj/project.pbxproj`).
+
+**Owner's decision: versioned INDEPENDENTLY of the native app.**
+`com.aekam.kartavaya` (this WebView shell) and `com.aekaminc.Kartavaya`
+(`mobile/`, the React Native app, at 2.0.4) are two applications with two
+package ids that install side by side. Do **not** try to keep the numbers in
+step — nothing enforces it and they would drift the first time one was bumped
+and the other forgotten. The reason is written in `build.gradle` itself, where
+the next person to touch the number will actually see it.
+
+⚠ **`versionCode` ONLY EVER GOES UP.** Play refuses an upload whose code is not
+greater than the last, and on a device a build that reuses a code is
+indistinguishable from the one already installed — the update looks like it did
+nothing. Bump it on every build handed to anybody, debug included.
+
+The web app itself still has **no version identity**: `frontend/package.json` is
+at `0.1.0`, which nothing reads, injects or displays. That is consistent — it is
+continuously deployed, so only the installable shells need a number.
+
+Artefact: `build/Kartavaya-container-1.0.0-debug.apk`, 8.1 MB, signature
+verifies. Debug rather than release because the container's `buildTypes.release`
+carries **no `signingConfig`** — an unsigned APK will not install — and unlike an
+RN debug build a Capacitor debug one embeds the web assets, so it runs
+standalone. That is why the repo's own `npm run apk` uses `assembleDebug`.
+
+⚠ **Do not reach for `npm run apk` to rebuild this.** It begins with
+`build:staging`, so it rewrites `dist` against the staging door and re-syncs —
+silently replacing whatever production bundle is in the containers. Build Gradle
+directly on an already-synced container instead.
+
+
 ## 2026-09-07 (last) — ✅ THE MODULE SHEETS ARE FOUR PAGES, AND THE SCREEN COUNT WAS WRONG
 
 Marketing collateral only — **no product code changed**. Each module PDF was one

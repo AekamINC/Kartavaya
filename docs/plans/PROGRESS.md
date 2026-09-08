@@ -12231,3 +12231,36 @@ made to fail. **Write regexes with Edit, not through a heredoc** — and when a
 new ratchet passes first time, that is the moment to distrust it.
 
 1,600 analytics/metrics/registry/pahchan tests pass.
+
+## 2026-09-08 — the container gets a version, and it is its own product
+
+The Capacitor shell had never been versioned: `versionName "1.0"`,
+`versionCode 1`, straight from the template. It is `1.0.0` / `1` now on both
+platforms — `android/app/build.gradle` and the two Xcode configurations in
+`ios/App/App.xcodeproj/project.pbxproj`.
+
+**Owner's call: independent of the native app.** `com.aekam.kartavaya` and
+`com.aekaminc.Kartavaya` are two applications with two package ids that install
+side by side, so the numbers are deliberately not kept in step with
+`mobile/app.json` (2.0.4). Nothing could enforce that anyway, and they would
+drift the first time somebody bumped one and forgot the other. The reasoning
+lives in `build.gradle` beside the number rather than only here.
+
+⚠ **`versionCode` only ever goes up** — Play refuses an upload that does not
+increase it, and on a device a build reusing a code is indistinguishable from
+the one already installed, so the update appears to have done nothing.
+
+Worth recording because it was measured and surprised me: the WEB app has no
+version identity at all. `frontend/package.json` sits at `0.1.0`, and nothing
+reads it, injects it at build time, or displays it anywhere. That is correct for
+something continuously deployed — only the installable shells need a number —
+but it does mean the container's version cannot be derived from anything and had
+to be chosen.
+
+⚠ Also corrected here: I had said the containers were untracked build artefacts.
+Wrong, and from a bad measurement — `git ls-files frontend/ios` run from INSIDE
+`frontend/`, so the path matched nothing and returned 0. `frontend/android` and
+`frontend/ios` are tracked (48 and 22 files: gradle, manifests, the Xcode
+project). Only the synced web assets under `assets/public` are ignored, which is
+why the `cap sync` runs left the tree clean and why these version edits are
+committable.
