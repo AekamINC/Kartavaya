@@ -12428,3 +12428,36 @@ checked.**
 per path — because `/` legitimately differs at each: the landing page at the
 apex, the sign-in form at `app.` (`isAppHost()`, deliberate), and nothing at all
 at `pay.`. 65 cases pin it.
+
+## 2026-09-08 (later still) — the pay-link variable was never checked in the build
+
+2026-09-08 · hosts/ganit · **verification only, no code changed.** The host-split
+session recorded `VITE_PAY_BASE_URL` as fixed on the strength of
+`frontend/.env.production:34` setting it. That is a claim about the repo. This
+repo has already been bitten by the difference once: `api_domain_and_pages_env`
+records a committed `.env.production` being silently overridden by a Cloudflare
+Pages dashboard variable, because Vite gives an injected env var precedence over
+every `.env` file — so no commit can override it and only the dashboard can.
+Nothing had confirmed which value production actually baked.
+
+Evidence — the chunk production serves, not a local build (local and production
+hashes differ; that trap is recorded above):
+
+    app.kartavaya.com/assets/_shared-CDr1kW7V.js
+      const k="https://pay.kartavaya.com"
+      payLink() -> `${k}/i/${e.pay_token}`
+
+Verified how: the scheme-qualified string appears in **that chunk only**. The
+entry chunk `index-DG3XNxZo.js` carries the bare `"pay.kartavaya.com"` of
+`platform.js` and **zero** occurrences of `https://pay.kartavaya.com`, so the
+two cannot be confused — the redirect constant and the env var are
+distinguishable by the scheme. `PAY_BASE` is therefore not falling back to
+`window.location.origin`, and Pages holds no conflicting key. The 🟡 is closed.
+
+⚠ Also retracted here, in the same spirit: an audit earlier today called
+`STATUS.md`'s Ganit row (`ganit_payments` still 0) a self-contradiction against
+the same day's seed entry. It is not. That row sits under **"EVIDENCE AUDIT —
+live row counts, 2026-09-07"**, a dated snapshot whose own preamble says a 0
+means "not exercised since 2026-09-01". A dated measurement that has since moved
+is not a stale claim, and editing it would have destroyed the evidence trail.
+**Check which date owns a number before calling it wrong.**

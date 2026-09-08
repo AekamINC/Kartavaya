@@ -101,6 +101,22 @@ Fixed together (owner's call, option A):
 threads. `/i/**` is the only path `PAY_URL` ever builds
 (`services/invoice_email.py:53`), so nothing legitimate is turned away.
 
+✅ **And the variable survived into the deployed bundle — checked, because the
+file being right does not prove the build is.** A Cloudflare Pages dashboard
+variable overrides every `.env` file for any key it holds (see
+`api_domain_and_pages_env`, where exactly that silently beat a committed
+`.env.production`), so "`.env.production` now sets it" is a claim about the repo,
+not about production. Measured instead in the chunk production serves —
+`assets/_shared-CDr1kW7V.js`, reached from `index-DG3XNxZo.js`:
+
+    const k="https://pay.kartavaya.com"   …   `${k}/i/${e.pay_token}`
+
+The literal is inlined, so `PAY_BASE` is not falling back to
+`window.location.origin` and Pages holds no conflicting value. The entry chunk
+carries only the bare `"pay.kartavaya.com"` of `platform.js`; the scheme-
+qualified string appears **only** in the chunk that owns `payLink()`, which is
+what distinguishes the env var from the redirect constant.
+
 ✅ **All six driven on the live site, 2026-09-08** (chunk `index-DG3XNxZo.js`):
 
 | Entered | Ends at |
