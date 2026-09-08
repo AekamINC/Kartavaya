@@ -12177,3 +12177,57 @@ stop absences going stale on SCHEMA grounds, and it did its job. Nothing was
 checking whether the *reasoning* still held. Two of the four false module-doc
 claims this session were the same shape: a true-sounding mechanism that nobody
 re-derived.
+
+## 2026-09-08 — attendance_by_shift stays absent: right answer, two wrong reasons
+
+Checked after `late_arrivals` turned out to rest on a false premise. **This
+absence is correct and stays**, but two of its stated grounds did not survive
+re-measurement:
+
+- *"(027, 12 rows live)"* for `manav_shift_definitions` — **stale**. It holds
+  **0**; migration 260 cleared every non-Aekam row. The reason was arguing from
+  a number that had been false for a week and reached the right conclusion
+  anyway, which is exactly why nobody caught it.
+- *"joining a same-day `manav_schedules` row would silently drop every
+  attendance day the optional scheduler never covered"* — that describes an
+  INNER join. A `LEFT JOIN` with `COALESCE(name, 'Unscheduled')` drops nothing
+  and is the pattern this module already uses for `'No department'`.
+
+### What actually blocks it
+
+- Neither `manav_attendance` nor `pahchan_punches` has ANY column matching
+  `%shift%` (information_schema, 2026-09-07). Structural and decisive.
+- `manav_employees.shift` is `text DEFAULT 'general'`, no FK — a property of the
+  PERSON, not the day. The module models a shift as changing daily (schedules,
+  bids, swaps), so bucketing historical attendance by somebody's CURRENT label
+  would silently re-file their past whenever they moved shift.
+- `manav_schedules` DOES record `(employee_id, date, shift_id)` with a real FK
+  and is the one honest source — but joining it needs `employee_id` a **second**
+  time, and the DPDP pin permits exactly one occurrence. **Widening a privacy
+  ratchet to gain a dimension is an owner's decision, not a refactor**, and with
+  0 schedules and 0 shift definitions live it would yield a single
+  `'Unscheduled'` bucket today anyway.
+
+### The ratchet this produced
+
+`test_absent_reasons_may_not_rest_on_a_row_count` fails any pahchan absence
+citing `N rows`. Its sibling stops an absence going stale on MIGRATION grounds;
+this one stops it going stale on DATA grounds — a row count is the one part of
+such a claim that goes false without anybody editing the file. Proved by
+restoring the real `(027, 12 rows live)` clause: the test names the match and
+fails.
+
+### ⚠ The ratchet itself shipped BROKEN for ten minutes, and passed green
+
+Written through a heredoc, the regex `r"\b\d+\s+rows?\b"` reached the file as
+`r"<BS>\d+\s+rows?<BS>"` — the `\b` became a literal **backspace** (0x08),
+because the inner Python string was not raw. `re.search` on that can never
+match, so the test passed **vacuously**, and `Read` renders 0x08 invisibly so
+the file looked correct. Caught only by `cat -v`.
+
+This is the documented "heredocs eat a backslash" trap wearing a different hat,
+and it is the second time this session a green test proved nothing until it was
+made to fail. **Write regexes with Edit, not through a heredoc** — and when a
+new ratchet passes first time, that is the moment to distrust it.
+
+1,600 analytics/metrics/registry/pahchan tests pass.

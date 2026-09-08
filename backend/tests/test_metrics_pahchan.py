@@ -155,6 +155,31 @@ def test_absent_reasons_may_not_rest_on_an_applied_migration():
         )
 
 
+def test_absent_reasons_may_not_rest_on_a_row_count():
+    """A row count is a MEASUREMENT WITH A DATE, not a fact about the schema.
+
+    The attendance_by_shift reason carried "(027, 12 rows live)" about
+    manav_shift_definitions. Re-measured 2026-09-07: that table holds **0** —
+    migration 260 cleared every non-Aekam row — so the reason was arguing from
+    a number that had been false for a week. It happened to reach the right
+    conclusion, which is exactly why nobody caught it.
+
+    The sibling test above stops an absence going stale on MIGRATION grounds.
+    This one stops it going stale on DATA grounds. An absence must rest on the
+    shape of the schema — a column that does not exist, a boundary that
+    forbids a join — never on how many rows something happens to hold today,
+    because that is the one part of the claim that changes without anybody
+    editing this file.
+    """
+    for key in ABSENT_KEYS:
+        m = REGISTRY[key]
+        hit = re.search(r"\b\d+\s+rows?\b", m.absent)
+        assert hit is None, (
+            f"{key}: absence cites a row count ({hit.group(0)!r}) — "
+            "re-measure it or state the structural reason instead"
+        )
+
+
 # ── attendance_rate ──────────────────────────────────────────────────────────
 
 def test_attendance_rate_is_sums_over_sums_with_payrolls_own_formula():

@@ -362,18 +362,26 @@ absent_metric(
     label="Attendance % by shift",
     unit="pct",
     grain="flow",
-    absent="Nothing records which shift a day was worked on. Verified live "
-           "2026-08-25: public.manav_attendance has no shift_id column, and "
-           "public.pahchan_punches has no shift column either; "
-           "manav_employees.shift is free text defaulting to 'general' with "
-           "no FK into public.manav_shift_definitions (027, 12 rows live); "
-           "and joining a same-day public.manav_schedules row would silently "
-           "drop every attendance day the optional scheduler never covered — "
-           "a convincing partial answer. public.pahchan_policy IS applied "
-           "and does carry shift_start_time, but it holds ONE shift per org, "
-           "so it yields a single bucket rather than a shift dimension. "
-           "Closing this needs a shift stamped on the attendance or punch "
-           "row at the time it is written, not a query.",
+    absent="Nothing records which shift a day was worked on. Re-verified live "
+           "2026-09-07 against information_schema: neither "
+           "public.manav_attendance nor public.pahchan_punches has ANY column "
+           "matching '%shift%' — that is the whole absence, and it is "
+           "structural rather than a matter of degree. "
+           "manav_employees.shift is text DEFAULT 'general' with no FK into "
+           "public.manav_shift_definitions, so it is a property of the PERSON "
+           "and not of the day: this module models a shift as changing daily "
+           "(schedules, bids, swaps), so bucketing historical attendance by "
+           "somebody's CURRENT label would silently re-file their past every "
+           "time they moved shift. public.manav_schedules does record "
+           "(employee_id, date, shift_id) with a real FK, and it is the one "
+           "honest source — but joining it needs employee_id a SECOND time, "
+           "and the DPDP pin at the top of this module allows exactly one "
+           "occurrence: the department join. Widening a privacy ratchet to "
+           "gain a dimension is an owner's decision, not a refactor. "
+           "public.pahchan_policy carries shift_start_time but holds ONE "
+           "shift per org, so it yields a single bucket, not a dimension. "
+           "Closing this properly needs a shift stamped on the attendance or "
+           "punch row when it is written, not a query.",
 )
 
 #: The moment after which an arrival is late, in the org's own local time.
