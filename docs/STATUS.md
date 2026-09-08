@@ -101,6 +101,22 @@ Fixed together (owner's call, option A):
 threads. `/i/**` is the only path `PAY_URL` ever builds
 (`services/invoice_email.py:53`), so nothing legitimate is turned away.
 
+✅ **All six driven on the live site, 2026-09-08** (chunk `index-DG3XNxZo.js`):
+
+| Entered | Ends at |
+|---|---|
+| `pay./login` | `app.kartavaya.com/login` — the form it must never serve |
+| `pay./` | `kartavaya.com/` — the landing page |
+| `pay./i/<token>` | **stays** — the invoice page renders |
+| `app./i/<token>` | `pay.kartavaya.com/i/<token>` — driven by a real in-page navigation, the way a customer clicking a WhatsApp link arrives |
+| `app./` | **stays** → `/login`, form rendered — `isAppHost()` intact, not bounced to marketing |
+| `kartavaya.com/privacy` | **stays** — "Privacy policy · Kartavaya" |
+
+⚠ **The browser pane STRIPS `www.` from the URL it displays.** A host test read
+off the pane proves nothing; `location.href` evaluated inside the page is what
+settles it. That is how the `www.` check was done, and it is the only reason
+that check meant anything.
+
 Full write-up: `docs/DNS-AND-SUBDOMAINS.md` → *the split is enforced in the bundle*.
 
 ---
