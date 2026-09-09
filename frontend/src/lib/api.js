@@ -30,7 +30,9 @@ if (!BACKEND_URL) {
     document.body.innerHTML =
       '<div style="display:flex;height:100vh;align-items:center;justify-content:center;font-family:sans-serif;flex-direction:column;gap:12px">' +
       '<h2 style="color:#dc2626">Configuration Error</h2>' +
-      '<p style="color:#555">VITE_BACKEND_URL is not set. Please check your deployment environment.</p>' +
+      '<p style="color:#555">VITE_BACKEND_URL is not set. Set it on the Cloudflare Pages project ' +
+      '(Settings, Environment variables, Production) and then create a NEW deployment: Pages reads ' +
+      'variables at build time, so saving one changes nothing until something rebuilds.</p>' +
       '</div>';
   }
   throw new Error('VITE_BACKEND_URL is not set');
