@@ -1,0 +1,63 @@
+Kartavaya deploy probe
+======================
+
+Created 2026-09-09. Delete once it has answered its question — it is a probe,
+not a feature.
+
+WHY THIS FILE EXISTS
+
+`frontend/public/` is the only part of this frontend copied into the build
+output VERBATIM: never minified, never tree-shaken, never folded away by a
+constant. That property is the entire point here.
+
+The question being asked is "did Cloudflare Pages actually publish a build?",
+and it is surprisingly hard to answer from outside, because everything else
+that could move is either decided by an environment variable or optimised
+away. Two attempts failed before this one:
+
+  1. A comment-only commit. The minifier strips comments, so a SUCCESSFUL
+     build produced a byte-identical chunk and an unchanged filename hash.
+
+  2. A changed string inside `if (!import.meta.env.VITE_BACKEND_URL) { ... }`.
+     `VITE_BACKEND_URL` is a compile-time constant, so when it IS set that
+     test folds to `if (false)` and Rollup drops the whole block. The string
+     never reached the bundle. Proof: the shipped chunk contains the API host
+     once and the words "Configuration Error" zero times.
+
+Both outcomes were indistinguishable from "no build ran at all", which is the
+one thing the exercise needed to rule out.
+
+HOW TO USE IT
+
+    curl -s https://app.kartavaya.com/__deploy-probe.txt | head -1
+
+  "Kartavaya deploy probe"  ->  a Pages build published after 2026-09-09
+  "<!doctype html>"         ->  it did not
+
+⚠ CHECK THE BODY, NEVER THE STATUS CODE. This path returned **200** for hours
+before the file existed, because the Pages SPA catch-all answers every unknown
+URL with `index.html` and a 200 — a soft-404. `curl -o /dev/null -w %{http_code}`
+is therefore a broken test here and will report success against a deploy that
+never happened. `Content-Type` works too: `text/plain` is the real file,
+`text/html` is the catch-all.
+
+That distinction matters because a FAILED Pages build publishes nothing and
+leaves the previous deployment serving, which from outside looks exactly like
+no build having been triggered.
+
+`public/_headers` sends `no-cache, no-store, must-revalidate` for `/*`, so the
+answer is never an edge-cache artefact. (Contrast `/assets/*`, which is
+`immutable` for a year — a chunk fetched from there can be hours stale.)
+
+RELATED
+
+The underlying task: moving `VITE_BACKEND_URL` off the raw
+`kartavaya-production.up.railway.app` host onto `api.kartavaya.com`. A raw
+Railway host is outside Cloudflare and is a standard target for ISP and
+corporate DNS blocking; when it is blocked the browser gets no HTTP response
+at all, and the only thing `Protected.jsx` can render for that is "Could not
+reach Kartavaya".
+
+Cloudflare Pages injects that variable as a real environment variable, and
+Vite gives an injected var precedence over every `.env` file — so no commit
+can change it. See the comment above `BACKEND_URL` in `src/lib/api.js`.
