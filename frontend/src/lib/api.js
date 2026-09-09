@@ -1,6 +1,28 @@
 import axios from "axios";
 import { getActiveOrg } from "./orgContext";
 
+/**
+ * The API origin, baked in at BUILD time — and `frontend/.env.production` is
+ * not necessarily where it comes from.
+ *
+ * Cloudflare Pages injects `VITE_BACKEND_URL` as a real environment variable,
+ * and Vite gives an injected var precedence over every `.env` file. So the
+ * committed value loses to the Pages dashboard, no commit can override it, and
+ * the repo can disagree with production indefinitely without anything failing.
+ * This is not hypothetical: the two disagreed from 2026-08-29, and on
+ * 2026-09-08 a commit switching this to `api.kartavaya.com` changed nothing
+ * because the dashboard still held the old host.
+ *
+ * ⚠ NEVER read this value out of a source file to learn what production calls.
+ * Read the chunk production serves:
+ *
+ *     curl -s https://app.kartavaya.com/ | grep -oE '/assets/index-[^"]+\.js'
+ *     curl -s https://app.kartavaya.com/assets/<that> | grep -c 'api\.kartavaya\.com'
+ *
+ * ⚠ And never fix a wrong value with a Pages ROLLBACK — rollback re-points at
+ * an already-built artifact and silently restores whatever variables were baked
+ * into it. Roll forward with a fresh deployment.
+ */
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 if (!BACKEND_URL) {
   // Guard: only touch DOM in a real browser context (not SSR / test / Storybook)
