@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>What five verticals demand — and what this research could not establish</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF;
+    --rose:#A83E63; --amber:#8A6A18; --green:#2E7D52; --blue:#2F6690;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,'Cascadia Mono',monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F;
+    --rose:#E894B4; --amber:#DCC072; --green:#7ED4A2; --blue:#8FB8DC;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:26px 16px 70px;background:var(--bg);color:var(--ink);
+       font:400 14px/1.6 var(--fu);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto}
+  .top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:6px}
+  h1{font:500 27px/1.18 var(--fd);margin:0 0 4px;letter-spacing:-.01em}
+  h2{font:500 19px/1.25 var(--fd);margin:38px 0 10px;padding-top:14px;border-top:1px solid var(--rule)}
+  h3{font:600 13px/1.3 var(--fu);margin:22px 0 7px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink3)}
+  h4{font:600 14px/1.3 var(--fu);margin:18px 0 5px}
+  p{margin:0 0 11px;max-width:88ch}
+  .lede{color:var(--ink2);font-size:15px;max-width:82ch;margin-bottom:2px}
+  .meta{color:var(--ink3);font-size:11.5px;font-family:var(--fm);margin:0 0 16px}
+  .ctl button{font:inherit;font-size:11.5px;font-weight:600;padding:6px 13px;cursor:pointer;
+    border:1px solid var(--rule);background:var(--surf);color:var(--ink2);border-radius:999px;margin-left:5px}
+  .ctl button.on{background:var(--pr);color:var(--onp);border-color:var(--pr)}
+  .card{border:1px solid var(--rule);border-radius:13px;background:var(--surf);padding:16px 18px;margin:14px 0;
+        box-shadow:0 1px 2px var(--sh)}
+  .card.hot{border-color:var(--rose);border-left-width:4px}
+  .card.ok{border-color:var(--green);border-left-width:4px}
+  .card.warn{border-color:var(--amber);border-left-width:4px}
+  .card.blue{border-color:var(--blue);border-left-width:4px}
+  .card h3,.card h4{margin-top:0}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th{text-align:left;font-weight:600;font-size:11px;letter-spacing:.03em;text-transform:uppercase;
+     color:var(--ink3);border-bottom:1px solid var(--rule);padding:8px 10px 7px;vertical-align:bottom}
+  td{border-bottom:1px solid var(--cont);padding:9px 10px;vertical-align:top;color:var(--ink2)}
+  td:first-child{color:var(--ink);font-weight:500}
+  tr:last-child td{border-bottom:none}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  code,.mono{font-family:var(--fm);font-size:.9em;background:var(--low);
+             border:1px solid var(--cont);border-radius:5px;padding:1px 5px}
+  .tag{display:inline-block;font:600 10px/1.5 var(--fm);letter-spacing:.04em;text-transform:uppercase;
+       padding:2px 7px;border-radius:999px;border:1px solid var(--rule);color:var(--ink3);
+       background:var(--low);white-space:nowrap}
+  .tag.hi{color:var(--green);border-color:var(--green)}
+  .tag.md{color:var(--amber);border-color:var(--amber)}
+  .tag.no{color:var(--rose);border-color:var(--rose)}
+  ul,ol{margin:0 0 11px;padding-left:22px;max-width:88ch}
+  li{margin-bottom:5px;color:var(--ink2)}
+  li strong,p strong,td strong{color:var(--ink);font-weight:600}
+  .foot{margin-top:42px;padding-top:16px;border-top:1px solid var(--rule);font-size:12px;color:var(--ink3)}
+  .foot ol{padding-left:20px;max-width:none}
+  .foot li{font-family:var(--fm);font-size:11px;word-break:break-all;margin-bottom:4px}
+  a{color:var(--pr)}
+  .kicker{font:600 11px/1.4 var(--fm);letter-spacing:.06em;text-transform:uppercase;color:var(--pr);margin:0 0 3px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <p class="kicker">Proposal 106</p>
+      <h1>What five verticals demand — and what this research could not establish</h1>
+    </div>
+    <div class="ctl">
+      <button id="bl" class="on">Light</button><button id="bd">Dark</button>
+    </div>
+  </div>
+
+  <p class="lede">A fan-out research run across pharma, discrete manufacturing, real estate,
+  travel and interior design, verified adversarially. It answered the statutory question
+  well and the competitive question badly. Both halves are reported here, because the
+  failure is the more actionable of the two.</p>
+
+  <p class="meta">Researched 2026-09-11 &middot; 107 agents &middot; 25 sources fetched &middot;
+  120 claims extracted, 25 verified under 3-vote adversarial review &middot;
+  13 confirmed / 12 refuted &middot; every surviving claim sourced at the foot</p>
+
+  <div class="card hot">
+    <h3>Read this before using any of it</h3>
+    <p><strong>11 of the 13 surviving claims are statutory. 11 of the 12 refuted claims were
+    vendor pricing or vendor feature assertions.</strong> The run therefore establishes what
+    Indian law demands of each vertical with high confidence, and establishes
+    <em>almost nothing</em> about what incumbents charge or ship.</p>
+    <p><strong>Kartavaya can plan its statutory scope against this research. It cannot yet
+    plan its pricing or its competitive positioning against it.</strong></p>
+    <p>Two of the five sectors are effectively unanswered: <strong>travel produced zero
+    surviving claims</strong> and <strong>pharma produced one</strong>. No sector's
+    HR / payroll / attendance, procurement or CRM column is filled at all. The comparable
+    five-sector module grid the brief asked for <strong>cannot be built from this run</strong>
+    and is not attempted below.</p>
+  </div>
+
+  <h2>The four findings that matter</h2>
+
+  <div class="card ok">
+    <h4>1 &middot; Job work is a four-part subsystem, not an inventory flag <span class="tag hi">High · 3-0</span></h4>
+    <p>A job-work despatch is a <strong>distinct statutory document type</strong>. CGST Rule 45(1)&ndash;(2)
+    requires inputs, semi-finished goods or capital goods to move to a job worker under a challan
+    issued by the principal, carrying the particulars of Rule 55 — whose own heading is
+    <em>"Transportation of goods without issue of invoice"</em>. The statute classifies it as
+    neither an invoice nor an untracked stock transfer. Four parts, all required together:</p>
+    <ul>
+      <li><strong>The Rule 55 challan</strong> — serial number, date, consignor/consignee GSTIN,
+      HSN, quantity, taxable value, in triplicate. A High Court has upheld a penalty where the
+      goods description was omitted, so the particulars are operative, not advisory.</li>
+      <li><strong>ITC-04, challan-level and bidirectional</strong> — covering goods dispatched
+      to <em>and</em> received back from the job worker.</li>
+      <li><strong>Turnover-banded periodicity</strong> — half-yearly where preceding-FY aggregate
+      turnover exceeds &#8377;5 crore, annual otherwise; due the 25th of the month succeeding the
+      period. <strong>Any software describing ITC-04 as quarterly is describing pre-October-2021
+      law</strong> (Notification 35/2021-CT).</li>
+      <li><strong>Section 143 deemed-supply ageing</strong> — see below. This is the one that bites.</li>
+    </ul>
+  </div>
+
+  <div class="card hot">
+    <h4>2 &middot; The section 143 clock back-dates a tax liability <span class="tag hi">High · 3-0</span></h4>
+    <p>Section 143(3)&ndash;(4) with Rule 45(4) creates a <strong>retrospective deemed supply</strong>:
+    goods not returned within the time limit are deemed supplied by the principal to the job worker
+    <strong>on the day they were sent out</strong> — the supply must be declared in GSTR-1, and tax
+    <em>plus interest</em> becomes payable.</p>
+    <p>The consequence for design is specific: <strong>per-challan ageing is a hard requirement</strong>,
+    with a per-consignment, configurable deadline. One year for inputs, three years for capital goods,
+    extendable by the Commissioner by a further one/two years — and <strong>moulds, dies, jigs,
+    fixtures and tools are excluded from the capital-goods clock entirely</strong>.</p>
+    <p>A scalar <code>quantity_on_hand</code> cannot express any of this. Neither can a batch column.
+    It needs a row per challan carrying a despatch leg, a receipt leg and a clock.</p>
+  </div>
+
+  <div class="card ok">
+    <h4>3 &middot; Property TDS is a computed document engine <span class="tag hi">High · 3-0</span></h4>
+    <p>The 194-IA base is <strong>not the agreed sale price</strong>. Three separate computations:</p>
+    <ul>
+      <li>The &#8377;50 lakh threshold is a <strong>two-limb test</strong> on consideration <em>and</em>
+      stamp duty value — deduct if <strong>either</strong> reaches &#8377;50 lakh.</li>
+      <li>The 1% is charged on whichever of the two is <strong>higher</strong>.</li>
+      <li>"Consideration" is <strong>statutorily defined to include</strong> club membership fee,
+      car parking fee, electricity or water facility fee, maintenance fee and advance fee.</li>
+    </ul>
+    <p>So a real-estate module must <strong>store stamp duty value per unit as a computation input</strong>,
+    and must <strong>roll the ancillary demand-letter lines Indian developers bill separately into the
+    TDS base</strong> rather than excluding them. Both are schema decisions, not report decisions.</p>
+  </div>
+
+  <div class="card warn">
+    <h4>4 &middot; The TAN rule splits — and it touches a standing product rule <span class="tag md">Medium · 2-1</span></h4>
+    <p><strong>The 194-IA path is PAN-based and must not be gated behind a TAN field</strong> —
+    section 203A is expressly disapplied for a person deducting under 194-IA.</p>
+    <p>But this holds <em>only</em> for the 194-IA / 26QB path. A purchase from a
+    <strong>non-resident seller</strong> is deducted under s.195, filed on <strong>Form 27Q with
+    challan ITNS-281</strong>, and s.195 is <strong>not</strong> exempt from s.203A.</p>
+    <div class="card blue" style="margin:10px 0 0">
+      <p style="margin:0"><strong>Direct consequence for this codebase.</strong>
+      <code>CLAUDE.md</code> records that <code>validate_tds_challan</code> refusing an ITNS-281
+      without a TAN is <em>correct and must not be relaxed</em> (s.203A, where a PAN is explicitly
+      not a substitute). <strong>That ruling stands and is reconfirmed here for the 281 path.</strong>
+      But it must <strong>not</strong> be reused for property TDS: a 26QB path that inherits the 281
+      validator would block a lawful PAN-only deduction. Two paths, two validators.</p>
+    </div>
+  </div>
+
+  <h2>The inventory finding — the one that changes the build order</h2>
+
+  <div class="card hot">
+    <p><strong>Across sectors the unit of inventory is never a scalar, and the required
+    decomposition is different in each.</strong> <span class="tag hi">High · synthesis of five claims</span></p>
+    <p>"Add batch/lot tracking" is <em>not</em> one feature that unlocks multiple verticals —
+    which is the assumption a single inventory project would be built on.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Sector</th><th>What the unit of inventory actually is</th><th>Driven by</th></tr></thead>
+      <tbody>
+        <tr><td>Pharma</td><td><strong>batch &times; expiry</strong> rows</td><td>Drugs &amp; Cosmetics record-keeping and recall traceability</td></tr>
+        <tr><td>Discrete manufacturing</td><td><strong>per-challan</strong> rows carrying a despatch leg, a receipt leg and an ageing clock</td><td>CGST Rule 45 / s.143 deemed supply</td></tr>
+        <tr><td>Real estate</td><td><strong>per-unit / per-allottee receivables ledger</strong> with date-wise collections</td><td>RERA s.4(2)(l)(D) annual statement</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>Each is a distinct schema driven by a distinct statutory obligation. Budgeting one
+    inventory module to serve three verticals would under-scope all three.</p>
+  </div>
+
+  <h2>RERA — a multi-party signing workflow, not a payment entry</h2>
+
+  <div class="card ok">
+    <h4>Escrow withdrawal requires tri-professional certification <span class="tag hi">High · 3-0</span></h4>
+    <p>An <strong>engineer, an architect and a chartered accountant in practice</strong> must
+    <em>each</em> certify that a withdrawal is in proportion to the percentage of completion of the
+    project. The certificates are retained and re-examined at annual audit, and the CA must ensure
+    no loan is repaid directly from the RERA account.</p>
+    <p><strong>This is a multi-party approval with attached, UDIN-bearing certificates — a direct
+    e-sign and document-routing use case, which Kartavaya already has.</strong></p>
+  </div>
+
+  <div class="card warn">
+    <h4>RERA reporting demands a per-allottee ledger and a fixed annual date <span class="tag md">Medium · 2-1</span></h4>
+    <p>The HARERA Gurugram direction sets out the allottee-level table an auditor may call for:
+    name/address, description of property sold, gross consideration per the Agreement or Letter of
+    Allotment, prior-year cumulative collections, collections during the year, total to date,
+    balance collectible, plus project-level totals — with the during-the-year column backed by a
+    <strong>date-wise, per-party subsidiary statement</strong>.</p>
+    <p>The CA-certified statement of accounts must reach the Authority by <strong>30 September</strong>,
+    and non-submission by that date is <em>itself</em> a violation of s.4(2)(l)(D).</p>
+  </div>
+
+  <h2>What Kartavaya already has that maps onto this</h2>
+
+  <div class="card ok">
+    <p><strong>Two existing capabilities meet verified statutory requirements — the cheapest path
+    into two verticals.</strong> <span class="tag md">Medium · synthesis of six claims</span></p>
+    <ul>
+      <li><strong>E-sign / document routing</strong> meets the RERA tri-professional withdrawal
+      certification (three signers, per-withdrawal certificates, UDIN-bearing, retained for annual
+      audit) and the triplicate job-work challan.</li>
+      <li><strong>A date engine keyed to transaction events</strong> — not org-level fixed dates —
+      meets <em>every</em> deadline found: ITC-04 on the 25th after a turnover-banded period;
+      26QB within 30 days of the month-end of each deduction; 16B 15 days after that due date;
+      the RERA statement by 30 September; and the s.143 per-challan ageing clock.</li>
+    </ul>
+    <p>Note the shape of that second point. Every deadline in this research is keyed to a
+    <strong>transaction</strong>, not to a calendar the org configures once. A statute calendar
+    built on org-level fixed dates would miss all five.</p>
+  </div>
+
+  <div class="card blue">
+    <h4>The property-TDS calendar, precisely <span class="tag hi">High · 2-1</span></h4>
+    <p>Two dated obligations <em>per instalment payment</em>, both keyed off the deduction event:</p>
+    <ul>
+      <li><strong>Form 26QB</strong> — furnished electronically within <strong>30 days from the
+      end of the month</strong> in which the deduction is made.</li>
+      <li><strong>Form 16B</strong> — issued to the payee within <strong>15 days from the 26QB
+      due date</strong>, not from the filing date.</li>
+    </ul>
+    <p>Because deduction occurs at credit or payment, whichever is earlier,
+    <strong>each instalment is its own deduction event with its own pair of deadlines</strong>.
+    A construction-linked payment plan therefore generates a rolling stream of dated obligations,
+    not one filing.</p>
+  </div>
+
+  <h2>What this research failed to establish</h2>
+
+  <div class="card hot">
+    <h3>Coverage is the problem, not accuracy</h3>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Sector</th><th>Surviving claims</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>Discrete manufacturing</td><td>3 (job work, ITC-04, s.143)</td><td>Substantially evidenced — but <strong>job work only</strong>. Nothing on e-way bill, BOM, work orders, costing or QC.</td></tr>
+        <tr><td>Real estate</td><td>5 (TDS &times;3, RERA &times;2)</td><td>Substantially evidenced — but nothing on RERA registration, broker commission or site-visit CRM.</td></tr>
+        <tr><td>Interior design</td><td>1 (a price list)</td><td>Essentially unanswered.</td></tr>
+        <tr><td>Pharma</td><td>1 (vendor positioning, medium)</td><td>Essentially unanswered. <strong>No statutory claim survived at all.</strong></td></tr>
+        <tr><td>Travel</td><td><strong>0</strong></td><td><strong>Entirely unanswered.</strong> Nothing on itinerary, DMC net rates, the GST margin scheme, TCS on overseas packages, commissions, cancellations or B2B vs B2C.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="card hot">
+    <h3>Pricing is essentially unevidenced — do not carry any figure forward</h3>
+    <p><strong>Every TallyPrime and Marg price point attempted was refuted</strong> — Tally's twice,
+    from two different Tally pages. Marg's aggregator pricing was refuted. SoftwareSuggest failed on
+    both pricing <em>and</em> features.</p>
+    <p>The <strong>only</strong> verified price list in the entire run:</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Product</th><th>Published pricing</th><th>Note</th></tr></thead>
+      <tbody>
+        <tr><td>DesignOS <span class="tag md">Medium · 3-0</span></td>
+            <td>Free &#8377;0/mo (1 project, 1 member) &middot; Pro <strong>&#8377;999/user/mo</strong>
+            monthly or <strong>&#8377;499/user/mo</strong> billed yearly &middot;
+            Advanced (BETA) &#8377;1,999/user/mo, "starts at 5 users"</td>
+            <td>All exclusive of 18% GST. Accessed and re-verified 2026-09-11. India-specific
+            interior-design project SaaS.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>One refuted-but-suggestive note kept for direction only, <strong>not</strong> as fact:
+    the attempt to establish Marg's pricing described a <em>perpetual licence</em> model rather than
+    per-user-per-month SaaS. If that shape is right, Kartavaya is not competing on monthly price in
+    pharma at all — it is competing against a one-time purchase plus AMC. <strong>That needs its own
+    verification before it informs anything.</strong></p>
+  </div>
+
+  <h2>Caveats that limit every claim above</h2>
+
+  <div class="card warn">
+    <ul>
+      <li><strong>The 70/30 escrow ring-fence was refuted 0&ndash;3.</strong> This is the single most
+      widely believed RERA fact. Its refutation is <em>not</em> positive evidence that no such
+      requirement exists — it is surprising enough to warrant re-testing rather than acceptance.</li>
+      <li><strong>Both RERA findings come from one authority</strong> — HARERA Gurugram, March 2020 —
+      which states on its own face that neither the Act nor the rules prescribe the format. The
+      tri-professional certification generalises (it restates s.4(2)(l)(D) and is independently
+      confirmed by Goa RERA); <strong>the exact column set does not</strong>. MahaRERA uses Form 1/2/3
+      plus Form 5. Whether the 2020 direction is still current could not be checked — 403 on the
+      regulations index.</li>
+      <li><strong>The Income-tax Act 2025 took effect 1 April 2026 and renumbered every section cited.</strong>
+      194-IA maps to s.393(1) Table Sl. No. 3(i); the consideration definition to s.402(9).
+      <strong>Sources actively disagree</strong> on whether the challan-cum-statement is still
+      Form 26QB or now Form 141 Schedule B (and 16B &rarr; 132, 26AS &rarr; 168) — and the department's
+      own pages are inconsistent, with the AY 2026-27 page still citing 194-IA, Rule 31A and Form 26QB
+      as operative. <strong>A real-estate module cannot ship field labels or help text until this is
+      settled.</strong> GST-side citations are stable by contrast (Rule 45 unamended since 2021).</li>
+      <li><strong>Source access was degraded throughout.</strong> incometaxindia.gov.in returns 403 to
+      automated fetch, CBIC's portal serves a broken TLS intermediate chain, margcompusoft.com serves an
+      incomplete certificate chain, and haryanarera.gov.in/regulations 403s. Several verifications rest
+      on mirrors or secondary corroboration rather than the cited URL itself.</li>
+      <li><strong>Adversarial search did not run everywhere.</strong> Multiple verifiers exhausted their
+      search budget, so no contradiction search was performed for the PAN/TAN claim, either HARERA claim,
+      or the DesignOS claim. Those four carry a real, unquantified risk of unfound counter-evidence —
+      part of why three are marked medium.</li>
+    </ul>
+  </div>
+
+  <h2>What to do with this</h2>
+
+  <div class="card ok">
+    <ol>
+      <li><strong>Treat the statutory half as build-ready and the competitive half as absent.</strong>
+      Scope manufacturing and real estate against these findings. Do not put a price or a
+      positioning claim in front of a prospect on the strength of this run.</li>
+      <li><strong>Re-run narrowly on what failed</strong> — travel in full, pharma statute in full,
+      and pricing by a different method. The vendor pages refuted themselves twice; Indian ERP pricing
+      may simply be dealer-quoted rather than list, which is itself a finding worth confirming.</li>
+      <li><strong>Do not budget one inventory module for three verticals.</strong> The decomposition
+      differs in each and the statutory driver differs in each.</li>
+      <li><strong>Build the date engine against transaction events, not org-level dates.</strong>
+      Every deadline found is keyed to a transaction. This is the single highest-leverage piece of
+      shared infrastructure in the whole picture — it serves both evidenced verticals and the
+      existing statute calendar.</li>
+      <li><strong>Keep the two TDS paths separate from the first line of code.</strong>
+      PAN-only for 194-IA/26QB; TAN-bearing for s.195/27Q/ITNS-281. The existing 281 validator is
+      correct and must not be extended to cover property TDS.</li>
+    </ol>
+  </div>
+
+  <div class="foot">
+    <p><strong>Sources.</strong> Twenty-five fetched; those below carry the surviving claims.
+    Statutory citations were preferred over vendor and aggregator pages throughout — which is
+    precisely why the statutory claims survived verification and the vendor claims did not.</p>
+    <ol>
+      <li>https://taxinformation.cbic.gov.in/content/html/tax_repository/gst/rules/cgst_rules/active/chapter5/rule45_v1.00.html — CGST Rule 45, active repository</li>
+      <li>CBIC Circular No. 38/12/2018-GST dated 26.03.2018 (cbic-gst.gov.in) — job-work challan, para 8.4</li>
+      <li>https://tutorial.gst.gov.in/userguide/inputtaxcredit/Manual_itc04.htm — ITC-04 user guide</li>
+      <li>https://gstcouncil.gov.in/node/4321 — Notification 35/2021-Central Tax, 24.09.2021 (periodicity change)</li>
+      <li>CGST Act 2017, s.143(1), (3), (4) — deemed supply on non-return</li>
+      <li>https://www.incometaxindia.gov.in/w/section-194-ia</li>
+      <li>https://www.incometaxindia.gov.in/w/section-402-6 — consideration definition, Act 2025</li>
+      <li>https://www.incometaxindia.gov.in/w/tds-purchase-of-immovable-property</li>
+      <li>https://www.incometaxindia.gov.in/w/tds-from-sum-paid-to-buy-an-immovable-property</li>
+      <li>https://blog.tdsman.com/2026/05/tds-on-purchase-of-immovable-property-section-3931-194ia/ — the disputed form reference</li>
+      <li>https://haryanarera.gov.in/regulations/Directions_regarding_Compliance_of_Section_4_2_l_D.pdf</li>
+      <li>Goa RERA Circular F.No. 3/RERA/Off.Matters/2019/84 dated 23.01.2020 — independent confirmation of tri-professional certification</li>
+      <li>RERA Act 2016, s.4(2)(l)(D), second and third provisos</li>
+      <li>https://margcompusoft.com/distribution/pharma_software.html — vendor positioning (medium confidence)</li>
+      <li>https://designos.work/ — the only verified price list in the run</li>
+      <li>https://indiankanoon.org/doc/147665881/</li>
+    </ol>
+    <p style="margin-top:14px"><strong>Method.</strong> Five parallel search angles, one per sector.
+    25 sources fetched and de-duplicated, 120 falsifiable claims extracted, 25 carried to
+    verification. Each was put to three independent adversarial verifiers; two refutations killed a
+    claim. 13 survived, 12 were killed, 5 were dropped on budget. Nothing in this document is
+    recalled from memory, and every claim carries its vote.</p>
+  </div>
+
+</div>
+<script>
+  var b=document.body,L=document.getElementById('bl'),D=document.getElementById('bd');
+  function set(t){ if(t==='dark'){b.setAttribute('data-t','dark');D.classList.add('on');L.classList.remove('on');}
+                   else {b.removeAttribute('data-t');L.classList.add('on');D.classList.remove('on');} }
+  L.onclick=function(){set('light')}; D.onclick=function(){set('dark')};
+  try{ if(matchMedia('(prefers-color-scheme: dark)').matches) set('dark'); }catch(e){}
+</script>
+</body>
+</html>
