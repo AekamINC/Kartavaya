@@ -13,7 +13,9 @@ export const OB_MODULES = [
   { code: 'boards', d: 'Projects, boards, tasks, time' },
   { code: 'graha', d: 'CRM, contacts, deals, follow-ups' },
   { code: 'vikray', d: 'Orders, stock, targets' },
-  { code: 'ganit', d: 'GST invoices, expenses, e-way bills', sensitive: true },
+  // ⚠ "e-way bills" removed 2026-09-12 — not built, and this line is the
+  // module picker, so it described what a firm was choosing to turn on.
+  { code: 'ganit', d: 'GST invoices, expenses, TDS challans', sensitive: true },
   { code: 'manav', d: 'Employees, leave, documents', sensitive: true },
   { code: 'vetana', d: 'Payroll, payslips, PF and TDS', sensitive: true },
   { code: 'pahchan', d: 'Face attendance, shifts, geo-fence' },

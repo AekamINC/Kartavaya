@@ -6,7 +6,14 @@ GST-correct invoicing, payments and the ledger. Holds the tax logic: GSTIN state
 
 ## Flow
 
-An invoice is raised against a Graha client, its place of supply derived from the two GSTINs, then issued. Payments post against it and the balance falls; e-way bills and TDS hang off the same record.
+An invoice is raised against a Graha client, its place of supply derived from the two GSTINs, then issued. Payments post against it and the balance falls. TDS challans are recorded separately, against a deduction period rather than against an invoice.
+
+⚠ **"e-way bills and TDS hang off the same record" was wrong on BOTH counts until 2026-09-12, and it had been copied into customer-facing collateral in six places** — including `AuthShell.jsx`, the sign-in panel, so it was shown on every login, and the onboarding module picker, so it described what a firm was choosing to turn on. Recorded rather than deleted because this is the fourth time a module doc's Flow sentence has reached a sales surface before anyone measured it (see `pahchan.md`, `vetana.md`, `sanvaad.md`).
+
+- **E-WAY BILLS DO NOT EXIST.** `eway` / `e_way` / `ewb` match nothing in `backend/routers`, `backend/services` or any of the 233 numbered migrations. Kartavaya is also **not a GSP** — `routers/documents.py:1005` states it outright — so there is no e-invoicing/IRN either. What *does* exist is `services/compliance_settings.py`, which **records whether the e-way bill rule applies to a firm**: a dated, attributed position, explicitly "recorded only", not a generated document. That distinction is the whole correction — the product holds a compliance *position*, never a *bill*.
+- **TDS DOES NOT HANG OFF THE INVOICE.** `ganit_tds_challans` carries `org_id` as its **only** foreign key and is keyed on `period` (YYYY-MM); Rule 30(2) fixes the due date from that period. A challan settles a **deduction period**, not a document, so no invoice record has one attached.
+
+⚠ **This file was corrected BY HAND, which `CLAUDE.md` forbids — deliberately.** The Flow prose is generated from `scripts/gen-module-docs.mjs` (now fixed at source), but `gen-module-docs.mjs` calls `writeFileSync` on the whole file with no merge, so regenerating would **delete every ⚠ correction block in `graha.md`, `manav.md`, `vetana.md`, `pahchan.md` and this file**. Regenerate only once that data loss is addressed.
 
 ## Backend
 

@@ -25,22 +25,49 @@ const facts = JSON.parse(readFileSync(join(ROOT, 'module-facts.json'), 'utf8'));
 const PROSE = {
   graha: ['Graha', 'ग्रह', 'CRM',
     'Contacts, clients, deals and the pipeline. The largest module by route count, and the one every other revenue module reads from — an invoice, an order and a signature request all resolve back to a `graha_clients` row.',
-    'A deal moves through stages held in `graha_deals`; each stage change writes `graha_activities` and may fire a rule in `graha_automations`. Approval-gated stages raise a `graha_approval_requests` row rather than moving directly.'],
+    // ⚠ "and may fire a rule in `graha_automations`" removed 2026-09-07: the
+    // table exists in `public` but is referenced NOWHERE in `backend/routers`
+    // or `backend/services`. Nothing in a stage change fires it.
+    'A deal moves through stages held in `graha_deals`; each stage change writes `graha_activities`. Approval-gated stages raise a `graha_approval_requests` row rather than moving directly.'],
   vikray: ['Vikray', 'विक्रय', 'Sales orders',
     'Quotes and sales orders. Sits between a won deal in Graha and an invoice in Ganit — it is where line items, discounts and delivery terms are agreed before money is asked for.',
     'An order is drafted against a Graha client, priced line by line, then converted. Conversion writes a Ganit invoice and links the two, so an order always knows what it was billed as.'],
   ganit: ['Ganit', 'गणित', 'Finance and invoicing',
     'GST-correct invoicing, payments and the ledger. Holds the tax logic: GSTIN state codes decide CGST/SGST against IGST, and place of supply follows s.12(2)(a) of the IGST Act.',
-    'An invoice is raised against a Graha client, its place of supply derived from the two GSTINs, then issued. Payments post against it and the balance falls; e-way bills and TDS hang off the same record.'],
+    // ⚠ "e-way bills and TDS hang off the same record" was WRONG on BOTH counts
+    // and had reached customer-facing collateral in four places
+    // (`docs/marketing/module-flows.html`). Corrected 2026-09-12.
+    //   * E-WAY BILLS DO NOT EXIST. `eway`/`e_way`/`ewb` match nothing in
+    //     `backend/routers`, `backend/services` or any of the 233 migrations.
+    //     Kartavaya is also not a GSP (`routers/documents.py:1005` says so), so
+    //     there is no IRN either.
+    //   * TDS DOES NOT HANG OFF THE INVOICE. `ganit_tds_challans` carries
+    //     `org_id` as its only foreign key and is keyed on `period` (YYYY-MM) —
+    //     a challan settles a DEDUCTION PERIOD, not a document.
+    'An invoice is raised against a Graha client, its place of supply derived from the two GSTINs, then issued. Payments post against it and the balance falls. TDS challans are recorded separately, against a deduction period rather than against an invoice.'],
   manav: ['Manav', 'मानव', 'HR / HRMS',
     'Employees, leave, documents and the joiner-to-leaver lifecycle. Sensitive: it holds identity documents and is excluded from platform_staff by the role tiers.',
-    'An employee record anchors everything — leave requests, documents, appraisals and the exit interview all reference it. Leave approval is a two-step: a request row, then an approval row, so a granted leave always records who granted it.'],
+    // ⚠ "a request row, then an approval row" was WRONG (corrected 2026-09-07):
+    // there is no `manav_leave_approvals` table and never was. The guarantee is
+    // real, the mechanism was not.
+    'An employee record anchors everything — leave requests, documents, appraisals and the exit interview all reference it. A leave request is a row, and the decision stamps `approved_by` and `approved_at` onto **that row**, so a granted leave always records who granted it.'],
   vetana: ['Vetana', 'वेतन', 'Payroll',
-    'Monthly payroll runs with statutory Indian deductions — PF, ESI, PT and TDS — computed per employee. Separated duty: the role that runs payroll cannot approve it.',
-    'A run is created for a month, pulls employees from Manav, computes gross then each deduction to reach net, and lands in `processed`. Approval is a second, separate action; payslips are only issued after it.'],
+    // ⚠ TWO claims here were WRONG and both had reached customer collateral
+    // (corrected 2026-09-07). The four-eyes rule is CONDITIONAL — every org has
+    // exactly one Vetana approver, so an unconditional rule would stop payroll
+    // company-wide; where no second approver exists the release proceeds and is
+    // logged as a self-approval. And payslips are created by PROCESSING, at
+    // status `generated`, not by approval — what approval gates is MONEY.
+    'Monthly payroll runs with statutory Indian deductions — PF, ESI, PT and TDS — computed per employee. Releasing a run is a separate act on its own permission rung, written to the audit log with a name on it.',
+    'A run is created for a month, pulls employees from Manav, computes gross then each deduction to reach net, and lands in `processed` — **generating the payslips at that point**, not at approval. Approval is a second, separate action on the release rung; a payslip cannot be marked `disbursed` until it has happened, so nothing is payable on the strength of a calculation alone.'],
   pahchan: ['Pahchan', 'पहचान', 'Attendance',
     'Biometric clock-in and clock-out with face matching and geofencing. Offline-first: a punch made without signal is queued on the device and reconciled later, inside a 72-hour buffer.',
-    'An employee enrols a face template once, then punches against it. Each punch records a photo, a location and a device, and is matched to a shift policy to decide lateness. Attendance rolls up into Vetana for the days-worked figure.'],
+    // ⚠ "matched to a shift policy to decide lateness" was WRONG and had been
+    // copied into customer collateral (corrected 2026-09-07). The bridge writes
+    // only `present` / `incomplete`; `shift_start_time` was selected, passed in
+    // and never read. The `pahchan.late_arrivals` METRIC was built 2026-09-07,
+    // but it computes over `manav_attendance`, not in the punch path.
+    'An employee enrols a face template once, then punches against it. Each punch records a photo, a location and a device. `services/attendance_bridge.py` pairs the day\'s punches into a `manav_attendance` row, and Vetana reads that for the days-worked figure.'],
   dristi: ['Dristi', 'दृष्टि', 'Analytics and reports',
     'Read-only. Computes across every other module — revenue, pipeline, HR and sales — plus saved dashboards, a pivot builder and scheduled exports.',
     'Nothing writes business data here. A request fans out over the other modules\' tables, aggregates, and returns. Scheduled reports run the same queries on a timer and deliver by email.'],
@@ -61,7 +88,11 @@ const PROSE = {
     'An order is drafted against a vendor and approved against thresholds the org sets; amending it past them requires approving again. Issuing assigns a PO number and stamps `issued_at` — a state change, not a transmission: no PO document is rendered or sent. Receipts record what arrived, and the three-way match compares order, receipt and bill, flagging discrepancies and approving nothing.'],
   sanvaad: ['Sanvaad', 'संवाद', 'Messaging',
     'Internal conversations — threads, mentions and attachments — between people inside the org. Distinct from Varta, which talks to the outside world.',
-    'A thread belongs to a channel or a record; messages append to it and mentions raise notifications. Read state is per person, so an unread count means unread by you.'],
+    // ⚠ "or a record" was WRONG and had been copied into customer collateral
+    // (corrected 2026-09-07): `samvada_channels` has no entity column and `type`
+    // is CHECK-constrained to public / private / dm. A conversation takes its
+    // context from the CHANNEL, never from a deal, invoice or task.
+    'A thread belongs to a **channel** — public, private or a DM; messages append to it, a side discussion becomes a threaded reply (`parent_message_id`), and mentions raise notifications. Read state is per person, so an unread count means unread by you.'],
   varta: ['Varta', 'वार्ता', 'WhatsApp',
     'Outbound and inbound WhatsApp through the Cloud API. Template-gated: business-initiated messages must use an approved template, which is why templates are first-class here.',
     'A send resolves a template, posts to the Cloud API and stores the message id. Delivery receipts and replies arrive on a webhook and are matched back by that id, so a conversation stays one thread.'],

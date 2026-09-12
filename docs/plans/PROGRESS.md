@@ -12461,3 +12461,77 @@ live row counts, 2026-09-07"**, a dated snapshot whose own preamble says a 0
 means "not exercised since 2026-09-01". A dated measurement that has since moved
 is not a stale claim, and editing it would have destroyed the evidence trail.
 **Check which date owns a number before calling it wrong.**
+
+---
+
+## 2026-09-12 — ✅ THE E-WAY BILL CLAIM IS GONE FROM THE PRODUCT, NOT JUST THE DOCS
+
+**Reported from vertical research (proposal 106):** `docs/modules/ganit.md:9`
+said *"e-way bills and TDS hang off the same record."* Both halves were false,
+and the sentence had spread to **six** places — two of them **shipped UI**.
+
+**Measured first, in this order:**
+
+- `eway` / `e_way` / `ewb` match **nothing** in `backend/routers`,
+  `backend/services`, or any of the 233 numbered migrations.
+- Kartavaya is **not a GSP** — `routers/documents.py:1005` says so outright —
+  so there is no IRN path either.
+- `TASKS.md:150` already knew: *"E-invoicing is a STUB, not a feature …
+  `eway_bill_no` ALL MISSING."* **The sign-in page was contradicting the
+  team's own backlog.**
+- And the second half was wrong too: `ganit_tds_challans` carries `org_id` as
+  its **only** foreign key and is keyed on `period` (YYYY-MM). A challan settles
+  a **deduction period**, not a document. Nothing hangs off the invoice.
+
+⚠ **The first sweep was too narrow and reported "two places in collateral".**
+A wider grep found six, including the two that mattered most — this is why the
+sweep is recorded with its command, not its conclusion.
+
+| Where | What it was | Why it mattered |
+|---|---|---|
+| `AuthShell.jsx:51` | "GST-ready invoices, **e-way bills** and TDS…" | **The sign-in panel — shown on every login** |
+| `onboarding/data.js:16` | "GST invoices, expenses, **e-way bills**" | **The module picker — described what a firm was turning on** |
+| `scripts/gen-module-docs.mjs` | the source of the Flow prose | regenerating would have re-emitted it |
+| `docs/modules/ganit.md:9` | generated output | |
+| `module-flows.html` ×4 | incl. the `india:` positioning paragraph | customer-facing collateral |
+
+**What is NOT removed, because it is real:** `services/compliance_settings.py`
+holds an `e_way_bill` Rule that **records whether the rule applies to a firm** —
+a dated, attributed position, explicitly "recorded only". The product holds a
+compliance *position*; it never generated a *bill*. That distinction is the
+whole correction.
+
+⚠ **A LANDMINE WAS FOUND AND DEFUSED, AND IT IS THE BIGGER FINDING.**
+`gen-module-docs.mjs` calls `writeFileSync` on the **whole** `.md` with no merge,
+while the generated docs had been hand-corrected. So the generator still carried
+**five** claims that the `.md` files had already retracted — `graha`
+(`graha_automations` fires on stage change), `manav` (two-step leave approval),
+`vetana` (unconditional four-eyes; payslips issued at approval), `pahchan`
+(lateness from shift policy), `sanvaad` ("a channel **or a record**").
+**Running the sanctioned regenerate would have reverted all five and deleted
+every ⚠ block explaining them.** All five are now corrected at source, so the
+generator is truthful — but it is still **lossy**: regenerating costs the
+commentary, not correctness. `ganit.md` was therefore corrected **by hand**,
+deliberately, and says so in the file.
+
+**Verified in the built artifact, not the source** — the discipline that the
+bundle hash is not a check:
+
+    npm run build → ✓ built in 45.34s
+    grep "e-way bills" dist/assets/   → NO MATCH (gone from every chunk)
+    dist/assets/LoginPage-G9sM3gJl.js      → "TDS challans and GSTR-1 in the same ledger"
+    dist/assets/OnboardingPage-BcmcKlCS.js → "GST invoices, expenses, TDS challans"
+
+**Not deployed.** The build is local; this lands on the next push to `main`.
+
+⚠ **The line-ending trap fired again, on `AuthShell.jsx`, and is recorded because
+the diff is how it was caught — not the editor.** A 7-line copy change produced
+`297 insertions / 291 deletions`: the whole file had flipped **LF → CRLF**, while
+git holds LF. `git show HEAD:<path>` was NOT decisive — it printed `\r` for a
+blob that is LF, because it converts on output. **What decided it was reading the
+diff itself**: the `-` lines ended in a bare LF under `cat -A` while the file on
+disk was 297/297 CRLF. Repaired in binary mode (`open(p,'rb')` → replace
+`b'\r\n'` → `open(p,'wb')`); the diff fell to `7 / 1`. Only that one file was
+affected — `data.js`, edited the same way in the same turn, stayed at `3 / 1`.
+**Check `git diff --numstat` after any edit to a `frontend/**` file; a line count
+far above the edit is this bug, not your change.**

@@ -12,6 +12,48 @@ exactly how proposals 00, 07, 21, 27, 82 and 90 each came to be written.
 
 ---
 
+## 2026-09-12 — ✅ THE E-WAY BILL CLAIM IS OUT OF THE PRODUCT, AND THE DOC GENERATOR IS DEFUSED
+
+**Kartavaya does not generate an e-way bill, and never did.** `eway` / `e_way` /
+`ewb` match nothing in `backend/routers`, `backend/services` or any of the 233
+numbered migrations, and it is **not a GSP** (`routers/documents.py:1005`), so
+there is no IRN either. `TASKS.md:150` already recorded this — *"E-invoicing is a
+STUB, not a feature … `eway_bill_no` ALL MISSING"* — while **the sign-in panel
+told every user the opposite.**
+
+The false sentence originated in `docs/modules/ganit.md` and had reached **six**
+places, two of them shipped UI (`AuthShell.jsx:51`, the login panel;
+`onboarding/data.js:16`, the module picker) plus four in
+`docs/marketing/module-flows.html`. All six are corrected.
+
+**Its second half was also wrong:** `ganit_tds_challans` has `org_id` as its only
+foreign key and is keyed on `period` (YYYY-MM). A TDS challan settles a
+**deduction period**, not a document — nothing hangs off the invoice record.
+
+**What remains, because it is real:** `services/compliance_settings.py` holds an
+`e_way_bill` Rule that **records whether the rule applies to a firm** — a dated,
+attributed position, explicitly "recorded only". A compliance *position*, never
+a *bill*.
+
+⚠ **`scripts/gen-module-docs.mjs` WAS A LANDMINE AND IS THE BIGGER FINDING.** It
+`writeFileSync`s the whole `.md` with no merge, while the generated docs had been
+hand-corrected — so it still carried **five** claims the `.md` files had already
+retracted (`graha` automations firing, `manav` two-step leave approval, `vetana`
+unconditional four-eyes *and* payslips-at-approval, `pahchan` lateness from shift
+policy, `sanvaad` "a channel **or a record**"). **Running the sanctioned
+regenerate would have reverted all five and deleted every ⚠ block.** All are now
+fixed at source. The generator is truthful but still **lossy** — regenerating
+costs the commentary, not the correctness — so `ganit.md` was corrected by hand,
+deliberately, and says so in the file. **Do not regenerate until that is
+addressed.**
+
+**Verified in the built artifact, not the source:** `npm run build` clean;
+`grep "e-way bills" dist/assets/` returns **no match**;
+`LoginPage-G9sM3gJl.js` carries the corrected line. **Not yet deployed** — lands
+on the next push to `main`.
+
+---
+
 ## 2026-09-08 — ✅ THE HOST SPLIT IS ENFORCED IN THE BUNDLE, AND VERIFIED LIVE
 
 **Reported by the owner:** clicking **Sign in** on `kartavaya.com` did not go to

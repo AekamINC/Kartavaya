@@ -48,7 +48,13 @@ const ROTATE = [
   {
     id: 'ganit',
     kind: 'Module', hi: 'गणित', en: 'Ganit · Finance',
-    line: 'GST-ready invoices, e-way bills and TDS in the same ledger your CA already understands.',
+    // ⚠ Said "e-way bills" until 2026-09-12. Kartavaya does NOT generate one:
+    // `eway`/`e_way`/`ewb` match nothing in the routers, the services or the
+    // 233 migrations, and it is not a GSP (`routers/documents.py:1005`), so
+    // there is no IRN either. `services/compliance_settings.py` RECORDS whether
+    // the rule applies to a firm — a dated position, not a document. This is
+    // the sign-in panel, so the false claim was shown on every login.
+    line: 'GST-ready invoices, TDS challans and GSTR-1 in the same ledger your CA already understands.',
     foot: 'One of 15 modules. Turn on only what you need.',
   },
   {

@@ -607,7 +607,7 @@ const MODULES = [
       ['Raise',    'An invoice opens against a client. Every invoice belongs to a company — there is no such thing as an invoice attached to nobody.'],
       ['Place',    'Place of supply is <b>derived from the two GSTINs</b>, following s.12(2)(a) of the IGST Act. It is not a dropdown someone guesses at.'],
       ['Split',    'The state codes decide it: <b>CGST + SGST</b> within the state, <b>IGST</b> across it. The split is computed, never typed.'],
-      ['Issue',    'The document renders as a PDF. E-way bills and TDS hang off the same record rather than living in a separate file.'],
+      ['Issue',    'The document renders as a PDF. TDS challans are recorded against a deduction period rather than against the invoice.'],
       ['Settle',   'Payments post against the invoice and the balance falls. <b>Paid</b> comes from bank reconciliation — there is no gateway in the middle.'],
     ],
     gives: [
@@ -1066,7 +1066,7 @@ ganit: {
     ['The tax logic', 'why this module exists', [
       '<b>Place of supply derived from the two GSTINs</b>, following s.12(2)(a) of the IGST Act. Not a dropdown someone guesses at.',
       'State codes decide the split: <b>CGST + SGST</b> within the state, <b>IGST</b> across it. Computed, never typed.',
-      '<b>TDS</b> and <b>e-way bills</b> hang off the same invoice rather than living in a separate file.',
+      '<b>TDS challans</b> are recorded against a deduction period — Rule 30(2) fixes the due date from it — not against an invoice.',
       'GSTIN, PAN and TAN are <b>never mandatory</b> to save a client or an invoice.',
     ]],
     ['Getting paid', 'and how “paid” is decided', [
@@ -1107,7 +1107,7 @@ ganit: {
      'A typo on an unissued or unpaid invoice is a correction. Systems that force a credit note for a spelling mistake generate paperwork that exists only to satisfy the software.',
      'Editability follows payment state. <b>Do not infer it from doc_status</b> — that column defaults to <em>final</em> and means something else.'],
   ],
-  india: 'This is the module that makes Kartavaya an <b>Indian</b> product rather than a translated one. <b>s.12(2)(a)</b> place of supply, CGST/SGST against IGST from state codes, HSN on the line, e-way bills and TDS on the invoice, professional tax and TDS challans elsewhere in the suite, and bank reconciliation as the only definition of paid — because that is how money is actually confirmed here.',
+  india: 'This is the module that makes Kartavaya an <b>Indian</b> product rather than a translated one. <b>s.12(2)(a)</b> place of supply, CGST/SGST against IGST from state codes, HSN on the line, GSTR-1 JSON and GSTR-3B out of the same ledger, TDS challans against the deduction period, professional tax elsewhere in the suite, and bank reconciliation as the only definition of paid — because that is how money is actually confirmed here.',
   replaces: ['Tally as the place invoices are raised — and the export step to it.',
              'A GST rate cheat-sheet taped to somebody’s monitor.',
              'The manual decision about CGST/SGST versus IGST, taken invoice by invoice.',
@@ -1122,7 +1122,7 @@ ganit: {
   scenario: [
     ['The invoice is raised', 'From a converted Vikray order — client, lines and amounts already there. Nobody re-types a customer name.'],
     ['Tax decides itself', 'Supplier GSTIN is Gujarat, the customer’s is Maharashtra. Different state codes, so <b>IGST</b>. The user was not asked.'],
-    ['It goes out', 'PDF rendered, emailed, and a payment link the customer can open. The e-way bill and any TDS sit on the same record.'],
+    ['It goes out', 'PDF rendered, emailed, and a payment link the customer can open.'],
     ['A typo is found', 'The invoice is unpaid, so it is <b>edited</b>. No credit note, no reversal, no explanation to an auditor about paperwork that exists to satisfy software.'],
     ['The bank statement is imported', 'Using the format configured once for this bank. Twenty-two lines come in; eighteen match themselves.'],
     ['Paid means paid', 'Four lines are offered candidate invoices and matched by a person. The balance falls. <b>Nothing said “paid” until the bank did</b> — and a wrong match can be unmatched.'],
